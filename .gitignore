@@ -30,3 +30,9 @@
 *.exe
 *.out
 *.app
+
+# Outputs
+*.log
+*.sum
+*.out
+fort.*
