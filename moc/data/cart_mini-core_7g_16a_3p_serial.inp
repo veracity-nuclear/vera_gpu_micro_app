@@ -87,11 +87,13 @@ XSEC
 OPTION
   bound_cond 0 0 0 0 1 1
   solver 1 2
-  cmfd F mgnode F 0.0 1.0 150 F
+  cmfd T mgnode F 0.0 1.0 150 F
   ray 0.03 CHEBYSHEV-YAMAMOTO 16 3
   !parallel 1 1 1 16
   conv_crit 2*1.e-8
   iter_lim 10000 1 1
   vis_edits F
   param RAY->edit_ray_trace SBK T
+  param CMFD->linear_solver SIK 4
+  param CMFD->edit_cmfd_matrix SBK T
 .
