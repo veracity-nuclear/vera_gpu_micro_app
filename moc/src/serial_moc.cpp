@@ -89,7 +89,19 @@ int main(int argc, char* argv[]) {
     auto starting_xsr = file.getDataSet("/MOC_Ray_Data/Domain_00001/Starting XSR").read<int>();
 
     // Read solution data
-    auto fsr_flux = file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/fsr_flux").read<std::vector<std::vector<double>>>();
+    auto temp_fsr_flux = file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/fsr_flux").read<std::vector<std::vector<double>>>();
+    std::vector<std::vector<double>> fsr_flux;
+    if (!temp_fsr_flux.empty()) {
+        size_t num_groups = temp_fsr_flux[0].size();
+        size_t num_fsrs = temp_fsr_flux.size();
+        fsr_flux.resize(num_groups, std::vector<double>(num_fsrs));
+        for (size_t i = 0; i < num_fsrs; ++i) {
+            for (size_t j = 0; j < num_groups; ++j) {
+                fsr_flux[j][i] = temp_fsr_flux[i][j];
+            }
+        }
+    }
+
     auto tmp_mat_id = file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xsr_mat_id").read<std::vector<double>>();
     auto xsr_mat_id = std::vector<int>(tmp_mat_id.begin(), tmp_mat_id.end());
 
@@ -112,17 +124,16 @@ int main(int argc, char* argv[]) {
     segflux.resize(2);
     for (size_t j = 0; j < 2; j++) {
         segflux[j].resize(max_segments + 1);
-        for (size_t i = 0; i < max_segments; ++i) {
-            segflux[j][i].resize(source[1].size(), 0.0);
+        for (size_t i = 0; i < max_segments + 1; i++) {
+            segflux[j][i].resize(source[0].size(), 0.0);
         }
     }
 
     // Allocate scalar flux array
     double phid1, phid2, phio1, phio2;
-    std::vector<std::vector<double>> scalar_flux;
-    scalar_flux.resize(source.size());
-    for (size_t i = 0; i < source.size(); ++i) {
-        scalar_flux[i].resize(source[i].size(), 0.0);
+    std::vector<std::vector<double>> scalar_flux = fsr_flux;
+    for (size_t i = 0; i < scalar_flux.size(); ++i) {
+        std::fill(scalar_flux[i].begin(), scalar_flux[i].end(), 0.0);
     }
 
     // Quadrature
@@ -158,6 +169,16 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
+    }
+
+    // Print the scalar flux
+    std::cout << "Scalar Flux:" << std::endl;
+    for (size_t i = 0; i < scalar_flux.size(); ++i) {
+        std::cout << "FSR " << i << ": ";
+        for (size_t g = 0; g < scalar_flux[i].size(); ++g) {
+            std::cout << scalar_flux[i][g] << " ";
+        }
+        std::cout << std::endl;
     }
 
     return 0;
