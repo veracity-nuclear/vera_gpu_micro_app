@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run a multi-line script
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -27,20 +27,24 @@ jobs:
       - name: Install Kokkos from source
         run: |
           git clone --branch develop https://github.com/kokkos/kokkos.git
-          cmake -DKokkos_ENABLE_OPENMP=ON -B kokkos/build kokkos
+          cmake -DCMAKE_INSTALL_PREFIX=$HOME/kokkos -DKokkos_ENABLE_OPENMP=ON -B kokkos/build kokkos
           cmake --build kokkos/build --parallel 6
           cmake --install kokkos/build
 
       - name: Install HighFive from source
         run: |
           git clone --recursive --branch v2.9.0 https://github.com/BlueBrain/HighFive.git
-          cmake -B HighFive/build HighFive
+          cmake -DCMAKE_INSTALL_PREFIX=$HOME/highfive -B HighFive/build HighFive
           cmake --build HighFive/build --parallel 6
           cmake --install HighFive/build
 
-      - name: Configure and build project
+      - name: Configure project
         run: |
-          cmake -B build
+          cmake -B build -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
+            -DCMAKE_PREFIX_PATH="/usr:$HOME/highfive:$HOME/kokkos"
+
+      - name: Build project
+        run: |
           cmake --build build --parallel 6
 
       - name: Run tests
