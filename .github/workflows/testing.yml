@@ -10,8 +10,6 @@ jobs:
 
     env:
       CMAKE_BUILD_TYPE: Release
-      HDF5_ROOT: /usr
-      HIGHFIVE_ROOT: /usr/local
 
     steps:
       - uses: actions/checkout@v4
