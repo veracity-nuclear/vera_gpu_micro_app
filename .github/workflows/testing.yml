@@ -45,7 +45,8 @@ jobs:
       - name: Configure project
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
-            "-DCMAKE_PREFIX_PATH=/usr:$HOME/highfive:$HOME/kokkos"
+            -DKokkos_DIR="$HOME/kokkos/lib/cmake/Kokkos" \
+            -DCMAKE_PREFIX_PATH="/usr:$HOME/highfive:$HOME/kokkos"
 
       - name: Build project
         run: |
