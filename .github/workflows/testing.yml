@@ -27,14 +27,19 @@ jobs:
       - name: Install Kokkos from source
         run: |
           git clone --branch develop https://github.com/kokkos/kokkos.git
-          cmake -DCMAKE_INSTALL_PREFIX=$HOME/kokkos -DKokkos_ENABLE_OPENMP=ON -B kokkos/build kokkos
+          cmake -DCMAKE_INSTALL_PREFIX=$HOME/kokkos \
+            -DKokkos_ENABLE_OPENMP=ON \
+            -DKokkos_ENABLE_INSTALL=ON \
+            -B kokkos/build kokkos
           cmake --build kokkos/build --parallel 6
           cmake --install kokkos/build
 
       - name: Install HighFive from source
         run: |
           git clone --recursive --branch v2.9.0 https://github.com/BlueBrain/HighFive.git
-          cmake -DCMAKE_INSTALL_PREFIX=$HOME/highfive -DHIGHFIVE_USE_BOOST=OFF -B HighFive/build HighFive
+          cmake -DCMAKE_INSTALL_PREFIX=$HOME/highfive \
+            -DHIGHFIVE_USE_BOOST=OFF \
+            -B HighFive/build HighFive
           cmake --build HighFive/build --parallel 6
           cmake --install HighFive/build
 
