@@ -65,6 +65,30 @@ std::vector<std::vector<double>> get_xstr(
     return xs;
 }
 
+std::vector<std::vector<double>> build_source(
+    const c5g7_library& library,
+    const std::vector<std::vector<double>>& scalar_flux
+) {
+    int nfsr = scalar_flux.size();
+    int ng = scalar_flux[0].size();
+    std::vector<std::vector<double>> source;
+    source.resize(nfsr);
+    for (size_t i = 0; i < nfsr; i++) {
+        source[i].resize(ng);
+        double fissrc = 0.0;
+        for (int g = 0; g < ng; g++) {
+            fissrc += library.nufiss(i, g) * scalar_flux[i][g];
+        }
+        for (int g = 0; g < ng; g++) {
+            source[i][g] = fissrc * library.chi(i, g);
+            for (int g2 = 0; g2 < ng; g2++) {
+                source[i][g] += library.scat(i, g, g2) * scalar_flux[i][g2];
+            }
+        }
+    }
+    return source;
+}
+
 int main(int argc, char* argv[]) {
     if (argc != 2) {
         std::cerr << "Usage: " << argv[0] << " <filename>" << std::endl;
@@ -109,13 +133,6 @@ int main(int argc, char* argv[]) {
     // Get XS
     auto xstr = get_xstr(nfsr, starting_xsr, xsrToFsrMap, xsr_mat_id, library);
 
-    // Build source
-    auto source = xstr;
-    source.resize(nfsr);
-    for (size_t i = 0; i < nfsr; i++) {
-        source[i].resize(ng, 1.0);  // Initialize all elements to 1.0
-    }
-
     // Allocate segment flux array
     std::vector<std::vector<std::vector<double>>> segflux;
     size_t max_segments = 0;
@@ -140,6 +157,9 @@ int main(int argc, char* argv[]) {
 
     // Quadrature
     std::vector<double> sinpolang = {0.5};
+
+    // Build source
+    auto source = build_source(library, old_scalar_flux);
 
     // Sweep
     for (const auto& ray : rays) {

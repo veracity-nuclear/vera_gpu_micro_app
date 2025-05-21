@@ -7,11 +7,16 @@ class c5g7_library {
     public:
         c5g7_library(std::string name);
         std::vector<double> abs(int set) const;
+        double abs(int set, int group) const;
         std::vector<double> nufiss(int set) const;
+        double nufiss(int set, int group) const;
         std::vector<double> fiss(int set) const;
+        double fiss(int set, int group) const;
         std::vector<double> chi(int set) const;
+        double chi(int set, int group) const;
         std::vector<std::vector<double>> scat(int set) const;
         std::vector<double> scat(int set, int group) const;
+        double scat(int set, int from, int to) const;
         std::vector<double> self_scat(int set) const;
         double self_scat(int set, int group) const;
         std::vector<double> total(int set) const;

@@ -72,16 +72,32 @@ std::vector<double> c5g7_library::abs(int set) const {
     return _abs[set];
 }
 
+double c5g7_library::abs(int set, int group) const {
+    return _abs[set][group];
+}
+
 std::vector<double> c5g7_library::nufiss(int set) const {
     return _nufiss[set];
+}
+
+double c5g7_library::nufiss(int set, int group) const {
+    return _nufiss[set][group];
 }
 
 std::vector<double> c5g7_library::fiss(int set) const {
     return _fiss[set];
 }
 
+double c5g7_library::fiss(int set, int group) const {
+    return _fiss[set][group];
+}
+
 std::vector<double> c5g7_library::chi(int set) const {
     return _chi[set];
+}
+
+double c5g7_library::chi(int set, int group) const {
+    return _chi[set][group];
 }
 
 std::vector<std::vector<double>> c5g7_library::scat(int set) const {
@@ -90,6 +106,10 @@ std::vector<std::vector<double>> c5g7_library::scat(int set) const {
 
 std::vector<double> c5g7_library::scat(int set, int group) const {
     return _scat[set][group];
+}
+
+double c5g7_library::scat(int set, int from, int to) const {
+    return _scat[set][from][to];
 }
 
 std::vector<double> c5g7_library::self_scat(int set) const {
