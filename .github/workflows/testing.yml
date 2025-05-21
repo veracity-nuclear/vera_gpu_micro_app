@@ -29,7 +29,6 @@ jobs:
           git clone --branch develop https://github.com/kokkos/kokkos.git
           cmake -DCMAKE_INSTALL_PREFIX=$HOME/kokkos \
             -DKokkos_ENABLE_OPENMP=ON \
-            -DKokkos_ENABLE_INSTALL=ON \
             -B kokkos/build kokkos
           cmake --build kokkos/build --parallel 6
           cmake --install kokkos/build
@@ -46,7 +45,7 @@ jobs:
       - name: Configure project
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
-            -DCMAKE_PREFIX_PATH="/usr:$HOME/highfive:$HOME/kokkos"
+            "-DCMAKE_PREFIX_PATH=/usr:$HOME/highfive:$HOME/kokkos"
 
       - name: Build project
         run: |
