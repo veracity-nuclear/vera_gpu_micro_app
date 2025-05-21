@@ -158,49 +158,59 @@ int main(int argc, char* argv[]) {
     // Quadrature
     std::vector<double> sinpolang = {0.5};
 
-    // Build source
-    auto source = build_source(library, old_scalar_flux);
+    for (int iteration = 0; iteration < 10; iteration++) {
 
-    // Sweep
-    for (const auto& ray : rays) {
-        // Initialize the angular flux to 1.0
-        for (size_t ig = 0; ig < ng; ig++) {
-            segflux[0][0][ig] = 1.0;
-            segflux[1][max_segments][ig] = 1.0;
-        }
-        // Sweep the segments
-        int iseg2 = ray._fsrs.size();
-        for (int iseg1 = 0; iseg1 < ray._fsrs.size(); iseg1++) {
-            iseg2--;
-            int ireg1 = ray._fsrs[iseg1] - 1;
-            int ireg2 = ray._fsrs[iseg2] - 1;
-            // Sweep the groups
-            for (size_t ipol = 0; ipol < 1; ipol++) {
-                for (size_t ig = 0; ig < ng; ig++) {
-                    phid1 = segflux[0][iseg1][ig] - source[ireg1][ig];
-                    // TODO: tabulate exp
-                    phid1 *= std::exp(-xstr[ireg1][ig] * ray._segments[iseg1] * sinpolang[ipol]);
-                    // TODO: use real weight
-                    segflux[0][iseg1 + 1][ig] = segflux[0][iseg1][ig] + phid1 * 0.5;
-                    scalar_flux[ireg1][ig] += phid1 * 0.5;
+        // Build source
+        auto source = build_source(library, old_scalar_flux);
 
-                    phid2 = segflux[1][iseg2 + 1][ig] - source[ireg2][ig];
-                    phid2 *= std::exp(-xstr[ireg2][ig] * ray._segments[iseg2 + 1] * sinpolang[ipol]);
-                    segflux[1][iseg2][ig] = segflux[0][iseg2 + 1][ig] + phid2 * 0.5;
-                    scalar_flux[ireg2][ig] += phid2 * 0.5;
+        // Sweep
+        for (const auto& ray : rays) {
+            // Initialize the angular flux to 1.0
+            for (size_t ig = 0; ig < ng; ig++) {
+                segflux[0][0][ig] = 0.0;
+                segflux[1][max_segments][ig] = 0.0;
+            }
+            // Sweep the segments
+            int iseg2 = ray._fsrs.size();
+            for (int iseg1 = 0; iseg1 < ray._fsrs.size(); iseg1++) {
+                iseg2--;
+                int ireg1 = ray._fsrs[iseg1] - 1;
+                int ireg2 = ray._fsrs[iseg2] - 1;
+                // Sweep the groups
+                for (size_t ipol = 0; ipol < 1; ipol++) {
+                    for (size_t ig = 0; ig < ng; ig++) {
+                        phid1 = segflux[0][iseg1][ig] - source[ireg1][ig];
+                        // TODO: tabulate exp
+                        phid1 *= std::exp(-xstr[ireg1][ig] * ray._segments[iseg1] * sinpolang[ipol]);
+                        // TODO: use real weight
+                        segflux[0][iseg1 + 1][ig] = segflux[0][iseg1][ig] + phid1 * 0.5;
+                        scalar_flux[ireg1][ig] += phid1 * 0.5;
+
+                        phid2 = segflux[1][iseg2 + 1][ig] - source[ireg2][ig];
+                        phid2 *= std::exp(-xstr[ireg2][ig] * ray._segments[iseg2 + 1] * sinpolang[ipol]);
+                        segflux[1][iseg2][ig] = segflux[0][iseg2 + 1][ig] + phid2 * 0.5;
+                        scalar_flux[ireg2][ig] += phid2 * 0.5;
+                    }
                 }
             }
         }
-    }
 
-    // Print the scalar flux
-    std::cout << "Scalar Flux:" << std::endl;
-    for (size_t i = 0; i < scalar_flux.size(); ++i) {
-        std::cout << "FSR " << i << ": ";
-        for (size_t g = 0; g < scalar_flux[i].size(); ++g) {
-            std::cout << scalar_flux[i][g] << " ";
+        // Print the scalar flux
+        std::cout << "Scalar Flux:" << std::endl;
+        for (size_t i = 0; i < scalar_flux.size(); ++i) {
+            std::cout << "FSR " << i << ": ";
+            for (size_t g = 0; g < scalar_flux[i].size(); ++g) {
+                std::cout << scalar_flux[i][g] << " ";
+            }
+            std::cout << std::endl;
         }
-        std::cout << std::endl;
+
+        // Save the old scalar flux
+        for (size_t i = 0; i < nfsr; ++i) {
+            for (size_t g = 0; g < ng; ++g) {
+                old_scalar_flux[i][g] = 0.5 * old_scalar_flux[i][g] + 0.5 * scalar_flux[i][g];
+            }
+        }
     }
 
     return 0;
