@@ -54,9 +54,9 @@ std::vector<std::vector<double>> get_xstr(
     std::vector<std::vector<double>> xs;
     xs.resize(num_fsr);
     for (auto i = 0; i < xsrToFsrMap.size(); i++) {
-        auto starting_fsr = xsrToFsrMap[i];
-        auto stopping_fsr = i == xsrToFsrMap.size() - 1 ? num_fsr : xsrToFsrMap[i + 1];
-        for (auto j = starting_fsr; j < stopping_fsr; j++) {
+        auto starting_fsr = xsrToFsrMap[i] - 1;
+        auto stopping_fsr = i == xsrToFsrMap.size() - 1 ? num_fsr - 1 : xsrToFsrMap[i + 1] - 1;
+        for (auto j = starting_fsr; j < stopping_fsr + 1; j++) {
             switch (xsr_mat_id[i]) {
                 case 1:  // UO2-3.3
                     xs[j] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0};
@@ -101,18 +101,21 @@ int main(int argc, char* argv[]) {
             }
         }
     }
+    int nfsr = fsr_flux.size();
+    int ng = fsr_flux[0].size();
 
     auto tmp_mat_id = file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xsr_mat_id").read<std::vector<double>>();
     auto xsr_mat_id = std::vector<int>(tmp_mat_id.begin(), tmp_mat_id.end());
+    int nxsr = xsr_mat_id.size();
 
     // Get XS
-    auto xstr = get_xstr(fsr_flux.size(), starting_xsr, xsrToFsrMap, xsr_mat_id);
+    auto xstr = get_xstr(nfsr, starting_xsr, xsrToFsrMap, xsr_mat_id);
 
     // Build source
-    std::vector<std::vector<double>> source;
-    source.resize(xstr.size());
-    for (size_t i = 0; i < xstr.size(); ++i) {
-        source[i].resize(xstr[i].size(), 1.0);  // Initialize all elements to 1.0
+    auto source = xstr;
+    source.resize(nfsr);
+    for (size_t i = 0; i < nfsr; i++) {
+        source[i].resize(ng, 1.0);  // Initialize all elements to 1.0
     }
 
     // Allocate segment flux array
@@ -125,14 +128,14 @@ int main(int argc, char* argv[]) {
     for (size_t j = 0; j < 2; j++) {
         segflux[j].resize(max_segments + 1);
         for (size_t i = 0; i < max_segments + 1; i++) {
-            segflux[j][i].resize(source[0].size(), 0.0);
+            segflux[j][i].resize(ng, 0.0);
         }
     }
 
     // Allocate scalar flux array
     double phid1, phid2, phio1, phio2;
     std::vector<std::vector<double>> scalar_flux = fsr_flux;
-    for (size_t i = 0; i < scalar_flux.size(); ++i) {
+    for (size_t i = 0; i < nfsr; ++i) {
         std::fill(scalar_flux[i].begin(), scalar_flux[i].end(), 0.0);
     }
 
@@ -142,28 +145,28 @@ int main(int argc, char* argv[]) {
     // Sweep
     for (const auto& ray : rays) {
         // Initialize the angular flux to 1.0
-        for (size_t ig = 0; ig < source[0].size(); ig++) {
+        for (size_t ig = 0; ig < ng; ig++) {
             segflux[0][0][ig] = 1.0;
-            segflux[1][max_segments + 1][ig] = 1.0;
+            segflux[1][max_segments][ig] = 1.0;
         }
         // Sweep the segments
         int iseg2 = ray._fsrs.size();
         for (int iseg1 = 0; iseg1 < ray._fsrs.size(); iseg1++) {
             iseg2--;
-            int ireg1 = ray._fsrs[iseg1];
-            int ireg2 = ray._fsrs[iseg2];
+            int ireg1 = ray._fsrs[iseg1] - 1;
+            int ireg2 = ray._fsrs[iseg2] - 1;
             // Sweep the groups
             for (size_t ipol = 0; ipol < 1; ipol++) {
-                for (size_t ig = 0; ig < source[0].size(); ig++) {
-                    phid1 = segflux[0][iseg1 - 1][ig] - source[ireg1][ig];
+                for (size_t ig = 0; ig < ng; ig++) {
+                    phid1 = segflux[0][iseg1][ig] - source[ireg1][ig];
                     // TODO: tabulate exp
                     phid1 *= std::exp(-xstr[ireg1][ig] * ray._segments[iseg1] * sinpolang[ipol]);
                     // TODO: use real weight
-                    segflux[0][iseg1][ig] = segflux[0][iseg1 - 1][ig] + phid1 * 0.5;
+                    segflux[0][iseg1 + 1][ig] = segflux[0][iseg1][ig] + phid1 * 0.5;
                     scalar_flux[ireg1][ig] += phid1 * 0.5;
 
                     phid2 = segflux[1][iseg2 + 1][ig] - source[ireg2][ig];
-                    phid2 *= std::exp(-xstr[ireg2][ig] * ray._segments[iseg2] * sinpolang[ipol]);
+                    phid2 *= std::exp(-xstr[ireg2][ig] * ray._segments[iseg2 + 1] * sinpolang[ipol]);
                     segflux[1][iseg2][ig] = segflux[0][iseg2 + 1][ig] + phid2 * 0.5;
                     scalar_flux[ireg2][ig] += phid2 * 0.5;
                 }
