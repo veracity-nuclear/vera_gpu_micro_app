@@ -5,12 +5,11 @@
 
 class LongRay
 {
-    protected:
-        std::vector<int> _fsrs;
-        std::vector<double> _segments;
-        std::vector<std::pair<double, double>> _starting_points;
-        double _radians;
     public:
+    std::vector<int> _fsrs;
+    std::vector<double> _segments;
+    std::vector<std::pair<double, double>> _starting_points;
+    double _radians;
         LongRay(const HighFive::Group& group, double radians) : _radians(radians) {
             _fsrs = group.getDataSet("FSRs").read<std::vector<int>>();
             _segments = group.getDataSet("Segments").read<std::vector<double>>();
