@@ -3,6 +3,7 @@ spack:
   specs:
   - kokkos +openmp ^python@3.9.11 %gcc@11.4
   - hdf5 -mpi +cxx %gcc@11.4
+  - highfive -mpi ^hdf5
   view: true
   concretizer:
     unify: true
