@@ -10,6 +10,8 @@ jobs:
 
     env:
       CMAKE_BUILD_TYPE: Release
+      HDF5_ROOT: /usr
+      HIGHFIVE_ROOT: /usr/local
 
     steps:
       - uses: actions/checkout@v4
@@ -21,7 +23,7 @@ jobs:
             cmake \
             build-essential \
             libhdf5-dev
-
+            
       - name: Install Kokkos from source
         run: |
           git clone --branch develop https://github.com/kokkos/kokkos.git
@@ -44,8 +46,7 @@ jobs:
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
             -DKokkos_DIR="$HOME/kokkos/lib/cmake/Kokkos" \
-            -DHighFive_DIR="$HOME/highfive/lib/cmake/HighFive" \
-            -DCMAKE_PREFIX_PATH="/usr:$HOME/highfive:$HOME/kokkos:$HOME/petsc"
+            -DCMAKE_PREFIX_PATH="/usr:$HOME/highfive:$HOME/kokkos"
 
       - name: Build project
         run: |
