@@ -1,0 +1,49 @@
+name: Testing VERA GPU Micro-Apps
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      CMAKE_BUILD_TYPE: Release
+      HDF5_ROOT: /usr
+      HIGHFIVE_ROOT: /usr/local
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run a multi-line script
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            build-essential \
+            libhdf5-dev
+
+      - name: Install Kokkos from source
+        run: |
+          git clone --branch develop https://github.com/kokkos/kokkos.git
+          cmake -DKokkos_ENABLE_OPENMP=ON -B kokkos/build kokkos
+          cmake --build kokkos/build --parallel 6
+          cmake --install kokkos/build
+
+      - name: Install HighFive from source
+        run: |
+          git clone --recursive --branch v2.9.0 https://github.com/BlueBrain/HighFive.git
+          cmake -B HighFive/build HighFive
+          cmake --build HighFive/build --parallel 6
+          cmake --install HighFive/build
+
+      - name: Configure and build project
+        run: |
+          cmake -B build
+          cmake --build build --parallel 6
+
+      - name: Run tests
+        run: |
+          cd build
+          ctest -j 6 --output-on-failure
