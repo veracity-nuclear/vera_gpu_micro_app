@@ -53,12 +53,13 @@ int main(int argc, char* argv[]) {
     // Print a message with the number of rays and filename
     std::cout << "Successfully set up " << nrays << " rays from file: " << filename << std::endl;
 
-    // Read other data
-    std::vector<int> xsrToFsrMap;
-    domain.getDataSet("XSRtoFSR_Map").read(xsrToFsrMap);
+    // Read mapping data
+    std::vector<int> xsrToFsrMap = domain.getDataSet("XSRtoFSR_Map").read<std::vector<int>>();
+    int starting_xsr = domain.getDataSet("Starting XSR").read<int>();
 
-    int starting_xsr;
-    domain.getDataSet("Starting XSR").read(starting_xsr);
+    // Read solution data
+    std::vector<std::vector<double>> fsr_flux = domain.getDataSet("Solution_Data/fsr_flux").read<std::vector<std::vector<double>>>();
+    std::vector<long> xsr_mat_id = domain.getDataSet("Solution_Data/xsr_mat_id").read<std::vector<long>>();
 
     return 0;
 }
