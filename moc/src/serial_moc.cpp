@@ -3,6 +3,7 @@
 #include <H5Cpp.h>
 #include "highfive/highfive.hpp"
 #include "long_ray.hpp"
+#include "c5g7_library.hpp"
 
 std::vector<LongRay> read_rays(HighFive::File file) {
     auto domain = file.getGroup("/MOC_Ray_Data/Domain_00001");
@@ -49,7 +50,8 @@ std::vector<std::vector<double>> get_xstr(
     const int num_fsr,
     const int starting_xsr,
     const std::vector<int>& xsrToFsrMap,
-    const std::vector<int>& xsr_mat_id
+    const std::vector<int>& xsr_mat_id,
+    const c5g7_library& library
 ) {
     std::vector<std::vector<double>> xs;
     xs.resize(num_fsr);
@@ -57,14 +59,7 @@ std::vector<std::vector<double>> get_xstr(
         auto starting_fsr = xsrToFsrMap[i] - 1;
         auto stopping_fsr = i == xsrToFsrMap.size() - 1 ? num_fsr - 1 : xsrToFsrMap[i + 1] - 1;
         for (auto j = starting_fsr; j < stopping_fsr + 1; j++) {
-            switch (xsr_mat_id[i]) {
-                case 1:  // UO2-3.3
-                    xs[j] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0};
-                    break;
-                default:
-                    throw std::runtime_error("Unknown material ID: " + std::to_string(xsr_mat_id[i]));
-                    break;
-            }
+            xs[j] = library.abs(xsr_mat_id[i]);
         }
     }
     return xs;
@@ -108,8 +103,11 @@ int main(int argc, char* argv[]) {
     auto xsr_mat_id = std::vector<int>(tmp_mat_id.begin(), tmp_mat_id.end());
     int nxsr = xsr_mat_id.size();
 
+    // Initialize the library
+    c5g7_library library("../data/c5g7.xsl");
+
     // Get XS
-    auto xstr = get_xstr(nfsr, starting_xsr, xsrToFsrMap, xsr_mat_id);
+    auto xstr = get_xstr(nfsr, starting_xsr, xsrToFsrMap, xsr_mat_id, library);
 
     // Build source
     auto source = xstr;
@@ -136,8 +134,9 @@ int main(int argc, char* argv[]) {
     double phid1, phid2, phio1, phio2;
     std::vector<std::vector<double>> scalar_flux = fsr_flux;
     for (size_t i = 0; i < nfsr; ++i) {
-        std::fill(scalar_flux[i].begin(), scalar_flux[i].end(), 0.0);
+        std::fill(scalar_flux[i].begin(), scalar_flux[i].end(), 1.0);
     }
+    auto old_scalar_flux = scalar_flux;
 
     // Quadrature
     std::vector<double> sinpolang = {0.5};

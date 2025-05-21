@@ -15,7 +15,7 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Add the executable
-add_executable(serial_moc.exe serial_moc.cpp)
+add_executable(serial_moc.exe serial_moc.cpp c5g7_library.cpp)
 
 # Optional: Specify output directory
 # set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
