@@ -26,8 +26,12 @@ jobs:
           apt-get install -y \
             cmake \
             build-essential \
-            libhdf5-dev \
-            mpich
+            libhdf5-dev
+
+      - name: Print compiler locations
+        run: |
+          echo "CXX compiler: $(which mpicxx)"
+          echo "C compiler: $(which mpicc)"
 
       - name: Install Kokkos from source
         run: |
@@ -50,8 +54,8 @@ jobs:
       - name: Configure project
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
-            -DCMAKE_C_COMPILER=/usr/lib/petsc/bin/mpicc \
-            -DCMAKE_CXX_COMPILER=/usr/lib/petsc/bin/mpicxx \
+            -DCMAKE_C_COMPILER=mpicc \
+            -DCMAKE_CXX_COMPILER=mpicxx \
             -DKokkos_DIR="$HOME/kokkos/lib/cmake/Kokkos" \
             -DPETSC_DIR="/usr/lib/petsc" \
             -DCMAKE_PREFIX_PATH="/usr:$HOME/highfive:$HOME/kokkos"
