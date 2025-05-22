@@ -123,14 +123,18 @@ std::vector<std::vector<double>> build_source(
         source[i].resize(ng);
         for (int g = 0; g < ng; g++) {
             source[i][g] = fissrc[i] * library.chi(mat_id, g);
+            // std::cout << "mgfs " << i << " " << g << " " << i << " " << fissrc[i] << " " << library.chi(mat_id, g) << " : " << source[i][g] << std::endl;
             for (int g2 = 0; g2 < ng; g2++) {
                 if (g != g2) {
                     source[i][g] += library.scat(mat_id, g, g2) * scalar_flux[i][g2];
+                    // std::cout << "inscatter " << i << " " << g << " " << g2 << " " << " " << scalar_flux[i][g2] << " " << library.scat(mat_id, g, g2) << " : " << source[i][g] << std::endl;
                 }
             }
             double old_source = source[i][g];
             source[i][g] += library.self_scat(mat_id, g) * scalar_flux[i][g];
+            // std::cout << "selfscatter a " << g << " " << i << " " << old_source << " " << library.self_scat(mat_id, g) << " " << scalar_flux[i][g] << " : " << source[i][g] << std::endl;
             source[i][g] /= (library.total(mat_id, g) * 4.0 * M_PI);
+            // std::cout << "selfscatter b " << g << " " << i << " " << 4.0 * M_PI << " " << library.total(mat_id, g) <<  " : " << source[i][g] << std::endl;
         }
     }
     return source;
@@ -252,12 +256,11 @@ int main(int argc, char* argv[]) {
     for (int iteration = 0; iteration < 1000; iteration++) {
 
         // Build source and zero the fluxes
-        old_keff = keff;
-        old_fissrc = fissrc;
         auto source = build_source(library, xsr_mat_id, xsrToFsrMap, old_scalar_flux, fissrc);
         for (auto i = 0; i < nfsr; i++) {
             for (auto g = 0; g < ng; g++) {
                 scalar_flux[i][g] = 0.0;
+                // std::cout << "source " << i << " " << g << " " << source[i][g] << " " << old_scalar_flux[i][g] << std::endl;
             }
         }
 
@@ -277,17 +280,28 @@ int main(int argc, char* argv[]) {
                     // Sweep the groups
                     for (size_t ig = 0; ig < ng; ig++) {
                         phid1 = segflux[0][iseg1][ig] - source[ireg1][ig];
+                        // std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " " << segflux[0][iseg1][ig] << " " << source[ireg1][ig] << " " << phid1 << std::endl;
                         // TODO: tabulate exp
                         phid1 *= 1.0 - std::exp(-xstr[ireg1][ig] * ray._segments[iseg1] * rsinpolang[ipol]);
+                        // std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
+                        // << " : " << phid1 << std::endl;
                         // TODO: use real weight
                         segflux[0][iseg1 + 1][ig] = segflux[0][iseg1][ig] - phid1;
+                        // std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
+                        //     << segflux[0][iseg1 + 1][ig] << " " << segflux[0][iseg1][ig] << " " << phid1
+                        //     << std::endl;
                         scalar_flux[ireg1][ig] += phid1 * angle_weights[ray.angle()][ipol];
+                        // std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
+                        //     << scalar_flux[ireg1][ig] << " " << phid1 << " " << angle_weights[ray.angle()][ipol] << std::endl;
 
                         phid2 = segflux[1][iseg2][ig] - source[ireg2][ig];
                         phid2 *= 1.0 - std::exp(-xstr[ireg2][ig] * ray._segments[iseg2 - 1] * rsinpolang[ipol]);
                         segflux[1][iseg2 - 1][ig] = segflux[0][iseg2][ig] - phid2;
                         scalar_flux[ireg2][ig] += phid2 * angle_weights[ray.angle()][ipol];
+                        // std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " "
+                        //     << scalar_flux[ireg2][ig] << " " << phid2 << " " << angle_weights[ray.angle()][ipol] << std::endl;
                     }
+                    // throw std::runtime_error("Not implemented: segflux[0][iseg1 + 1][ig] = segflux[0][iseg1][ig] + phid1 * 0.5;");
                     iseg2--;
                 }
             }
@@ -296,6 +310,7 @@ int main(int argc, char* argv[]) {
         // Scale the flux
         for (size_t i = 0; i < nfsr; ++i) {
             for (size_t g = 0; g < ng; ++g) {
+                // std::cout << "scale " << scalar_flux[i][g] << " " << xstr[i][g] << " " << vol[i] << " " << pz << " " << source[i][g] << " " << 4.0 * M_PI << std::endl;
                 scalar_flux[i][g] = scalar_flux[i][g] / (xstr[i][g] * vol[i] / pz) + source[i][g] * 4.0 * M_PI;
             }
         }
@@ -310,9 +325,6 @@ int main(int argc, char* argv[]) {
             std::cout << std::endl;
         }
 
-        // Save the old scalar flux
-        old_scalar_flux = scalar_flux;
-
         // Update fission source and keff
         fissrc = build_fissrc(library, xsr_mat_id, xsrToFsrMap, scalar_flux, keff);
         double numerator = 0.0;
@@ -323,12 +335,27 @@ int main(int argc, char* argv[]) {
         }
         keff = old_keff * numerator / denominator / double(vol.size());
         fissrc = build_fissrc(library, xsr_mat_id, xsrToFsrMap, scalar_flux, keff);
-        std::cout << "keff " << keff << " " << old_keff << std::endl;
 
-        if (fabs(keff - old_keff) < 1.0e-8) {
-            std::cout << "Converged after " << iteration << " iterations." << std::endl;
+        // Calculate fission source convergence metric
+        double fnorm = 0.0;
+        for (size_t i = 0; i < scalar_flux.size(); ++i) {
+            for (size_t g = 0; g < scalar_flux[i].size(); ++g) {
+                fnorm += (scalar_flux[i][g] - old_scalar_flux[i][g]) * library.nufiss(xsr_mat_id[i], g) * vol[i];
+                std::cout << "fnorm " << i << " " << g << " " << scalar_flux[i][g] << " " << old_scalar_flux[i][g] << " " << library.nufiss(xsr_mat_id[i], g) << " " << vol[i] << " " << fnorm << std::endl;
+            }
+        }
+        double knorm = keff - old_keff;
+        fnorm = sqrt(fnorm * fnorm / double(fissrc.size()));
+        std::cout << "keff = " << keff << " knorm = " << knorm << " fnorm = " << fnorm << std::endl;
+        if (fabs(knorm) < 1.0e-8 && fabs(fnorm) < 1.0e-8) {
+            std::cout << "Converged after " << iteration + 1 << " iterations." << std::endl;
             break;
         }
+
+        // Save the old values
+        old_scalar_flux = scalar_flux;
+        old_keff = keff;
+        old_fissrc = fissrc;
     }
 
     return 0;
