@@ -36,3 +36,7 @@
 *.sum
 *.out
 fort.*
+
+# Others
+build/
+.vscode/
