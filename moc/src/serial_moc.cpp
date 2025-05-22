@@ -209,14 +209,24 @@ int main(int argc, char* argv[]) {
     // Quadrature
     Quadrature quadrature = Quadrature(1, 1);
 
-    // Read ray spacings
+    // Read ray spacings and angular flux BC dimensions
+    std::vector<AngFluxBCAngle> angflux(quadrature.nazi() * 2);
     std::vector<double> ray_spacing;
     auto domain = file.getGroup("/MOC_Ray_Data/Domain_00001");
     ray_spacing.clear();
     for (const auto& objName : domain.listObjectNames()) {
+        // Loop over each angle group
         if (objName.substr(0, 6) == "Angle_") {
             HighFive::Group angleGroup = domain.getGroup(objName);
+            // Read ray spacing
             ray_spacing.push_back(angleGroup.getDataSet("spacing").read<double>());
+            // Read the BC sizes
+            int iazi = std::stoi(objName.substr(8)) - 1;
+            auto bc_sizes = angleGroup.getDataSet("BC_size").read<std::vector<int>>();
+            angflux[iazi]._faces.resize(6);
+            for (size_t iface = 0; iface < 6; iface++) {
+                angflux[iazi]._faces[iface] = AngFluxBCFace(bc_sizes[iface], quadrature.npol(), ng);
+            }
         }
     }
 
@@ -253,6 +263,7 @@ int main(int argc, char* argv[]) {
     int max_iters = 1000;
     double kconv = 1.0e-8;
     double fconv = 1.0e-8;
+    int refl_angle;
     for (int iteration = 0; iteration < max_iters; iteration++) {
 
         // Build source and zero the fluxes
@@ -269,8 +280,14 @@ int main(int argc, char* argv[]) {
             for (size_t ipol = 0; ipol < 1; ipol++) {
                 // Initialize the angular flux to 1.0
                 for (size_t ig = 0; ig < ng; ig++) {
-                    segflux[0][0][ig] = 0.0;
-                    segflux[1][ray._fsrs.size()][ig] = 0.0;
+                    segflux[0][0][ig] =
+                        ray._bc_index[0] == -1
+                        ? 0.0
+                        : angflux[ray.angle()]._faces[ray._bc_face[0]]._angflux[ray._bc_index[0]][ipol][ig];
+                    segflux[1][ray._fsrs.size()][ig] =
+                        ray._bc_index[1] == -1
+                        ? 0.0
+                        : angflux[ray.angle()]._faces[ray._bc_face[1]]._angflux[ray._bc_index[1]][ipol][ig];
                 }
                 // Sweep the segments
                 iseg2 = ray._fsrs.size();
@@ -302,6 +319,19 @@ int main(int argc, char* argv[]) {
                     }
                     // throw std::runtime_error("Not implemented: segflux[0][iseg1 + 1][ig] = segflux[0][iseg1][ig] + phid1 * 0.5;");
                     iseg2--;
+                }
+                // Store the angular flux
+                for (size_t ig = 0; ig < ng; ig++) {
+                    refl_angle = 0;
+                    if (ray._bc_index[0] != -1) {
+                        angflux[refl_angle]._faces[ray._bc_face[1]]._angflux[ray._bc_index[1]][ipol][ig] =
+                            segflux[0][iseg1][ig];
+                    }
+                    refl_angle = 0;
+                    if (ray._bc_index[1] != -1) {
+                        angflux[refl_angle]._faces[ray._bc_face[0]]._angflux[ray._bc_index[0]][ipol][ig] =
+                            segflux[1][0][ig];
+                    }
                 }
             }
         }
