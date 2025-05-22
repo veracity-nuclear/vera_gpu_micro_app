@@ -8,7 +8,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: petsc/petsc:latest
+      image: pflotran/petsc:v3.21.4
 
     env:
       CMAKE_BUILD_TYPE: Release
