@@ -260,7 +260,7 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Iteration         keff       knorm      fnorm" << std::endl;
     double relaxation = 1.0;
-    int max_iters = 1000;
+    int max_iters = 10000;
     double kconv = 1.0e-8;
     double fconv = 1.0e-8;
     int refl_angle;
@@ -322,12 +322,12 @@ int main(int argc, char* argv[]) {
                 }
                 // Store the angular flux
                 for (size_t ig = 0; ig < ng; ig++) {
-                    refl_angle = 0;
+                    refl_angle = quadrature.reflect(ray.angle(), ray._bc_face[1]);
                     if (ray._bc_index[0] != -1) {
                         angflux[refl_angle]._faces[ray._bc_face[1]]._angflux[ray._bc_index[1]][ipol][ig] =
                             segflux[0][iseg1][ig];
                     }
-                    refl_angle = 0;
+                    refl_angle = quadrature.reflect(ray.angle(), ray._bc_face[0]);
                     if (ray._bc_index[1] != -1) {
                         angflux[refl_angle]._faces[ray._bc_face[0]]._angflux[ray._bc_index[0]][ipol][ig] =
                             segflux[1][0][ig];

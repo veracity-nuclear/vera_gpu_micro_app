@@ -55,3 +55,7 @@ Quadrature::Quadrature(int nazi, int npol)
     _pol_angles(_gen_yamamoto(npol)),
     _pol_weights(_gen_yamamoto_weights(npol)) {
 }
+
+int Quadrature::reflect(int angle, int face) const {
+    return _nazi - angle - 1;
+}
