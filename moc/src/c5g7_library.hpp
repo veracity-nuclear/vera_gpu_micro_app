@@ -20,6 +20,7 @@ class c5g7_library {
         std::vector<double> self_scat(int set) const;
         double self_scat(int set, int group) const;
         std::vector<double> total(int set) const;
+        double total(int set, int group) const;
     private:
         std::vector<std::vector<double>> _abs;
         std::vector<std::vector<double>> _nufiss;

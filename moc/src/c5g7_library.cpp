@@ -129,3 +129,7 @@ double c5g7_library::self_scat(int set, int group) const {
 std::vector<double> c5g7_library::total(int set) const {
     return _total[set];
 }
+
+double c5g7_library::total(int set, int group) const {
+    return _total[set][group];
+}

@@ -70,25 +70,66 @@ std::vector<std::vector<double>> get_xstr(
     return xs;
 }
 
+std::vector<double> build_fissrc(
+    const c5g7_library& library,
+    const std::vector<int>& xsr_mat_id,
+    const std::vector<int>& xsrToFsrMap,
+    const std::vector<std::vector<double>>& scalar_flux
+) {
+    int nfsr = scalar_flux.size();
+    int ng = scalar_flux[0].size();
+    std::vector<double> fissrc(nfsr, 0.0);
+    int ixsr = 1;
+    for (size_t i = 0; i < nfsr; i++) {
+        int mat_id;
+        if (ixsr == xsrToFsrMap.size()) {
+            mat_id = xsr_mat_id[ixsr - 1];
+        } else if (i == xsrToFsrMap[ixsr]) {
+            mat_id = xsr_mat_id[ixsr];
+            ixsr++;
+        } else {
+            mat_id = xsr_mat_id[ixsr - 1];
+        }
+        for (int g = 0; g < ng; g++) {
+            fissrc[i] += library.nufiss(xsr_mat_id[i], g) * scalar_flux[i][g];
+        }
+    }
+    return fissrc;
+}
+
 std::vector<std::vector<double>> build_source(
     const c5g7_library& library,
-    const std::vector<std::vector<double>>& scalar_flux
+    const std::vector<int>& xsr_mat_id,
+    const std::vector<int>& xsrToFsrMap,
+    const std::vector<std::vector<double>>& scalar_flux,
+    const std::vector<double>& fissrc
 ) {
     int nfsr = scalar_flux.size();
     int ng = scalar_flux[0].size();
     std::vector<std::vector<double>> source;
     source.resize(nfsr);
+    int ixsr = 1;
     for (size_t i = 0; i < nfsr; i++) {
-        source[i].resize(ng);
-        double fissrc = 0.0;
-        for (int g = 0; g < ng; g++) {
-            fissrc += library.nufiss(i, g) * scalar_flux[i][g];
+        int mat_id;
+        if (ixsr == xsrToFsrMap.size()) {
+            mat_id = xsr_mat_id[ixsr - 1];
+        } else if (i == xsrToFsrMap[ixsr]) {
+            mat_id = xsr_mat_id[ixsr];
+            ixsr++;
+        } else {
+            mat_id = xsr_mat_id[ixsr - 1];
         }
+        source[i].resize(ng);
         for (int g = 0; g < ng; g++) {
-            source[i][g] = fissrc * library.chi(i, g);
+            source[i][g] = fissrc[i] * library.chi(mat_id, g);
             for (int g2 = 0; g2 < ng; g2++) {
-                source[i][g] += library.scat(i, g, g2) * scalar_flux[i][g2];
+                if (g != g2) {
+                    source[i][g] += library.scat(mat_id, g, g2) * scalar_flux[i][g2];
+                }
             }
+            double old_source = source[i][g];
+            source[i][g] += library.self_scat(mat_id, g) * scalar_flux[i][g];
+            source[i][g] /= (library.total(mat_id, g) * 4.0 * M_PI);
         }
     }
     return source;
@@ -160,7 +201,7 @@ int main(int argc, char* argv[]) {
     double phid1, phid2, phio1, phio2;
     std::vector<std::vector<double>> scalar_flux = fsr_flux;
     for (size_t i = 0; i < nfsr; ++i) {
-        std::fill(scalar_flux[i].begin(), scalar_flux[i].end(), 1.0);
+        std::fill(scalar_flux[i].begin(), scalar_flux[i].end(), 1.17);
     }
     auto old_scalar_flux = scalar_flux;
 
@@ -194,41 +235,65 @@ int main(int argc, char* argv[]) {
                 * M_PI * std::sin(quadrature.pol_angle(ipol));
         }
     }
+    std::vector<double> rsinpolang(quadrature.npol());
+    for (int ipol = 0; ipol < quadrature.npol(); ipol++) {
+        rsinpolang[ipol] = 1.0 / std::sin(quadrature.pol_angle(ipol));
+    }
 
-    for (int iteration = 0; iteration < 10; iteration++) {
+    // Miscellaneous
+    double pz = 1.0;
+    std::vector<double> vol(nfsr, 1.5876);
+    std::vector<double> fissrc = build_fissrc(library, xsr_mat_id, xsrToFsrMap, scalar_flux);
+    std::vector<double> old_fissrc = fissrc;
 
-        // Build source
-        auto source = build_source(library, old_scalar_flux);
+    for (int iteration = 0; iteration < 2; iteration++) {
+
+        // Build source and zero the fluxes
+        old_fissrc = fissrc;
+        auto fissrc = build_fissrc(library, xsr_mat_id, xsrToFsrMap, scalar_flux);
+        auto source = build_source(library, xsr_mat_id, xsrToFsrMap, old_scalar_flux, fissrc);
+        for (auto i = 0; i < nfsr; i++) {
+            for (auto g = 0; g < ng; g++) {
+                scalar_flux[i][g] = 0.0;
+            }
+        }
 
         // Sweep
         for (const auto& ray : rays) {
-            // Initialize the angular flux to 1.0
-            for (size_t ig = 0; ig < ng; ig++) {
-                segflux[0][0][ig] = 0.0;
-                segflux[1][max_segments][ig] = 0.0;
-            }
-            // Sweep the segments
-            int iseg2 = ray._fsrs.size();
-            for (int iseg1 = 0; iseg1 < ray._fsrs.size(); iseg1++) {
-                iseg2--;
-                int ireg1 = ray._fsrs[iseg1] - 1;
-                int ireg2 = ray._fsrs[iseg2] - 1;
-                // Sweep the groups
-                for (size_t ipol = 0; ipol < 1; ipol++) {
+            for (size_t ipol = 0; ipol < 1; ipol++) {
+                // Initialize the angular flux to 1.0
+                for (size_t ig = 0; ig < ng; ig++) {
+                    segflux[0][0][ig] = 0.0;
+                    segflux[1][ray._fsrs.size()][ig] = 0.0;
+                }
+                // Sweep the segments
+                int iseg2 = ray._fsrs.size();
+                for (int iseg1 = 0; iseg1 < ray._fsrs.size(); iseg1++) {
+                    int ireg1 = ray._fsrs[iseg1] - 1;
+                    int ireg2 = ray._fsrs[iseg2 - 1] - 1;
+                    // Sweep the groups
                     for (size_t ig = 0; ig < ng; ig++) {
                         phid1 = segflux[0][iseg1][ig] - source[ireg1][ig];
                         // TODO: tabulate exp
-                        phid1 *= std::exp(-xstr[ireg1][ig] * ray._segments[iseg1] * angle_weights[ray.angle()][ipol]);
+                        phid1 *= 1.0 - std::exp(-xstr[ireg1][ig] * ray._segments[iseg1] * rsinpolang[ipol]);
                         // TODO: use real weight
-                        segflux[0][iseg1 + 1][ig] = segflux[0][iseg1][ig] + phid1 * 0.5;
-                        scalar_flux[ireg1][ig] += phid1 * 0.5;
+                        segflux[0][iseg1 + 1][ig] = segflux[0][iseg1][ig] - phid1;
+                        scalar_flux[ireg1][ig] += phid1 * angle_weights[ray.angle()][ipol];
 
-                        phid2 = segflux[1][iseg2 + 1][ig] - source[ireg2][ig];
-                        phid2 *= std::exp(-xstr[ireg2][ig] * ray._segments[iseg2 + 1] * angle_weights[ray.angle()][ipol]);
-                        segflux[1][iseg2][ig] = segflux[0][iseg2 + 1][ig] + phid2 * 0.5;
-                        scalar_flux[ireg2][ig] += phid2 * 0.5;
+                        phid2 = segflux[1][iseg2][ig] - source[ireg2][ig];
+                        phid2 *= 1.0 - std::exp(-xstr[ireg2][ig] * ray._segments[iseg2 - 1] * rsinpolang[ipol]);
+                        segflux[1][iseg2 - 1][ig] = segflux[0][iseg2][ig] - phid2;
+                        scalar_flux[ireg2][ig] += phid2 * angle_weights[ray.angle()][ipol];
                     }
+                    iseg2--;
                 }
+            }
+        }
+
+        // Scale the flux
+        for (size_t i = 0; i < nfsr; ++i) {
+            for (size_t g = 0; g < ng; ++g) {
+                scalar_flux[i][g] = scalar_flux[i][g] / (xstr[i][g] * vol[i] / pz) + source[i][g] * 4.0 * M_PI;
             }
         }
 
