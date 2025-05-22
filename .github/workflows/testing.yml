@@ -8,58 +8,26 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: pflotran/petsc:v3.21.4
+      image: micahbest/vera-gpu:latest
 
     env:
       CMAKE_BUILD_TYPE: Release
-      HDF5_ROOT: /usr
-      HIGHFIVE_ROOT: /usr/local
-      PETSC_DIR: /usr/lib/petsc
-      LD_LIBRARY_PATH: /usr/lib/petsc/lib
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          apt-get update
-          apt-get install -y \
-            cmake \
-            build-essential \
-            libhdf5-dev
-
-      - name: Install Kokkos from source
-        run: |
-          git clone --branch develop https://github.com/kokkos/kokkos.git
-          cmake -DCMAKE_INSTALL_PREFIX=$HOME/kokkos \
-            -DKokkos_ENABLE_OPENMP=ON \
-            -B kokkos/build kokkos
-          cmake --build kokkos/build --parallel 6
-          cmake --install kokkos/build
-
-      - name: Install HighFive from source
-        run: |
-          git clone --recursive --branch v2.9.0 https://github.com/BlueBrain/HighFive.git
-          cmake -DCMAKE_INSTALL_PREFIX=$HOME/highfive \
-            -DHIGHFIVE_USE_BOOST=OFF \
-            -B HighFive/build HighFive
-          cmake --build HighFive/build --parallel 6
-          cmake --install HighFive/build
-
       - name: Configure project
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
-            -DCMAKE_C_COMPILER=/scratch/mpich-4.1/install/bin/mpicc \
-            -DCMAKE_CXX_COMPILER=/scratch/mpich-4.1/install/bin/mpicxx \
-            -DKokkos_DIR="$HOME/kokkos/lib/cmake/Kokkos" \
-            -DPETSC_DIR="/usr/lib/petsc" \
-            -DCMAKE_PREFIX_PATH="/usr:$HOME/highfive:$HOME/kokkos"
+            -DKokkos_DIR=/opt/kokkos/lib/cmake/Kokkos \
+            -DHighFive_DIR=/opt/highfive/lib/cmake/HighFive \
+            -DPETSc_DIR=/opt/petsc-arch/lib/cmake/PETSc
 
       - name: Build project
         run: |
-          cmake --build build --parallel 6
+          cmake --build build --parallel 4
 
       - name: Run tests
         run: |
           cd build
-          ctest -j 6 --output-on-failure
+          ctest -j4 --output-on-failure
