@@ -199,6 +199,7 @@ int main(int argc, char* argv[]) {
         std::fill(scalar_flux[i].begin(), scalar_flux[i].end(), 1.17);
     }
     auto old_scalar_flux = scalar_flux;
+    auto source = scalar_flux;
 
     // Quadrature
     Quadrature quadrature = Quadrature(1, 1);
@@ -242,12 +243,13 @@ int main(int argc, char* argv[]) {
     double old_keff = 1.0;
     std::vector<double> fissrc = build_fissrc(library, fsr_mat_id, scalar_flux, keff);
     std::vector<double> old_fissrc = fissrc;
+    int iseg1, iseg2, ireg1, ireg2;
 
     double relaxation = 1.0;
     for (int iteration = 0; iteration < 1000; iteration++) {
 
         // Build source and zero the fluxes
-        auto source = build_source(library, fsr_mat_id, old_scalar_flux, fissrc);
+        source = build_source(library, fsr_mat_id, old_scalar_flux, fissrc);
         for (auto i = 0; i < nfsr; i++) {
             for (auto g = 0; g < ng; g++) {
                 scalar_flux[i][g] = 0.0;
@@ -264,10 +266,10 @@ int main(int argc, char* argv[]) {
                     segflux[1][ray._fsrs.size()][ig] = 0.0;
                 }
                 // Sweep the segments
-                int iseg2 = ray._fsrs.size();
-                for (int iseg1 = 0; iseg1 < ray._fsrs.size(); iseg1++) {
-                    int ireg1 = ray._fsrs[iseg1] - 1;
-                    int ireg2 = ray._fsrs[iseg2 - 1] - 1;
+                iseg2 = ray._fsrs.size();
+                for (iseg1 = 0; iseg1 < ray._fsrs.size(); iseg1++) {
+                    ireg1 = ray._fsrs[iseg1] - 1;
+                    ireg2 = ray._fsrs[iseg2 - 1] - 1;
                     // Sweep the groups
                     for (size_t ig = 0; ig < ng; ig++) {
                         phid1 = segflux[0][iseg1][ig] - source[ireg1][ig];
@@ -306,14 +308,14 @@ int main(int argc, char* argv[]) {
         }
 
         // Print the scalar flux
-        std::cout << "Scalar Flux:" << std::endl;
-        for (size_t i = 0; i < scalar_flux.size(); ++i) {
-            std::cout << "FSR " << i << ": ";
-            for (size_t g = 0; g < scalar_flux[i].size(); ++g) {
-                std::cout << scalar_flux[i][g] << " ";
-            }
-            std::cout << std::endl;
-        }
+        // std::cout << "Scalar Flux:" << std::endl;
+        // for (size_t i = 0; i < scalar_flux.size(); ++i) {
+        //     std::cout << "FSR " << i << ": ";
+        //     for (size_t g = 0; g < scalar_flux[i].size(); ++g) {
+        //         std::cout << scalar_flux[i][g] << " ";
+        //     }
+        //     std::cout << std::endl;
+        // }
 
         // Update fission source and keff
         fissrc = build_fissrc(library, fsr_mat_id, scalar_flux, keff);
@@ -330,7 +332,6 @@ int main(int argc, char* argv[]) {
         for (size_t i = 0; i < scalar_flux.size(); ++i) {
             for (size_t g = 0; g < scalar_flux[i].size(); ++g) {
                 fnorm += (scalar_flux[i][g] - old_scalar_flux[i][g]) * library.nufiss(fsr_mat_id[i], g) * vol[i];
-                std::cout << "fnorm " << i << " " << g << " " << scalar_flux[i][g] << " " << old_scalar_flux[i][g] << " " << library.nufiss(fsr_mat_id[i], g) << " " << vol[i] << " " << fnorm << std::endl;
             }
         }
         double knorm = keff - old_keff;
