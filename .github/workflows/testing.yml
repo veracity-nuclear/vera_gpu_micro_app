@@ -28,6 +28,9 @@ jobs:
             build-essential \
             libhdf5-dev
 
+      - name: Debug MPI compilers
+        run: find / -name mpicc -o -name mpicxx 2>/dev/null
+
       - name: Print compiler locations
         run: |
           echo "CXX compiler: $(which mpicxx)"
