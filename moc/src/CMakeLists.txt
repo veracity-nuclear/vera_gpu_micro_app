@@ -15,11 +15,7 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Add the executable
-# Find all cpp files in the current directory
-file(GLOB CPP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
-
-# Add the executable using the globbed sources
-add_executable(serial_moc.exe ${CPP_SOURCES})
+add_executable(serial_moc.exe serial_moc.cpp quadrature.cpp c5g7_library.cpp)
 
 # Optional: Specify output directory
 # set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
