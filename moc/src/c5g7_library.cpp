@@ -1,6 +1,7 @@
 #include "c5g7_library.hpp"
 #include <fstream>
 #include <sstream>
+#include <iostream>
 
 c5g7_library::c5g7_library(std::string name) {
     std::ifstream input_file(name);
@@ -32,12 +33,12 @@ c5g7_library::c5g7_library(std::string name) {
         }
         if (line.substr(0, 7) == "XSMACRO") {
             iset += 1;
-            _abs[iset].resize(7);
-            _nufiss[iset].resize(7);
-            _fiss[iset].resize(7);
-            _chi[iset].resize(7);
+            _abs[iset].resize(7, 0.0);
+            _nufiss[iset].resize(7, 0.0);
+            _fiss[iset].resize(7, 0.0);
+            _chi[iset].resize(7, 0.0);
             _scat[iset].resize(7);
-            _total[iset].resize(7);
+            _total[iset].resize(7, 0.0);
             isetline = 0;
             iline++;
             continue;
@@ -48,18 +49,18 @@ c5g7_library::c5g7_library(std::string name) {
             if (!(ss >> _abs[iset][isetline] >> _nufiss[iset][isetline] >> _fiss[iset][isetline] >> _chi[iset][isetline])) {
                 throw std::runtime_error("Failed to parse line: " + line);
             }
-            _total[iset][isetline] = _abs[iset][isetline] + _fiss[iset][isetline];
+            _total[iset][isetline] += _abs[iset][isetline];
             isetline++;
         }
         else {
             int ig = isetline - 7;
-            _scat[iset][ig].resize(7);
+            _scat[iset][ig].resize(7, 0.0);
             std::stringstream ss(line);
-            if (!(ss >> _scat[iset][ig][0] >> _scat[iset][ig][1] >> _scat[iset][ig][2] >> _scat[iset][ig][3] >> _scat[iset][ig][4] >> _scat[iset][ig][5] >> _scat[iset][ig][6])) {
-                throw std::runtime_error("Failed to parse line: " + line);
-            }
-            for (const auto& val : _scat[iset][ig]) {
-                _total[iset][ig] += val;
+            for (int ig2 = 0; ig2 < 7; ig2++) {
+                if (!(ss >> _scat[iset][ig][ig2])) {
+                    throw std::runtime_error("Failed to parse line: " + line);
+                }
+                _total[iset][ig2] += _scat[iset][ig][ig2];
             }
             isetline++;
         }

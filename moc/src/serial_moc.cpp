@@ -64,7 +64,7 @@ std::vector<std::vector<double>> get_xstr(
         auto starting_fsr = xsrToFsrMap[i] - 1;
         auto stopping_fsr = i == xsrToFsrMap.size() - 1 ? num_fsr - 1 : xsrToFsrMap[i + 1] - 1;
         for (auto j = starting_fsr; j < stopping_fsr + 1; j++) {
-            xs[j] = library.abs(xsr_mat_id[i]);
+            xs[j] = library.total(xsr_mat_id[i]);
         }
     }
     return xs;
@@ -129,7 +129,11 @@ int main(int argc, char* argv[]) {
     int ng = fsr_flux[0].size();
 
     auto tmp_mat_id = file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xsr_mat_id").read<std::vector<double>>();
-    auto xsr_mat_id = std::vector<int>(tmp_mat_id.begin(), tmp_mat_id.end());
+    std::vector<int> xsr_mat_id;
+    xsr_mat_id.reserve(tmp_mat_id.size());
+    for (const auto& id : tmp_mat_id) {
+        xsr_mat_id.push_back(static_cast<int>(id) - 1);
+    }
     int nxsr = xsr_mat_id.size();
 
     // Initialize the library
