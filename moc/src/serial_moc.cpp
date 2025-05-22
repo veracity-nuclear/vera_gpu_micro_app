@@ -132,6 +132,7 @@ int main(int argc, char* argv[]) {
     // Read mapping data
     auto xsrToFsrMap = file.getDataSet("/MOC_Ray_Data/Domain_00001/XSRtoFSR_Map").read<std::vector<int>>();
     auto starting_xsr = file.getDataSet("/MOC_Ray_Data/Domain_00001/Starting XSR").read<int>();
+    auto xsr_vol = file.getDataSet("/MOC_Ray_Data/Domain_00001/XSR_Volume").read<std::vector<double>>();
 
     // Read solution data
     auto temp_fsr_flux = file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/fsr_flux").read<std::vector<std::vector<double>>>();
@@ -158,18 +159,20 @@ int main(int argc, char* argv[]) {
     int nxsr = xsr_mat_id.size();
 
     std::vector<int> fsr_mat_id(nfsr);
+    std::vector<double> vol(nfsr);
     int ixsr = 1;
     for (int i = 0; i < nfsr; i++) {
-        int mat_id;
+        int index;
         if (ixsr == xsrToFsrMap.size()) {
-            mat_id = xsr_mat_id[ixsr - 1];
+            index = ixsr - 1;
         } else if (i == xsrToFsrMap[ixsr]) {
-            mat_id = xsr_mat_id[ixsr];
+            index = ixsr;
             ixsr++;
         } else {
-            mat_id = xsr_mat_id[ixsr - 1];
+            index = ixsr - 1;
         }
-        fsr_mat_id[i] = mat_id;
+        fsr_mat_id[i] = xsr_mat_id[index];
+        vol[i] = xsr_vol[index];
     }
 
     // Initialize the library
@@ -238,7 +241,6 @@ int main(int argc, char* argv[]) {
 
     // Miscellaneous
     double pz = 1.0;
-    std::vector<double> vol(nfsr, 1.5876);
     double keff = 1.0;
     double old_keff = 1.0;
     std::vector<double> fissrc = build_fissrc(library, fsr_mat_id, scalar_flux, keff);
