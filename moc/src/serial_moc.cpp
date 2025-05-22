@@ -54,26 +54,20 @@ std::vector<LongRay> read_rays(HighFive::File file) {
 std::vector<std::vector<double>> get_xstr(
     const int num_fsr,
     const int starting_xsr,
-    const std::vector<int>& xsrToFsrMap,
-    const std::vector<int>& xsr_mat_id,
+    const std::vector<int>& fsr_mat_id,
     const c5g7_library& library
 ) {
     std::vector<std::vector<double>> xs;
     xs.resize(num_fsr);
-    for (auto i = 0; i < xsrToFsrMap.size(); i++) {
-        auto starting_fsr = xsrToFsrMap[i] - 1;
-        auto stopping_fsr = i == xsrToFsrMap.size() - 1 ? num_fsr - 1 : xsrToFsrMap[i + 1] - 1;
-        for (auto j = starting_fsr; j < stopping_fsr + 1; j++) {
-            xs[j] = library.total(xsr_mat_id[i]);
-        }
+    for (auto i = 0; i < fsr_mat_id.size(); i++) {
+        xs[i] = library.total(fsr_mat_id[i]);
     }
     return xs;
 }
 
 std::vector<double> build_fissrc(
     const c5g7_library& library,
-    const std::vector<int>& xsr_mat_id,
-    const std::vector<int>& xsrToFsrMap,
+    const std::vector<int>& fsr_mat_id,
     const std::vector<std::vector<double>>& scalar_flux,
     double keff
 ) {
@@ -82,17 +76,8 @@ std::vector<double> build_fissrc(
     std::vector<double> fissrc(nfsr, 0.0);
     int ixsr = 1;
     for (size_t i = 0; i < nfsr; i++) {
-        int mat_id;
-        if (ixsr == xsrToFsrMap.size()) {
-            mat_id = xsr_mat_id[ixsr - 1];
-        } else if (i == xsrToFsrMap[ixsr]) {
-            mat_id = xsr_mat_id[ixsr];
-            ixsr++;
-        } else {
-            mat_id = xsr_mat_id[ixsr - 1];
-        }
         for (int g = 0; g < ng; g++) {
-            fissrc[i] += library.nufiss(xsr_mat_id[i], g) * scalar_flux[i][g] / keff;
+            fissrc[i] += library.nufiss(fsr_mat_id[i], g) * scalar_flux[i][g] / keff;
         }
     }
     return fissrc;
@@ -100,8 +85,7 @@ std::vector<double> build_fissrc(
 
 std::vector<std::vector<double>> build_source(
     const c5g7_library& library,
-    const std::vector<int>& xsr_mat_id,
-    const std::vector<int>& xsrToFsrMap,
+    const std::vector<int>& fsr_mat_id,
     const std::vector<std::vector<double>>& scalar_flux,
     const std::vector<double>& fissrc
 ) {
@@ -111,30 +95,21 @@ std::vector<std::vector<double>> build_source(
     source.resize(nfsr);
     int ixsr = 1;
     for (size_t i = 0; i < nfsr; i++) {
-        int mat_id;
-        if (ixsr == xsrToFsrMap.size()) {
-            mat_id = xsr_mat_id[ixsr - 1];
-        } else if (i == xsrToFsrMap[ixsr]) {
-            mat_id = xsr_mat_id[ixsr];
-            ixsr++;
-        } else {
-            mat_id = xsr_mat_id[ixsr - 1];
-        }
         source[i].resize(ng);
         for (int g = 0; g < ng; g++) {
-            source[i][g] = fissrc[i] * library.chi(mat_id, g);
-            // std::cout << "mgfs " << i << " " << g << " " << i << " " << fissrc[i] << " " << library.chi(mat_id, g) << " : " << source[i][g] << std::endl;
+            source[i][g] = fissrc[i] * library.chi(fsr_mat_id[i], g);
+            // std::cout << "mgfs " << i << " " << g << " " << i << " " << fissrc[i] << " " << library.chi(fsr_mat_id[i], g) << " : " << source[i][g] << std::endl;
             for (int g2 = 0; g2 < ng; g2++) {
                 if (g != g2) {
-                    source[i][g] += library.scat(mat_id, g, g2) * scalar_flux[i][g2];
-                    // std::cout << "inscatter " << i << " " << g << " " << g2 << " " << " " << scalar_flux[i][g2] << " " << library.scat(mat_id, g, g2) << " : " << source[i][g] << std::endl;
+                    source[i][g] += library.scat(fsr_mat_id[i], g, g2) * scalar_flux[i][g2];
+                    // std::cout << "inscatter " << i << " " << g << " " << g2 << " " << " " << scalar_flux[i][g2] << " " << library.scat(fsr_mat_id[i], g, g2) << " : " << source[i][g] << std::endl;
                 }
             }
             double old_source = source[i][g];
-            source[i][g] += library.self_scat(mat_id, g) * scalar_flux[i][g];
-            // std::cout << "selfscatter a " << g << " " << i << " " << old_source << " " << library.self_scat(mat_id, g) << " " << scalar_flux[i][g] << " : " << source[i][g] << std::endl;
-            source[i][g] /= (library.total(mat_id, g) * 4.0 * M_PI);
-            // std::cout << "selfscatter b " << g << " " << i << " " << 4.0 * M_PI << " " << library.total(mat_id, g) <<  " : " << source[i][g] << std::endl;
+            source[i][g] += library.self_scat(fsr_mat_id[i], g) * scalar_flux[i][g];
+            // std::cout << "selfscatter a " << g << " " << i << " " << old_source << " " << library.self_scat(fsr_mat_id[i], g) << " " << scalar_flux[i][g] << " : " << source[i][g] << std::endl;
+            source[i][g] /= (library.total(fsr_mat_id[i], g) * 4.0 * M_PI);
+            // std::cout << "selfscatter b " << g << " " << i << " " << 4.0 * M_PI << " " << library.total(fsr_mat_id[i], g) <<  " : " << source[i][g] << std::endl;
         }
     }
     return source;
@@ -182,11 +157,26 @@ int main(int argc, char* argv[]) {
     }
     int nxsr = xsr_mat_id.size();
 
+    std::vector<int> fsr_mat_id(nfsr);
+    int ixsr = 1;
+    for (int i = 0; i < nfsr; i++) {
+        int mat_id;
+        if (ixsr == xsrToFsrMap.size()) {
+            mat_id = xsr_mat_id[ixsr - 1];
+        } else if (i == xsrToFsrMap[ixsr]) {
+            mat_id = xsr_mat_id[ixsr];
+            ixsr++;
+        } else {
+            mat_id = xsr_mat_id[ixsr - 1];
+        }
+        fsr_mat_id[i] = mat_id;
+    }
+
     // Initialize the library
     c5g7_library library("../data/c5g7.xsl");
 
     // Get XS
-    auto xstr = get_xstr(nfsr, starting_xsr, xsrToFsrMap, xsr_mat_id, library);
+    auto xstr = get_xstr(nfsr, starting_xsr, fsr_mat_id, library);
 
     // Allocate segment flux array
     std::vector<std::vector<std::vector<double>>> segflux;
@@ -250,13 +240,14 @@ int main(int argc, char* argv[]) {
     std::vector<double> vol(nfsr, 1.5876);
     double keff = 1.0;
     double old_keff = 1.0;
-    std::vector<double> fissrc = build_fissrc(library, xsr_mat_id, xsrToFsrMap, scalar_flux, keff);
+    std::vector<double> fissrc = build_fissrc(library, fsr_mat_id, scalar_flux, keff);
     std::vector<double> old_fissrc = fissrc;
 
+    double relaxation = 1.0;
     for (int iteration = 0; iteration < 1000; iteration++) {
 
         // Build source and zero the fluxes
-        auto source = build_source(library, xsr_mat_id, xsrToFsrMap, old_scalar_flux, fissrc);
+        auto source = build_source(library, fsr_mat_id, old_scalar_flux, fissrc);
         for (auto i = 0; i < nfsr; i++) {
             for (auto g = 0; g < ng; g++) {
                 scalar_flux[i][g] = 0.0;
@@ -326,7 +317,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Update fission source and keff
-        fissrc = build_fissrc(library, xsr_mat_id, xsrToFsrMap, scalar_flux, keff);
+        fissrc = build_fissrc(library, fsr_mat_id, scalar_flux, keff);
         double numerator = 0.0;
         double denominator = 0.0;
         for (size_t i = 0; i < nfsr; ++i) {
@@ -334,14 +325,13 @@ int main(int argc, char* argv[]) {
             denominator += old_fissrc[i] * vol[i];
         }
         keff = old_keff * numerator / denominator / double(vol.size());
-        fissrc = build_fissrc(library, xsr_mat_id, xsrToFsrMap, scalar_flux, keff);
 
         // Calculate fission source convergence metric
         double fnorm = 0.0;
         for (size_t i = 0; i < scalar_flux.size(); ++i) {
             for (size_t g = 0; g < scalar_flux[i].size(); ++g) {
-                fnorm += (scalar_flux[i][g] - old_scalar_flux[i][g]) * library.nufiss(xsr_mat_id[i], g) * vol[i];
-                std::cout << "fnorm " << i << " " << g << " " << scalar_flux[i][g] << " " << old_scalar_flux[i][g] << " " << library.nufiss(xsr_mat_id[i], g) << " " << vol[i] << " " << fnorm << std::endl;
+                fnorm += (scalar_flux[i][g] - old_scalar_flux[i][g]) * library.nufiss(fsr_mat_id[i], g) * vol[i];
+                std::cout << "fnorm " << i << " " << g << " " << scalar_flux[i][g] << " " << old_scalar_flux[i][g] << " " << library.nufiss(fsr_mat_id[i], g) << " " << vol[i] << " " << fnorm << std::endl;
             }
         }
         double knorm = keff - old_keff;
@@ -353,8 +343,13 @@ int main(int argc, char* argv[]) {
         }
 
         // Save the old values
-        old_scalar_flux = scalar_flux;
+        for (size_t i = 0; i < nfsr; ++i) {
+            for (size_t g = 0; g < ng; ++g) {
+                old_scalar_flux[i][g] = relaxation * scalar_flux[i][g] + (1.0 - relaxation) * old_scalar_flux[i][g];
+            }
+        }
         old_keff = keff;
+        fissrc = build_fissrc(library, fsr_mat_id, scalar_flux, keff);
         old_fissrc = fissrc;
     }
 
