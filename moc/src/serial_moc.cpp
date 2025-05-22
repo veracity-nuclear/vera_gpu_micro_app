@@ -163,14 +163,31 @@ int main(int argc, char* argv[]) {
     // Quadrature
     Quadrature quadrature = Quadrature(1, 1);
 
+    // Read ray spacings
+    std::vector<double> ray_spacing;
+    auto domain = file.getGroup("/MOC_Ray_Data/Domain_00001");
+    ray_spacing.clear();
+    for (const auto& objName : domain.listObjectNames()) {
+        if (objName.substr(0, 6) == "Angle_") {
+            HighFive::Group angleGroup = domain.getGroup(objName);
+            ray_spacing.push_back(angleGroup.getDataSet("spacing").read<double>());
+        }
+    }
+
+    // If no spacing found, use a default value
+    if (ray_spacing.empty()) {
+        std::cout << "Warning: No ray spacing data found, using default value of 0.03" << std::endl;
+        ray_spacing.push_back(0.03);
+    }
+
     // Build weights
     std::vector<std::vector<double>> angle_weights;
     angle_weights.resize(1);
-    for (int i = 0; i < angle_weights.size(); i++) {
-        angle_weights[i].resize(1);
-        for (int j = 0; j < angle_weights[i].size(); j++) {
-            angle_weights[i][j] = 0.03 * quadrature.azi_weight(i) * quadrature.pol_weight(j)
-                * M_PI * std::sin(quadrature.pol_angle(j));
+    for (int iazi = 0; iazi < angle_weights.size(); iazi++) {
+        angle_weights[iazi].resize(1);
+        for (int ipol = 0; ipol < angle_weights[iazi].size(); ipol++) {
+            angle_weights[iazi][ipol] = ray_spacing[iazi] * quadrature.azi_weight(iazi) * quadrature.pol_weight(ipol)
+                * M_PI * std::sin(quadrature.pol_angle(ipol));
         }
     }
 
