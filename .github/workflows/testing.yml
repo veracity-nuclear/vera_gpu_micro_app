@@ -7,6 +7,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: petsc/petsc:latest
 
     env:
       CMAKE_BUILD_TYPE: Release
@@ -24,22 +26,6 @@ jobs:
             build-essential \
             libhdf5-dev \
             mpich
-
-      - name: Install PETSc from source
-        run: |
-          git clone --branch release https://gitlab.com/petsc/petsc.git && cd petsc
-          ./configure \
-            --with-cc=mpicc \
-            --with-cxx=mpicxx \
-            --with-fc=0 \
-            --with-debugging=0 \
-            --with-rtlib=libc \
-            --download-mpich \
-            --download-hdf5 \
-            --download-hwloc \
-            --download-f2cblaslapack \
-            --COPTFLAGS="-O3 -march=native" \
-            --CXXOPTFLAGS="-O3 -march=native"
 
       - name: Install Kokkos from source
         run: |
