@@ -6,13 +6,18 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 
 # Allow setting default search paths for find_package()
 if(NOT DEFINED CMAKE_PREFIX_PATH)
-    set(CMAKE_PREFIX_PATH "$ENV{HDF5_ROOT};$ENV{HIGHFIVE_ROOT}" CACHE STRING "Default CMAKE_PREFIX_PATH")
+    set(CMAKE_PREFIX_PATH "$ENV{HDF5_ROOT};$ENV{HIGHFIVE_ROOT};$ENV{KOKKOS_ROOT};$ENV{PETSC_DIR}" CACHE STRING "Default CMAKE_PREFIX_PATH")
 endif()
 
 # --------------------
 # Find Kokkos (user-installed)
 # --------------------
 find_package(Kokkos REQUIRED)
+
+# --------------------
+# Find PETSc (via custom module or manual)
+# --------------------
+find_package(PETSc REQUIRED)
 
 # --------------------
 # Find HighFive (via custom module or manual)

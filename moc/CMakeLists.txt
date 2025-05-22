@@ -4,6 +4,7 @@ add_library(moc_lib
 
 target_link_libraries(moc_lib
     Kokkos::kokkos
+    PETSc::PETSc
 )
 
 add_executable(moc_exec

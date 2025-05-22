@@ -49,6 +49,7 @@ jobs:
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
             -DKokkos_DIR="$HOME/kokkos/lib/cmake/Kokkos" \
+            -DPETSC_DIR="/usr/lib/petsc" \
             -DCMAKE_PREFIX_PATH="/usr:$HOME/highfive:$HOME/kokkos"
 
       - name: Build project

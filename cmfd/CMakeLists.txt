@@ -4,6 +4,7 @@ add_library(cmfd_lib
 
 target_link_libraries(cmfd_lib
     Kokkos::kokkos
+    PETSc::PETSc
 )
 
 add_executable(cmfd_exec

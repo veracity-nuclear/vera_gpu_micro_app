@@ -4,6 +4,7 @@ add_library(subchannel_lib
 
 target_link_libraries(subchannel_lib
     Kokkos::kokkos
+    PETSc::PETSc
 )
 
 add_executable(subchannel_exec
