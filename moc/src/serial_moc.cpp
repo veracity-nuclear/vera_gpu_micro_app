@@ -133,6 +133,7 @@ int main(int argc, char* argv[]) {
     auto xsrToFsrMap = file.getDataSet("/MOC_Ray_Data/Domain_00001/XSRtoFSR_Map").read<std::vector<int>>();
     auto starting_xsr = file.getDataSet("/MOC_Ray_Data/Domain_00001/Starting XSR").read<int>();
     auto xsr_vol = file.getDataSet("/MOC_Ray_Data/Domain_00001/XSR_Volume").read<std::vector<double>>();
+    auto pz = file.getDataSet("/MOC_Ray_Data/Domain_00001/plane_height").read<double>();
 
     // Read solution data
     auto temp_fsr_flux = file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/fsr_flux").read<std::vector<std::vector<double>>>();
@@ -240,7 +241,6 @@ int main(int argc, char* argv[]) {
     }
 
     // Miscellaneous
-    double pz = 1.0;
     double keff = 1.0;
     double old_keff = 1.0;
     std::vector<double> fissrc = build_fissrc(library, fsr_mat_id, scalar_flux, keff);
