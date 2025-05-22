@@ -28,14 +28,6 @@ jobs:
             build-essential \
             libhdf5-dev
 
-      - name: Debug MPI compilers
-        run: find / -name mpicc -o -name mpicxx 2>/dev/null
-
-      - name: Print compiler locations
-        run: |
-          echo "CXX compiler: $(which mpicxx)"
-          echo "C compiler: $(which mpicc)"
-
       - name: Install Kokkos from source
         run: |
           git clone --branch develop https://github.com/kokkos/kokkos.git
@@ -57,8 +49,8 @@ jobs:
       - name: Configure project
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
-            -DCMAKE_C_COMPILER=mpicc \
-            -DCMAKE_CXX_COMPILER=mpicxx \
+            -DCMAKE_C_COMPILER=/scratch/mpich-4.1/install/bin/mpicc \
+            -DCMAKE_CXX_COMPILER=/scratch/mpich-4.1/install/bin/mpicxx \
             -DKokkos_DIR="$HOME/kokkos/lib/cmake/Kokkos" \
             -DPETSC_DIR="/usr/lib/petsc" \
             -DCMAKE_PREFIX_PATH="/usr:$HOME/highfive:$HOME/kokkos"
