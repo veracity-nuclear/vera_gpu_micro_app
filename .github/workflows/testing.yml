@@ -14,6 +14,8 @@ jobs:
       CMAKE_BUILD_TYPE: Release
       HDF5_ROOT: /usr
       HIGHFIVE_ROOT: /usr/local
+      PETSC_DIR: /usr/lib/petsc
+      LD_LIBRARY_PATH: /usr/lib/petsc/lib
 
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +50,8 @@ jobs:
       - name: Configure project
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
+            -DCMAKE_C_COMPILER=/usr/lib/petsc/bin/mpicc \
+            -DCMAKE_CXX_COMPILER=/usr/lib/petsc/bin/mpicxx \
             -DKokkos_DIR="$HOME/kokkos/lib/cmake/Kokkos" \
             -DPETSC_DIR="/usr/lib/petsc" \
             -DCMAKE_PREFIX_PATH="/usr:$HOME/highfive:$HOME/kokkos"
