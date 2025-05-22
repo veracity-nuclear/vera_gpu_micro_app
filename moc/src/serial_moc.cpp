@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <iomanip>
 #include <H5Cpp.h>
 #include "highfive/highfive.hpp"
 #include "long_ray.hpp"
@@ -247,8 +248,12 @@ int main(int argc, char* argv[]) {
     std::vector<double> old_fissrc = fissrc;
     int iseg1, iseg2, ireg1, ireg2;
 
+    std::cout << "Iteration         keff       knorm      fnorm" << std::endl;
     double relaxation = 1.0;
-    for (int iteration = 0; iteration < 1000; iteration++) {
+    int max_iters = 1000;
+    double kconv = 1.0e-8;
+    double fconv = 1.0e-8;
+    for (int iteration = 0; iteration < max_iters; iteration++) {
 
         // Build source and zero the fluxes
         source = build_source(library, fsr_mat_id, old_scalar_flux, fissrc);
@@ -338,8 +343,11 @@ int main(int argc, char* argv[]) {
         }
         double knorm = keff - old_keff;
         fnorm = sqrt(fnorm * fnorm / double(fissrc.size()));
-        std::cout << "keff = " << keff << " knorm = " << knorm << " fnorm = " << fnorm << std::endl;
-        if (fabs(knorm) < 1.0e-8 && fabs(fnorm) < 1.0e-8) {
+        std::cout << " " << std::setw(8) << iteration
+                  << "   " << std::fixed << std::setprecision(8) << keff
+                  << "   " << std::scientific << std::setprecision(2) << knorm
+                  << "   " << fnorm << std::endl;
+        if (fabs(knorm) < kconv && fabs(fnorm) < fconv) {
             std::cout << "Converged after " << iteration + 1 << " iterations." << std::endl;
             break;
         }
