@@ -4,12 +4,14 @@
 #include "highfive/highfive.hpp"
 #include "long_ray.hpp"
 #include "c5g7_library.hpp"
+#include "quadrature.hpp"
 
 std::vector<LongRay> read_rays(HighFive::File file) {
     auto domain = file.getGroup("/MOC_Ray_Data/Domain_00001");
 
     // Count the rays
     auto nrays = 0;
+    auto nangles = 0;
     for (size_t i = 0; i < domain.listObjectNames().size(); i++) {
         std::string objName = domain.listObjectNames()[i];
         if (objName.substr(0, 6) == "Angle_") {
@@ -19,8 +21,10 @@ std::vector<LongRay> read_rays(HighFive::File file) {
                     nrays++;
                 }
             }
+            nangles++;
         }
     }
+    nangles /= 2;
 
     // Set up the rays
     std::vector<LongRay> rays;
@@ -32,10 +36,11 @@ std::vector<LongRay> read_rays(HighFive::File file) {
 
             // Read the radians data from the angle group
             auto radians = angleGroup.getDataSet("Radians").read<double>();
+            auto angleIndex = (std::stoi(objName.substr(8)) - 1) % nangles;
             for (const auto& rayName : angleGroup.listObjectNames()) {
                 if (rayName.substr(0, 8) == "LongRay_") {
                     auto rayGroup = angleGroup.getGroup(rayName);
-                    rays.push_back(LongRay(rayGroup, radians));
+                    rays.push_back(LongRay(rayGroup, angleIndex, radians));
                     nrays++;
                 }
             }
@@ -156,7 +161,18 @@ int main(int argc, char* argv[]) {
     auto old_scalar_flux = scalar_flux;
 
     // Quadrature
-    std::vector<double> sinpolang = {0.5};
+    Quadrature quadrature = Quadrature(1, 1);
+
+    // Build weights
+    std::vector<std::vector<double>> angle_weights;
+    angle_weights.resize(1);
+    for (int i = 0; i < angle_weights.size(); i++) {
+        angle_weights[i].resize(1);
+        for (int j = 0; j < angle_weights[i].size(); j++) {
+            angle_weights[i][j] = 0.03 * quadrature.azi_weight(i) * quadrature.pol_weight(j)
+                * M_PI * std::sin(quadrature.pol_angle(j));
+        }
+    }
 
     for (int iteration = 0; iteration < 10; iteration++) {
 
@@ -181,13 +197,13 @@ int main(int argc, char* argv[]) {
                     for (size_t ig = 0; ig < ng; ig++) {
                         phid1 = segflux[0][iseg1][ig] - source[ireg1][ig];
                         // TODO: tabulate exp
-                        phid1 *= std::exp(-xstr[ireg1][ig] * ray._segments[iseg1] * sinpolang[ipol]);
+                        phid1 *= std::exp(-xstr[ireg1][ig] * ray._segments[iseg1] * angle_weights[ray.angle()][ipol]);
                         // TODO: use real weight
                         segflux[0][iseg1 + 1][ig] = segflux[0][iseg1][ig] + phid1 * 0.5;
                         scalar_flux[ireg1][ig] += phid1 * 0.5;
 
                         phid2 = segflux[1][iseg2 + 1][ig] - source[ireg2][ig];
-                        phid2 *= std::exp(-xstr[ireg2][ig] * ray._segments[iseg2 + 1] * sinpolang[ipol]);
+                        phid2 *= std::exp(-xstr[ireg2][ig] * ray._segments[iseg2 + 1] * angle_weights[ray.angle()][ipol]);
                         segflux[1][iseg2][ig] = segflux[0][iseg2 + 1][ig] + phid2 * 0.5;
                         scalar_flux[ireg2][ig] += phid2 * 0.5;
                     }
