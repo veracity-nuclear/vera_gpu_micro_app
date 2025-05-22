@@ -45,3 +45,6 @@ fort.*
 
 # VS Code stuff
 .vscode
+
+# Others
+build/
