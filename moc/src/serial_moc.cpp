@@ -276,7 +276,6 @@ int main(int argc, char* argv[]) {
                         phid1 *= 1.0 - std::exp(-xstr[ireg1][ig] * ray._segments[iseg1] * rsinpolang[ipol]);
                         // std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
                         // << " : " << phid1 << std::endl;
-                        // TODO: use real weight
                         segflux[0][iseg1 + 1][ig] = segflux[0][iseg1][ig] - phid1;
                         // std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
                         //     << segflux[0][iseg1 + 1][ig] << " " << segflux[0][iseg1][ig] << " " << phid1
