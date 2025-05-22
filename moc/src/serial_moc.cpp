@@ -74,7 +74,8 @@ std::vector<double> build_fissrc(
     const c5g7_library& library,
     const std::vector<int>& xsr_mat_id,
     const std::vector<int>& xsrToFsrMap,
-    const std::vector<std::vector<double>>& scalar_flux
+    const std::vector<std::vector<double>>& scalar_flux,
+    double keff
 ) {
     int nfsr = scalar_flux.size();
     int ng = scalar_flux[0].size();
@@ -91,7 +92,7 @@ std::vector<double> build_fissrc(
             mat_id = xsr_mat_id[ixsr - 1];
         }
         for (int g = 0; g < ng; g++) {
-            fissrc[i] += library.nufiss(xsr_mat_id[i], g) * scalar_flux[i][g];
+            fissrc[i] += library.nufiss(xsr_mat_id[i], g) * scalar_flux[i][g] / keff;
         }
     }
     return fissrc;
@@ -243,14 +244,16 @@ int main(int argc, char* argv[]) {
     // Miscellaneous
     double pz = 1.0;
     std::vector<double> vol(nfsr, 1.5876);
-    std::vector<double> fissrc = build_fissrc(library, xsr_mat_id, xsrToFsrMap, scalar_flux);
+    double keff = 1.0;
+    double old_keff = 1.0;
+    std::vector<double> fissrc = build_fissrc(library, xsr_mat_id, xsrToFsrMap, scalar_flux, keff);
     std::vector<double> old_fissrc = fissrc;
 
-    for (int iteration = 0; iteration < 2; iteration++) {
+    for (int iteration = 0; iteration < 1000; iteration++) {
 
         // Build source and zero the fluxes
+        old_keff = keff;
         old_fissrc = fissrc;
-        auto fissrc = build_fissrc(library, xsr_mat_id, xsrToFsrMap, scalar_flux);
         auto source = build_source(library, xsr_mat_id, xsrToFsrMap, old_scalar_flux, fissrc);
         for (auto i = 0; i < nfsr; i++) {
             for (auto g = 0; g < ng; g++) {
@@ -308,10 +311,23 @@ int main(int argc, char* argv[]) {
         }
 
         // Save the old scalar flux
+        old_scalar_flux = scalar_flux;
+
+        // Update fission source and keff
+        fissrc = build_fissrc(library, xsr_mat_id, xsrToFsrMap, scalar_flux, keff);
+        double numerator = 0.0;
+        double denominator = 0.0;
         for (size_t i = 0; i < nfsr; ++i) {
-            for (size_t g = 0; g < ng; ++g) {
-                old_scalar_flux[i][g] = 0.5 * old_scalar_flux[i][g] + 0.5 * scalar_flux[i][g];
-            }
+            numerator += fissrc[i] * vol[i];
+            denominator += old_fissrc[i] * vol[i];
+        }
+        keff = old_keff * numerator / denominator / double(vol.size());
+        fissrc = build_fissrc(library, xsr_mat_id, xsrToFsrMap, scalar_flux, keff);
+        std::cout << "keff " << keff << " " << old_keff << std::endl;
+
+        if (fabs(keff - old_keff) < 1.0e-8) {
+            std::cout << "Converged after " << iteration << " iterations." << std::endl;
+            break;
         }
     }
 
