@@ -22,7 +22,8 @@ jobs:
           sudo apt-get install -y \
             cmake \
             build-essential \
-            libhdf5-dev
+            libhdf5-dev \
+            mpich
 
       - name: Install PETSc from source
         run: |
