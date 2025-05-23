@@ -3,8 +3,11 @@
 
 std::vector<double> _gen_cheby(int n) {
     std::vector<double> cheby(n);
-    for (int i = 0; i < n; i++) {
-        cheby[i] = std::cos(M_PI * (1.0 - double(2 * (2 * n - i) + 1)) / double(4 * n));
+    for (int i = 1; i <= n/2; i++) {
+        cheby[i - 1] = std::cos(M_PI * (1.0 - double(2 * (2 * n - i) + 1) / double(4 * n)));
+    }
+    for (int i = 0; i < n/2; i++) {
+        cheby[n - i - 1] = -cheby[i];
     }
     return cheby;
 }

@@ -206,29 +206,30 @@ int main(int argc, char* argv[]) {
     auto old_scalar_flux = scalar_flux;
     auto source = scalar_flux;
 
-    // Quadrature
-    Quadrature quadrature = Quadrature(1, 1);
-
     // Read ray spacings and angular flux BC dimensions
-    std::vector<AngFluxBCAngle> angflux(quadrature.nazi() * 2);
+    std::vector<AngFluxBCAngle> angflux;
     std::vector<double> ray_spacing;
     auto domain = file.getGroup("/MOC_Ray_Data/Domain_00001");
+    int npol = file.getDataSet("/MOC_Ray_Data/Polar_Radians").getDimensions()[0];
+    int nazi = 0;
     ray_spacing.clear();
     for (const auto& objName : domain.listObjectNames()) {
         // Loop over each angle group
         if (objName.substr(0, 6) == "Angle_") {
             HighFive::Group angleGroup = domain.getGroup(objName);
+            nazi++;
             // Read ray spacing
             ray_spacing.push_back(angleGroup.getDataSet("spacing").read<double>());
             // Read the BC sizes
             int iazi = std::stoi(objName.substr(8)) - 1;
             auto bc_sizes = angleGroup.getDataSet("BC_size").read<std::vector<int>>();
-            angflux[iazi]._faces.resize(6);
-            for (size_t iface = 0; iface < 6; iface++) {
-                angflux[iazi]._faces[iface] = AngFluxBCFace(bc_sizes[iface], quadrature.npol(), ng);
+            angflux.push_back(AngFluxBCAngle(4));
+            for (size_t iface = 0; iface < 4; iface++) {
+                angflux[iazi]._faces[iface] = AngFluxBCFace(bc_sizes[iface], npol, ng);
             }
         }
     }
+    Quadrature quadrature = Quadrature(nazi, npol);
 
     // If no spacing found, use a default value
     if (ray_spacing.empty()) {
@@ -238,9 +239,9 @@ int main(int argc, char* argv[]) {
 
     // Build weights
     std::vector<std::vector<double>> angle_weights;
-    angle_weights.resize(1);
+    angle_weights.reserve(quadrature.nazi());
     for (int iazi = 0; iazi < angle_weights.size(); iazi++) {
-        angle_weights[iazi].resize(quadrature.npol());
+        angle_weights.push_back(std::vector<double>(quadrature.npol(), 0.0));
         for (int ipol = 0; ipol < angle_weights[iazi].size(); ipol++) {
             angle_weights[iazi][ipol] = ray_spacing[iazi] * quadrature.azi_weight(iazi) * quadrature.pol_weight(ipol)
                 * M_PI * std::sin(quadrature.pol_angle(ipol));
