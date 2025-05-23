@@ -20,7 +20,7 @@ jobs:
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
             -DKokkos_DIR=/opt/kokkos/lib/cmake/Kokkos \
-            -DHighFive_DIR=/opt/highfive/share/HighFive/CMake/HighFive \
+            -DHighFive_DIR=/opt/highfive/share/HighFive/CMake \
             -DPETSc_DIR=/opt/petsc-arch/lib/cmake/PETSc
 
       - name: Build project
