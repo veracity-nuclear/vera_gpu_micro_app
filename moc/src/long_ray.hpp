@@ -8,12 +8,15 @@ class AngFluxBCFace
     public:
         std::vector<std::vector<std::vector<double>>> _angflux;
         AngFluxBCFace() = default;
-        AngFluxBCFace(int nbc, int npol, int ng) {
+        AngFluxBCFace(int nbc, int npol, int ng) {_resize_angflux(nbc, npol, ng, 0.0);};
+        AngFluxBCFace(int nbc, int npol, int ng, double val) {_resize_angflux(nbc, npol, ng, val);};
+    private:
+        void _resize_angflux(int nbc, int npol, int ng, double val) {
             _angflux.resize(nbc);
             for (size_t i = 0; i < nbc; i++) {
                 _angflux[i].resize(npol);
                 for (size_t j = 0; j < npol; j++) {
-                    _angflux[i][j].resize(ng, 0.0);
+                    _angflux[i][j].resize(ng, val);
                 }
             }
         };

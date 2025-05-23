@@ -25,7 +25,6 @@ std::vector<LongRay> read_rays(HighFive::File file) {
             nangles++;
         }
     }
-    nangles /= 2;
 
     // Set up the rays
     std::vector<LongRay> rays;
@@ -37,7 +36,7 @@ std::vector<LongRay> read_rays(HighFive::File file) {
 
             // Read the radians data from the angle group
             auto radians = angleGroup.getDataSet("Radians").read<double>();
-            auto angleIndex = (std::stoi(objName.substr(8)) - 1) % nangles;
+            auto angleIndex = std::stoi(objName.substr(8)) - 1;
             for (const auto& rayName : angleGroup.listObjectNames()) {
                 if (rayName.substr(0, 8) == "LongRay_") {
                     auto rayGroup = angleGroup.getGroup(rayName);
@@ -240,7 +239,7 @@ int main(int argc, char* argv[]) {
     // Build weights
     std::vector<std::vector<double>> angle_weights;
     angle_weights.reserve(quadrature.nazi());
-    for (int iazi = 0; iazi < angle_weights.size(); iazi++) {
+    for (int iazi = 0; iazi < quadrature.nazi(); iazi++) {
         angle_weights.push_back(std::vector<double>(quadrature.npol(), 0.0));
         for (int ipol = 0; ipol < angle_weights[iazi].size(); ipol++) {
             angle_weights[iazi][ipol] = ray_spacing[iazi] * quadrature.azi_weight(iazi) * quadrature.pol_weight(ipol)
