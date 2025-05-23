@@ -240,7 +240,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::vector<double>> angle_weights;
     angle_weights.resize(1);
     for (int iazi = 0; iazi < angle_weights.size(); iazi++) {
-        angle_weights[iazi].resize(1);
+        angle_weights[iazi].resize(quadrature.npol());
         for (int ipol = 0; ipol < angle_weights[iazi].size(); ipol++) {
             angle_weights[iazi][ipol] = ray_spacing[iazi] * quadrature.azi_weight(iazi) * quadrature.pol_weight(ipol)
                 * M_PI * std::sin(quadrature.pol_angle(ipol));
