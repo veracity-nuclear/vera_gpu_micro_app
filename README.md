@@ -2,8 +2,8 @@
 
 ## Table of Contents
 1. [Project Overview](#project-overview)
-2. [Dependency Installation](#installing-dependencies)
-3. [Package Installation and Build](#package-configuration-and-build)
+2. [Dependency Installation](#dependency-installation)
+3. [Package Configuration and Build](#package-configuration-and-build)
 4. [Developer Tools](#developer-tools)
 
 
