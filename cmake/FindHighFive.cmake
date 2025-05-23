@@ -14,12 +14,12 @@ find_path(HighFive_INCLUDE_DIR
 find_package(HDF5 REQUIRED COMPONENTS C HL)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(HighFive REQUIRED_VARS HighFive_INCLUDE_DIR)
+find_package_handle_standard_args(HighFive)
 
 if(HighFive_FOUND AND NOT TARGET HighFive::HighFive)
   add_library(HighFive::HighFive INTERFACE IMPORTED)
   set_target_properties(HighFive::HighFive PROPERTIES
-    INTERFACE_INCLUDE_DIRECTORIES "${HighFive_INCLUDE_DIR}"
+    INTERFACE_INCLUDE_DIRECTORIES "/opt/highfive/include;${HighFive_INCLUDE_DIR}"
     INTERFACE_LINK_LIBRARIES "${HDF5_C_LIBRARIES};${HDF5_HL_LIBRARIES}"
   )
 endif()
