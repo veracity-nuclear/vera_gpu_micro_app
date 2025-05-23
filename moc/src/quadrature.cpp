@@ -2,7 +2,8 @@
 #include <cmath>
 
 std::vector<double> _gen_cheby(int n) {
-    std::vector<double> cheby(n);
+    std::vector<double> cheby;
+    cheby.reserve(n);
     for (int i = 1; i <= n/2; i++) {
         cheby[i - 1] = std::cos(M_PI * (1.0 - double(2 * (2 * n - i) + 1) / double(4 * n)));
     }
@@ -60,5 +61,5 @@ Quadrature::Quadrature(int nazi, int npol)
 }
 
 int Quadrature::reflect(int angle) const {
-    return _nazi - angle - 1;
+    return angle % 2 == 0 ? angle + 1 : angle - 1;
 }
