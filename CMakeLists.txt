@@ -16,7 +16,7 @@ find_package(Kokkos REQUIRED)
 find_package(PETSc REQUIRED)
 
 # Find HighFive (via custom module or manual)
-find_package(HighFive CONFIG REQUIRED)
+find_package(HighFive REQUIRED)
 
 # GTest via FetchContent (if not system-installed)
 include(FetchContent)
