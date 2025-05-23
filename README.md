@@ -3,7 +3,7 @@
 ## Table of Contents
 1. [Project Overview](#project-overview)
 2. [Dependency Installation](#installing-dependencies)
-3. [Package Installation](#installation-instructions)
+3. [Package Installation and Build](#package-installation-and-build)
 4. [Developer Tools](#developer-tools)
 
 
@@ -141,3 +141,27 @@ cmake --build build -j4
 
 
 ## Developer Tools
+
+### Testing the micro-apps
+```
+cd build
+ctest -j4 --output-on-failure
+```
+
+### Running package executables
+Execute these commands from the `~/vera_gpu_micro_app/build` directory to run micro-app executables. These can be renamed in
+`~/vera_gpu_micro_apps/<micro-app>/CMakeLists.txt` as well.
+
+```
+# MOC
+./moc/moc_exec
+
+# CMFD
+./cmfd/cmfd_exec
+
+# Conduction
+./conduction/conduction_exec
+
+# Subchannel
+./subchannel/subchannel_exec
+```
