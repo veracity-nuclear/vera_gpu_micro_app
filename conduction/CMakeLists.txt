@@ -3,6 +3,7 @@ add_library(conduction_lib
 )
 
 target_link_libraries(conduction_lib
+    HighFive::HighFive
     Kokkos::kokkos
     PETSc::PETSc
 )
@@ -16,11 +17,15 @@ target_link_libraries(conduction_exec conduction_lib)
 enable_testing()
 add_executable(conduction_tests
     tests/test_main.cpp
+    tests/test_highfive.cpp
+    tests/test_kokkos.cpp
     tests/test_petsc.cpp
 )
 
 target_link_libraries(conduction_tests
     conduction_lib
+    HighFive::HighFive
+    Kokkos::kokkos
     PETSc::PETSc
     GTest::gtest
     GTest::gtest_main

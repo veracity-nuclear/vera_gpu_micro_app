@@ -3,8 +3,8 @@ add_library(cmfd_lib
 )
 
 target_link_libraries(cmfd_lib
+    HighFive::HighFive
     Kokkos::kokkos
-    PETSc::PETSc
 )
 
 add_executable(cmfd_exec
@@ -20,6 +20,8 @@ add_executable(cmfd_tests
 
 target_link_libraries(cmfd_tests
     cmfd_lib
+    HighFive::HighFive
+    Kokkos::kokkos
     GTest::gtest
     GTest::gtest_main
 )

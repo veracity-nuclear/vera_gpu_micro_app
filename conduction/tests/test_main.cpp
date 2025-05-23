@@ -1,3 +1,5 @@
+#include <petscsys.h>
+#include <Kokkos_Core.hpp>
 #include <gtest/gtest.h>
 
 TEST(BasicTest, AssertTrue) {
@@ -13,6 +15,19 @@ TEST(BasicTest, AssertEqual) {
 }
 
 int main(int argc, char **argv) {
+
+    // Initialize PETSc
+    PetscInitialize(&argc, &argv, nullptr, nullptr);
+
+    // Initialize Kokkos
+    Kokkos::initialize(argc, argv);
+
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
+
+    // Finalize Kokkos
+    Kokkos::finalize();
+
+    // Finalize PETSc
+    PetscFinalize();
 }

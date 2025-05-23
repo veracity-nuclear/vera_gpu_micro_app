@@ -3,8 +3,8 @@ add_library(moc_lib
 )
 
 target_link_libraries(moc_lib
+    HighFive::HighFive
     Kokkos::kokkos
-    PETSc::PETSc
 )
 
 add_executable(moc_exec
@@ -20,6 +20,8 @@ add_executable(moc_tests
 
 target_link_libraries(moc_tests
     moc_lib
+    HighFive::HighFive
+    Kokkos::kokkos
     GTest::gtest
     GTest::gtest_main
 )

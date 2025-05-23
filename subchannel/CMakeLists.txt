@@ -3,6 +3,7 @@ add_library(subchannel_lib
 )
 
 target_link_libraries(subchannel_lib
+    HighFive::HighFive
     Kokkos::kokkos
     PETSc::PETSc
 )
@@ -20,6 +21,9 @@ add_executable(subchannel_tests
 
 target_link_libraries(subchannel_tests
     subchannel_lib
+    HighFive::HighFive
+    Kokkos::kokkos
+    PETSc::PETSc
     GTest::gtest
     GTest::gtest_main
 )
