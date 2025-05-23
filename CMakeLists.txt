@@ -21,7 +21,7 @@ find_package(HighFive REQUIRED)
 if(NOT TARGET HighFive::HighFive)
     add_library(HighFive::HighFive INTERFACE IMPORTED)
     set_target_properties(HighFive::HighFive PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "/opt/highfive/include/highfive"
+        INTERFACE_INCLUDE_DIRECTORIES "/opt/highfive/include"
     )
 endif()
 
