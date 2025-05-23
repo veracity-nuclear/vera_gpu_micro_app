@@ -5,10 +5,8 @@ std::vector<double> _gen_cheby(int n) {
     std::vector<double> cheby;
     cheby.reserve(n);
     for (int i = 1; i <= n/2; i++) {
-        cheby[i - 1] = std::cos(M_PI * (1.0 - double(2 * (2 * n - i) + 1) / double(4 * n)));
-    }
-    for (int i = 0; i < n/2; i++) {
-        cheby[n - i - 1] = -cheby[i];
+        cheby.push_back(std::cos(M_PI * (1.0 - double(2 * (2 * n - i) + 1) / double(4 * n))));
+        cheby.push_back(-cheby.back());
     }
     return cheby;
 }
