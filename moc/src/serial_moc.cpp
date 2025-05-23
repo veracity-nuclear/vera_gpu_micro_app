@@ -277,7 +277,7 @@ int main(int argc, char* argv[]) {
 
         // Sweep
         for (const auto& ray : rays) {
-            for (size_t ipol = 0; ipol < 1; ipol++) {
+            for (size_t ipol = 0; ipol < quadrature.npol(); ipol++) {
                 // Initialize the angular flux to 1.0
                 for (size_t ig = 0; ig < ng; ig++) {
                     segflux[0][0][ig] =
@@ -322,12 +322,12 @@ int main(int argc, char* argv[]) {
                 }
                 // Store the angular flux
                 for (size_t ig = 0; ig < ng; ig++) {
-                    refl_angle = quadrature.reflect(ray.angle(), ray._bc_face[1]);
+                    refl_angle = quadrature.reflect(ray.angle());
                     if (ray._bc_index[0] != -1) {
                         angflux[refl_angle]._faces[ray._bc_face[1]]._angflux[ray._bc_index[1]][ipol][ig] =
                             segflux[0][iseg1][ig];
                     }
-                    refl_angle = quadrature.reflect(ray.angle(), ray._bc_face[0]);
+                    refl_angle = quadrature.reflect(ray.angle());
                     if (ray._bc_index[1] != -1) {
                         angflux[refl_angle]._faces[ray._bc_face[0]]._angflux[ray._bc_index[0]][ipol][ig] =
                             segflux[1][0][ig];

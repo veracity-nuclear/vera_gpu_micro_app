@@ -15,7 +15,7 @@ class Quadrature{
         double azi_weight(int i) const { return _azi_weights[i]; }
         std::vector<double> pol_weights() const { return _pol_weights; }
         double pol_weight(int i) const { return _pol_weights[i]; }
-        int reflect(int angle, int face) const;
+        int reflect(int angle) const;
     private:
         int _nazi;
         int _npol;

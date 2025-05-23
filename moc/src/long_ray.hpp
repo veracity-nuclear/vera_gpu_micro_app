@@ -47,6 +47,7 @@ class LongRay
       _bc_face(group.getDataSet("BC_face").read<std::vector<int>>()),
       _bc_index(group.getDataSet("BC_index").read<std::vector<int>>())
       {
+        // Read starting points, converting to pairs (since we don't care about the Z coordinate)
         auto points_data = group.getDataSet("Starting_Point").read<std::vector<double>>();
         _starting_points.reserve(points_data.size() / 3);
         for (int i = 0; i < points_data.size(); i += 3) {
