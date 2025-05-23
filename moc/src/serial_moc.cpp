@@ -201,7 +201,7 @@ int main(int argc, char* argv[]) {
     double phid1, phid2, phio1, phio2;
     std::vector<std::vector<double>> scalar_flux = fsr_flux;
     for (size_t i = 0; i < nfsr; ++i) {
-        std::fill(scalar_flux[i].begin(), scalar_flux[i].end(), 1.17);
+        std::fill(scalar_flux[i].begin(), scalar_flux[i].end(), 1.0);
     }
     auto old_scalar_flux = scalar_flux;
     auto source = scalar_flux;
