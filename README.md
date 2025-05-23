@@ -131,6 +131,13 @@ rm -rf HighFive
 ```
 
 
-## Package Installation
+## Package Configuration and Build
+From `~/vera_gpu_micro_app` execute the following commands to configure and build the micro-apps.
+```
+mkdir -p build
+cmake -B build
+cmake --build build -j4
+```
+
 
 ## Developer Tools
