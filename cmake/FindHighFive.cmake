@@ -10,6 +10,7 @@ add_library(HighFive::HighFive INTERFACE IMPORTED)
 # Specify include directories
 target_include_directories(HighFive::HighFive INTERFACE
   "/opt/highfive/include"
+  ${HDF5_INCLUDE_DIRS}
 )
 
 # Link both HDF5 C and high-level libraries using traditional variables
