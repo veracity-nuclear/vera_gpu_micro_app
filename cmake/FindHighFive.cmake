@@ -1,17 +1,25 @@
-# Attempt to locate HighFiveConfig.cmake first (modern CMake)
-find_package(HighFive CONFIG QUIET)
+# Fallback CMake module to locate HighFive and export a proper target
 
-if(NOT HighFive_FOUND)
-    # Fallback to manual find if CONFIG mode fails
-    find_path(HighFive_INCLUDE_DIR HighFive/H5Easy.hpp)
-    find_library(HighFive_LIBRARY NAMES highfive)
+# Locate HighFive headers
+find_path(HighFive_INCLUDE_DIR
+  NAMES highfive/H5File.hpp
+  PATHS
+    $ENV{HIGHFIVE_ROOT}
+    ${CMAKE_PREFIX_PATH}
+  PATH_SUFFIXES include
+  DOC "Path to HighFive include dir"
+)
 
-    if(HighFive_INCLUDE_DIR AND HighFive_LIBRARY)
-        set(HighFive_FOUND TRUE)
-        add_library(HighFive::HighFive UNKNOWN IMPORTED)
-        set_target_properties(HighFive::HighFive PROPERTIES
-            IMPORTED_LOCATION "${HighFive_LIBRARY}"
-            INTERFACE_INCLUDE_DIRECTORIES "${HighFive_INCLUDE_DIR}"
-        )
-    endif()
+# Locate HDF5 (required dependency)
+find_package(HDF5 REQUIRED COMPONENTS C HL)
+
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(HighFive REQUIRED_VARS HighFive_INCLUDE_DIR)
+
+if(HighFive_FOUND AND NOT TARGET HighFive::HighFive)
+  add_library(HighFive::HighFive INTERFACE IMPORTED)
+  set_target_properties(HighFive::HighFive PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${HighFive_INCLUDE_DIR}"
+    INTERFACE_LINK_LIBRARIES "${HDF5_C_LIBRARIES};${HDF5_HL_LIBRARIES}"
+  )
 endif()

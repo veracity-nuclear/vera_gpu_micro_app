@@ -18,14 +18,6 @@ find_package(PETSc REQUIRED)
 # Find HighFive (via custom module or manual)
 find_package(HighFive REQUIRED)
 
-if(NOT TARGET HighFive::HighFive)
-    add_library(HighFive::HighFive INTERFACE IMPORTED)
-    set_target_properties(HighFive::HighFive PROPERTIES
-      INTERFACE_INCLUDE_DIRECTORIES "/opt/highfive/include"
-      INTERFACE_LINK_LIBRARIES "${HDF5_LIBRARIES}"
-    )
-endif()
-
 # GTest via FetchContent (if not system-installed)
 include(FetchContent)
 FetchContent_Declare(
