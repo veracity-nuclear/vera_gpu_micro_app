@@ -12,7 +12,8 @@ target_include_directories(HighFive::HighFive INTERFACE
   "/opt/highfive/include"
 )
 
-# Link HDF5 libraries transitively (using variables for broad compatibility)
+# Link both HDF5 C and high-level libraries transitively via imported targets
 target_link_libraries(HighFive::HighFive INTERFACE
-  ${HDF5_LIBRARIES}
+  HDF5::HDF5_C
+  HDF5::HDF5_HL
 )
