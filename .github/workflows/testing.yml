@@ -14,7 +14,6 @@ jobs:
       CMAKE_BUILD_TYPE: Release
       HIGHFIVE_ROOT: /opt/highfive
       KOKKOS_ROOT: /opt/kokkos
-      PETSC_DIR: /opt/petsc-arch
 
     steps:
       - uses: actions/checkout@v4
