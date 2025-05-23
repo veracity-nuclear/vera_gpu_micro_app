@@ -10,15 +10,12 @@ jobs:
     container:
       image: micahbest/vera-gpu:latest
 
-    env:
-      CMAKE_BUILD_TYPE: Release
-
     steps:
       - uses: actions/checkout@v4
 
       - name: Configure project
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+          cmake -B build
 
       - name: Build project
         run: |

@@ -1,5 +1,4 @@
 # Fallback CMake module to locate HighFive and export an interface target
-# Hardcode include path to /opt/highfive/include
 
 # Locate HDF5 (required dependency)
 find_package(HDF5 REQUIRED COMPONENTS C HL)
