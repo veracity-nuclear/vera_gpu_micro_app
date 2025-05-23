@@ -15,7 +15,7 @@ std::vector<double> _gen_cheby(int n) {
 std::vector<double> _gen_cheby_weights(int n) {
     std::vector<double> cheby_weights(n);
     for (int i = 0; i < n; i++) {
-        cheby_weights[i] = 1.0 / double(n);
+        cheby_weights[i] = 2.0 / double(n);
     }
     return cheby_weights;
 }
