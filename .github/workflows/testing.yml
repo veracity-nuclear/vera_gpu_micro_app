@@ -18,9 +18,7 @@ jobs:
 
       - name: Configure project
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
-            -DCMAKE_PREFIX_PATH="/opt/kokkos;/opt/highfive;/opt/petsc" \
-            -DPETSc_DIR=/opt/petsc/arch-linux-opt/lib/cmake/PETSc
+          cmake -B build -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
 
       - name: Build project
         run: |
