@@ -23,11 +23,13 @@ int main(int argc, char **argv) {
     Kokkos::initialize(argc, argv);
 
     ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+    int test_result = RUN_ALL_TESTS();
 
     // Finalize Kokkos
     Kokkos::finalize();
 
     // Finalize PETSc
     PetscFinalize();
+
+    return test_result;
 }
