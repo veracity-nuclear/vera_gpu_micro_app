@@ -164,16 +164,20 @@ int main(int argc, char* argv[]) {
     int ixsr = 1;
     for (int i = 0; i < nfsr; i++) {
         int index;
+        int nReg;
         if (ixsr == xsrToFsrMap.size()) {
             index = ixsr - 1;
+            nReg = nfsr - xsrToFsrMap[ixsr - 1] + 1;
         } else if (i == xsrToFsrMap[ixsr]) {
             index = ixsr;
+            nReg = xsrToFsrMap[ixsr] - xsrToFsrMap[ixsr - 1];
             ixsr++;
         } else {
+            nReg = xsrToFsrMap[ixsr] - xsrToFsrMap[ixsr - 1];
             index = ixsr - 1;
         }
         fsr_mat_id[i] = xsr_mat_id[index];
-        vol[i] = xsr_vol[index];
+        vol[i] = xsr_vol[index] / nReg;
     }
 
     // Initialize the library
@@ -264,6 +268,7 @@ int main(int argc, char* argv[]) {
     double kconv = 1.0e-8;
     double fconv = 1.0e-8;
     int refl_angle;
+    auto old_angflux = angflux;
     for (int iteration = 0; iteration < max_iters; iteration++) {
 
         // Build source and zero the fluxes
@@ -283,11 +288,11 @@ int main(int argc, char* argv[]) {
                     segflux[0][0][ig] =
                         ray._bc_index[0] == -1
                         ? 0.0
-                        : angflux[ray.angle()]._faces[ray._bc_face[0]]._angflux[ray._bc_index[0]][ipol][ig];
+                        : old_angflux[ray.angle()]._faces[ray._bc_face[0]]._angflux[ray._bc_index[0]][ipol][ig];
                     segflux[1][ray._fsrs.size()][ig] =
                         ray._bc_index[1] == -1
                         ? 0.0
-                        : angflux[ray.angle()]._faces[ray._bc_face[1]]._angflux[ray._bc_index[1]][ipol][ig];
+                        : old_angflux[ray.angle()]._faces[ray._bc_face[1]]._angflux[ray._bc_index[1]][ipol][ig];
                 }
                 // Sweep the segments
                 iseg2 = ray._fsrs.size();
@@ -359,10 +364,12 @@ int main(int argc, char* argv[]) {
         double numerator = 0.0;
         double denominator = 0.0;
         for (size_t i = 0; i < nfsr; ++i) {
-            numerator += fissrc[i] * vol[i];
-            denominator += old_fissrc[i] * vol[i];
+            for (size_t g = 0; g < ng; ++g) {
+                numerator += scalar_flux[i][g] * library.nufiss(fsr_mat_id[i], g) * vol[i];
+                denominator += old_scalar_flux[i][g] * library.nufiss(fsr_mat_id[i], g) * vol[i];
+            }
         }
-        keff = old_keff * numerator / denominator / double(vol.size());
+        keff = old_keff * numerator / denominator;
 
         // Calculate fission source convergence metric
         double fnorm = 0.0;
@@ -391,6 +398,7 @@ int main(int argc, char* argv[]) {
         old_keff = keff;
         fissrc = build_fissrc(library, fsr_mat_id, scalar_flux, keff);
         old_fissrc = fissrc;
+        old_angflux = angflux;
     }
 
     return 0;
