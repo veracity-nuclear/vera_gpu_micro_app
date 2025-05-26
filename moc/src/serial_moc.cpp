@@ -5,7 +5,6 @@
 #include "highfive/highfive.hpp"
 #include "long_ray.hpp"
 #include "c5g7_library.hpp"
-#include "quadrature.hpp"
 
 std::vector<LongRay> read_rays(HighFive::File file) {
     auto domain = file.getGroup("/MOC_Ray_Data/Domain_00001");
@@ -117,6 +116,10 @@ std::vector<std::vector<double>> build_source(
     return source;
 }
 
+int reflect_angle(int angle) {
+    return angle % 2 == 0 ? angle + 1 : angle - 1;
+}
+
 int main(int argc, char* argv[]) {
     if (argc != 2) {
         std::cerr << "Usage: " << argv[0] << " <filename>" << std::endl;
@@ -211,8 +214,12 @@ int main(int argc, char* argv[]) {
     std::vector<AngFluxBCAngle> angflux;
     std::vector<double> ray_spacing;
     auto domain = file.getGroup("/MOC_Ray_Data/Domain_00001");
-    int npol = file.getDataSet("/MOC_Ray_Data/Polar_Radians").getDimensions()[0];
-    int nazi = 0;
+    auto polar_angles = file.getDataSet("/MOC_Ray_Data/Polar_Radians").read<std::vector<double>>();
+    auto polar_weights = file.getDataSet("/MOC_Ray_Data/Polar_Weights").read<std::vector<double>>();
+    auto azi_angles = file.getDataSet("/MOC_Ray_Data/Azimuthal_Radians").read<std::vector<double>>();
+    auto azi_weights = file.getDataSet("/MOC_Ray_Data/Azimuthal_Weights").read<std::vector<double>>();
+    int npol = polar_angles.size();
+    int nazi = azi_angles.size();
     ray_spacing.clear();
     for (const auto& objName : domain.listObjectNames()) {
         // Loop over each angle group
@@ -230,7 +237,6 @@ int main(int argc, char* argv[]) {
             }
         }
     }
-    Quadrature quadrature = Quadrature(nazi, npol);
 
     // If no spacing found, use a default value
     if (ray_spacing.empty()) {
@@ -240,17 +246,17 @@ int main(int argc, char* argv[]) {
 
     // Build weights
     std::vector<std::vector<double>> angle_weights;
-    angle_weights.reserve(quadrature.nazi());
-    for (int iazi = 0; iazi < quadrature.nazi(); iazi++) {
-        angle_weights.push_back(std::vector<double>(quadrature.npol(), 0.0));
+    angle_weights.reserve(nazi);
+    for (int iazi = 0; iazi < nazi; iazi++) {
+        angle_weights.push_back(std::vector<double>(npol, 0.0));
         for (int ipol = 0; ipol < angle_weights[iazi].size(); ipol++) {
-            angle_weights[iazi][ipol] = ray_spacing[iazi] * quadrature.azi_weight(iazi) * quadrature.pol_weight(ipol)
-                * M_PI * std::sin(quadrature.pol_angle(ipol));
+            angle_weights[iazi][ipol] = ray_spacing[iazi] * azi_weights[iazi] * polar_weights[ipol]
+                * M_PI * std::sin(polar_angles[ipol]);
         }
     }
-    std::vector<double> rsinpolang(quadrature.npol());
-    for (int ipol = 0; ipol < quadrature.npol(); ipol++) {
-        rsinpolang[ipol] = 1.0 / std::sin(quadrature.pol_angle(ipol));
+    std::vector<double> rsinpolang(npol);
+    for (int ipol = 0; ipol < npol; ipol++) {
+        rsinpolang[ipol] = 1.0 / std::sin(polar_angles[ipol]);
     }
 
     // Miscellaneous
@@ -280,7 +286,7 @@ int main(int argc, char* argv[]) {
 
         // Sweep
         for (const auto& ray : rays) {
-            for (size_t ipol = 0; ipol < quadrature.npol(); ipol++) {
+            for (size_t ipol = 0; ipol < npol; ipol++) {
                 // Initialize the angular flux to 1.0
                 for (size_t ig = 0; ig < ng; ig++) {
                     segflux[0][0][ig] =
@@ -325,12 +331,12 @@ int main(int argc, char* argv[]) {
                 }
                 // Store the angular flux
                 for (size_t ig = 0; ig < ng; ig++) {
-                    refl_angle = quadrature.reflect(ray.angle());
+                    refl_angle = reflect_angle(ray.angle());
                     if (ray._bc_index[0] != -1) {
                         angflux[refl_angle]._faces[ray._bc_face[1]]._angflux[ray._bc_index[1]][ipol][ig] =
                             segflux[0][iseg1][ig];
                     }
-                    refl_angle = quadrature.reflect(ray.angle());
+                    refl_angle = reflect_angle(ray.angle());
                     if (ray._bc_index[1] != -1) {
                         angflux[refl_angle]._faces[ray._bc_face[0]]._angflux[ray._bc_index[0]][ipol][ig] =
                             segflux[1][0][ig];
