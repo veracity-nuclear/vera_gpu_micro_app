@@ -78,6 +78,7 @@ std::vector<double> build_fissrc(
         if (library.is_fissile(fsr_mat_id[i])) {
             for (int g = 0; g < ng; g++) {
                 fissrc[i] += library.nufiss(fsr_mat_id[i], g) * scalar_flux[i][g] / keff;
+                // std::cout << i << " " << g << " " << fissrc[i] << " " << library.nufiss(fsr_mat_id[i], g) / keff << " " << scalar_flux[i][g] << std::endl;
             }
         }
     }
@@ -141,7 +142,7 @@ int main(int argc, char* argv[]) {
     for (auto& xsr : xsrToFsrMap) {
         xsr -= starting_xsr;
     }
-    auto xsr_vol = file.getDataSet("/MOC_Ray_Data/Domain_00001/XSR_Volume").read<std::vector<double>>();
+    auto fsr_vol = file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read<std::vector<double>>();
     auto pz = file.getDataSet("/MOC_Ray_Data/Domain_00001/plane_height").read<double>();
 
     // Read solution data
@@ -169,16 +170,13 @@ int main(int argc, char* argv[]) {
     int nxsr = xsr_mat_id.size();
 
     std::vector<int> fsr_mat_id(nfsr);
-    std::vector<double> fsr_vol(nfsr);
     int ixsr = 0;
     int nReg;
     for (int i = 0; i < nfsr; i++) {
         if (i == xsrToFsrMap[ixsr]) {
             ixsr++;
-            nReg = xsrToFsrMap[ixsr] - xsrToFsrMap[ixsr - 1];
         }
         fsr_mat_id[i] = xsr_mat_id[ixsr - 1];
-        fsr_vol[i] = xsr_vol[ixsr - 1] / nReg;
     }
 
     // Initialize the library
@@ -273,6 +271,7 @@ int main(int argc, char* argv[]) {
     double fconv = 1.0e-8;
     int refl_angle;
     auto old_angflux = angflux;
+    int debug_angle = 0;
     for (int iteration = 0; iteration < max_iters; iteration++) {
 
         // Build source and zero the fluxes
@@ -286,6 +285,9 @@ int main(int argc, char* argv[]) {
 
         // Sweep
         for (const auto& ray : rays) {
+            // if (ray.angle() == 2) {
+            //     throw std::runtime_error("Beginning of ray loop");
+            // }
             for (size_t ipol = 0; ipol < npol; ipol++) {
                 // Initialize the angular flux to 1.0
                 for (size_t ig = 0; ig < ng; ig++) {
@@ -306,27 +308,49 @@ int main(int argc, char* argv[]) {
                     // Sweep the groups
                     for (size_t ig = 0; ig < ng; ig++) {
                         phid1 = segflux[0][iseg1][ig] - source[ireg1][ig];
-                        // std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " " << segflux[0][iseg1][ig] << " " << source[ireg1][ig] << " " << phid1 << std::endl;
+                        // if (ray.angle() == debug_angle) {
+                        //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " " << segflux[0][iseg1][ig] << " " << source[ireg1][ig] << " " << phid1 << std::endl;
+                        // }
                         // TODO: tabulate exp
                         phid1 *= 1.0 - std::exp(-xstr[ireg1][ig] * ray._segments[iseg1] * rsinpolang[ipol]);
-                        // std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
-                        // << " : " << phid1 << std::endl;
+                        // if (ray.angle() == debug_angle) {
+                        //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
+                        //         << 1.0 - std::exp(-xstr[ireg1][ig] * ray._segments[iseg1] * rsinpolang[ipol]) << " : " << phid1 << std::endl;
+                        // }
                         segflux[0][iseg1 + 1][ig] = segflux[0][iseg1][ig] - phid1;
-                        // std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
-                        //     << segflux[0][iseg1 + 1][ig] << " " << segflux[0][iseg1][ig] << " " << phid1
-                        //     << std::endl;
+                        // if (ray.angle() == debug_angle) {
+                        //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
+                        //         << segflux[0][iseg1 + 1][ig] << " " << segflux[0][iseg1][ig] << " " << phid1
+                        //         << std::endl;
+                        // }
                         scalar_flux[ireg1][ig] += phid1 * angle_weights[ray.angle()][ipol];
-                        // std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
-                        //     << scalar_flux[ireg1][ig] << " " << phid1 << " " << angle_weights[ray.angle()][ipol] << std::endl;
+                        // if (ray.angle() == debug_angle) {
+                        //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
+                        //         << scalar_flux[ireg1][ig] << " " << phid1 << " " << angle_weights[ray.angle()][ipol] << std::endl;
+                        // }
 
                         phid2 = segflux[1][iseg2][ig] - source[ireg2][ig];
+                        // if (ray.angle() == debug_angle) {
+                        //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " " << segflux[1][iseg2][ig] << " " << source[ireg2][ig] << " " << phid2 << std::endl;
+                        // }
                         phid2 *= 1.0 - std::exp(-xstr[ireg2][ig] * ray._segments[iseg2 - 1] * rsinpolang[ipol]);
+                        // if (ray.angle() == debug_angle) {
+                        //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " "
+                        //     << 1.0 - std::exp(-xstr[ireg2][ig] * ray._segments[iseg2 - 1] * rsinpolang[ipol]) << " "
+                        //     << " : " << phid2 << std::endl;
+                        // }
                         segflux[1][iseg2 - 1][ig] = segflux[1][iseg2][ig] - phid2;
+                        // if (ray.angle() == debug_angle) {
+                        //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " "
+                        //         << segflux[1][iseg2 - 1][ig] << " " << segflux[1][iseg2][ig] << " " << phid2 << std::endl;
+                        // }
                         scalar_flux[ireg2][ig] += phid2 * angle_weights[ray.angle()][ipol];
-                        // std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " "
-                        //     << scalar_flux[ireg2][ig] << " " << phid2 << " " << angle_weights[ray.angle()][ipol] << std::endl;
+                        // if (ray.angle() == debug_angle) {
+                        //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " "
+                        //         << scalar_flux[ireg2][ig] << " " << phid2 << " " << angle_weights[ray.angle()][ipol] << std::endl;
+                        // }
                     }
-                    // throw std::runtime_error("Not implemented: segflux[0][iseg1 + 1][ig] = segflux[0][iseg1][ig] + phid1 * 0.5;");
+                    // throw std::runtime_error("end of first segment");
                     iseg2--;
                 }
                 // Store the angular flux
@@ -342,13 +366,15 @@ int main(int argc, char* argv[]) {
                             segflux[1][0][ig];
                     }
                 }
+                // throw std::runtime_error("End of segment loop");
             }
+            // throw std::runtime_error("End of polar loop");
         }
 
         // Scale the flux
         for (size_t i = 0; i < nfsr; ++i) {
             for (size_t g = 0; g < ng; ++g) {
-                // std::cout << "scale " << scalar_flux[i][g] << " " << xstr[i][g] << " " << vol[i] << " " << pz << " " << source[i][g] << " " << 4.0 * M_PI << std::endl;
+                // std::cout << i << " " << g << " scale " << scalar_flux[i][g] << " " << xstr[i][g] << " " << fsr_vol[i] << " " << pz << " " << source[i][g] << " " << 4.0 * M_PI << std::endl;
                 scalar_flux[i][g] = scalar_flux[i][g] / (xstr[i][g] * fsr_vol[i] / pz) + source[i][g] * 4.0 * M_PI;
             }
         }
