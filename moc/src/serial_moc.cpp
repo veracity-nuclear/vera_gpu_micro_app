@@ -315,7 +315,7 @@ int main(int argc, char* argv[]) {
 
                         phid2 = segflux[1][iseg2][ig] - source[ireg2][ig];
                         phid2 *= 1.0 - std::exp(-xstr[ireg2][ig] * ray._segments[iseg2 - 1] * rsinpolang[ipol]);
-                        segflux[1][iseg2 - 1][ig] = segflux[0][iseg2][ig] - phid2;
+                        segflux[1][iseg2 - 1][ig] = segflux[1][iseg2][ig] - phid2;
                         scalar_flux[ireg2][ig] += phid2 * angle_weights[ray.angle()][ipol];
                         // std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " "
                         //     << scalar_flux[ireg2][ig] << " " << phid2 << " " << angle_weights[ray.angle()][ipol] << std::endl;
