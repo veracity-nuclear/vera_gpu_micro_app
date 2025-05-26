@@ -76,8 +76,10 @@ std::vector<double> build_fissrc(
     std::vector<double> fissrc(nfsr, 0.0);
     int ixsr = 1;
     for (size_t i = 0; i < nfsr; i++) {
-        for (int g = 0; g < ng; g++) {
-            fissrc[i] += library.nufiss(fsr_mat_id[i], g) * scalar_flux[i][g] / keff;
+        if (library.is_fissile(fsr_mat_id[i])) {
+            for (int g = 0; g < ng; g++) {
+                fissrc[i] += library.nufiss(fsr_mat_id[i], g) * scalar_flux[i][g] / keff;
+            }
         }
     }
     return fissrc;
@@ -132,6 +134,10 @@ int main(int argc, char* argv[]) {
     // Read mapping data
     auto xsrToFsrMap = file.getDataSet("/MOC_Ray_Data/Domain_00001/XSRtoFSR_Map").read<std::vector<int>>();
     auto starting_xsr = file.getDataSet("/MOC_Ray_Data/Domain_00001/Starting XSR").read<int>();
+    // Adjust xsrToFsrMap by subtracting starting_xsr from each element
+    for (auto& xsr : xsrToFsrMap) {
+        xsr -= starting_xsr;
+    }
     auto xsr_vol = file.getDataSet("/MOC_Ray_Data/Domain_00001/XSR_Volume").read<std::vector<double>>();
     auto pz = file.getDataSet("/MOC_Ray_Data/Domain_00001/plane_height").read<double>();
 
@@ -160,24 +166,16 @@ int main(int argc, char* argv[]) {
     int nxsr = xsr_mat_id.size();
 
     std::vector<int> fsr_mat_id(nfsr);
-    std::vector<double> vol(nfsr);
-    int ixsr = 1;
+    std::vector<double> fsr_vol(nfsr);
+    int ixsr = 0;
+    int nReg;
     for (int i = 0; i < nfsr; i++) {
-        int index;
-        int nReg;
-        if (ixsr == xsrToFsrMap.size()) {
-            index = ixsr - 1;
-            nReg = nfsr - xsrToFsrMap[ixsr - 1] + 1;
-        } else if (i == xsrToFsrMap[ixsr]) {
-            index = ixsr;
-            nReg = xsrToFsrMap[ixsr] - xsrToFsrMap[ixsr - 1];
+        if (i == xsrToFsrMap[ixsr]) {
             ixsr++;
-        } else {
             nReg = xsrToFsrMap[ixsr] - xsrToFsrMap[ixsr - 1];
-            index = ixsr - 1;
         }
-        fsr_mat_id[i] = xsr_mat_id[index];
-        vol[i] = xsr_vol[index] / nReg;
+        fsr_mat_id[i] = xsr_mat_id[ixsr - 1];
+        fsr_vol[i] = xsr_vol[ixsr - 1] / nReg;
     }
 
     // Initialize the library
@@ -345,7 +343,7 @@ int main(int argc, char* argv[]) {
         for (size_t i = 0; i < nfsr; ++i) {
             for (size_t g = 0; g < ng; ++g) {
                 // std::cout << "scale " << scalar_flux[i][g] << " " << xstr[i][g] << " " << vol[i] << " " << pz << " " << source[i][g] << " " << 4.0 * M_PI << std::endl;
-                scalar_flux[i][g] = scalar_flux[i][g] / (xstr[i][g] * vol[i] / pz) + source[i][g] * 4.0 * M_PI;
+                scalar_flux[i][g] = scalar_flux[i][g] / (xstr[i][g] * fsr_vol[i] / pz) + source[i][g] * 4.0 * M_PI;
             }
         }
 
@@ -364,9 +362,11 @@ int main(int argc, char* argv[]) {
         double numerator = 0.0;
         double denominator = 0.0;
         for (size_t i = 0; i < nfsr; ++i) {
-            for (size_t g = 0; g < ng; ++g) {
-                numerator += scalar_flux[i][g] * library.nufiss(fsr_mat_id[i], g) * vol[i];
-                denominator += old_scalar_flux[i][g] * library.nufiss(fsr_mat_id[i], g) * vol[i];
+            if (library.is_fissile(fsr_mat_id[i])) {
+                for (size_t g = 0; g < ng; ++g) {
+                    numerator += scalar_flux[i][g] * library.nufiss(fsr_mat_id[i], g) * fsr_vol[i];
+                    denominator += old_scalar_flux[i][g] * library.nufiss(fsr_mat_id[i], g) * fsr_vol[i];
+                }
             }
         }
         keff = old_keff * numerator / denominator;
@@ -375,7 +375,7 @@ int main(int argc, char* argv[]) {
         double fnorm = 0.0;
         for (size_t i = 0; i < scalar_flux.size(); ++i) {
             for (size_t g = 0; g < scalar_flux[i].size(); ++g) {
-                fnorm += (scalar_flux[i][g] - old_scalar_flux[i][g]) * library.nufiss(fsr_mat_id[i], g) * vol[i];
+                fnorm += (scalar_flux[i][g] - old_scalar_flux[i][g]) * library.nufiss(fsr_mat_id[i], g) * fsr_vol[i];
             }
         }
         double knorm = keff - old_keff;

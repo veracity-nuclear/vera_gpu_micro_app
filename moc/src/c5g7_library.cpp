@@ -16,6 +16,7 @@ c5g7_library::c5g7_library(std::string name) {
     _chi.resize(8);
     _scat.resize(8);
     _total.resize(8);
+    _is_fissile.resize(8, false);
 
     // Read the file line by line
     std::string line;
@@ -48,6 +49,9 @@ c5g7_library::c5g7_library(std::string name) {
             std::stringstream ss(line);
             if (!(ss >> _abs[iset][isetline] >> _nufiss[iset][isetline] >> _fiss[iset][isetline] >> _chi[iset][isetline])) {
                 throw std::runtime_error("Failed to parse line: " + line);
+            }
+            if (_nufiss[iset][isetline] > 0.0) {
+                _is_fissile[iset] = true;
             }
             _total[iset][isetline] += _abs[iset][isetline];
             isetline++;
@@ -132,4 +136,8 @@ std::vector<double> c5g7_library::total(int set) const {
 
 double c5g7_library::total(int set, int group) const {
     return _total[set][group];
+}
+
+bool c5g7_library::is_fissile(int set) const {
+    return _is_fissile[set];
 }

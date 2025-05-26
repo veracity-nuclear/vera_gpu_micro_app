@@ -21,6 +21,7 @@ class c5g7_library {
         double self_scat(int set, int group) const;
         std::vector<double> total(int set) const;
         double total(int set, int group) const;
+        bool is_fissile(int set) const;
     private:
         std::vector<std::vector<double>> _abs;
         std::vector<std::vector<double>> _nufiss;
@@ -28,4 +29,5 @@ class c5g7_library {
         std::vector<std::vector<double>> _chi;
         std::vector<std::vector<std::vector<double>>> _scat;
         std::vector<std::vector<double>> _total;
+        std::vector<bool> _is_fissile;
 };
