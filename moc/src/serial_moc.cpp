@@ -1,5 +1,4 @@
 #include "serial_moc.hpp"
-#include <unistd.h>
 #include <iostream>
 #include <string>
 #include <iomanip>
@@ -131,13 +130,6 @@ int reflect_angle(int angle) {
 
 // Main function to run the serial MOC sweep
 double serial_moc_sweep(const std::vector<std::string>& args) {
-    // Print the current working directory
-    char cwd[PATH_MAX];
-    if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        std::cout << "Current working directory: " << cwd << std::endl;
-    } else {
-        std::cerr << "Error getting current working directory: " << strerror(errno) << std::endl;
-    }
     if (args.size() != 3) {
         std::cerr << "Usage: " << args[0] << " <filename>" << std::endl;
         return 1;
