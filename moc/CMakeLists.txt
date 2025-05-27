@@ -19,16 +19,21 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/data DESTINATION ${CMAKE_CURRENT_BINARY_DI
 
 # --- Tests ---
 enable_testing()
-add_executable(moc_tests
-    tests/test_main.cpp
+set(TEST_EXECUTABLES
+    test_serial_moc_1region_1angle
+    test_serial_moc_1region_16angle
+    test_serial_moc_4region_1angle
+    test_serial_moc_pin
 )
-
-target_link_libraries(moc_tests
-    moc_lib
-    HighFive::HighFive
-    Kokkos::kokkos
-    GTest::gtest
-    GTest::gtest_main
-)
-
-add_test(NAME moc_tests COMMAND moc_tests)
+foreach(test ${TEST_EXECUTABLES})
+    add_executable(${test} ${CMAKE_CURRENT_SOURCE_DIR}/tests/${test}.cpp)
+    target_link_libraries(${test}
+        moc_lib
+        HighFive::HighFive
+        Kokkos::kokkos
+        GTest::gtest
+        GTest::gtest_main
+    )
+    add_test(NAME ${test} COMMAND ${test})
+    message(STATUS "Added test: ${test}")
+endforeach()
