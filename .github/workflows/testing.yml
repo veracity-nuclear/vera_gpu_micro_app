@@ -12,10 +12,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Fetch LFS objects
-        run: |
-          git lfs fetch && git lfs checkout
+        with:
+          lfs: true
 
       - name: Configure project
         run: |
