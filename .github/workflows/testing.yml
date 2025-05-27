@@ -14,7 +14,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Fetch LFS objects
-      run: git lfs fetch && git lfs checkout
+        run: |
+          git lfs fetch && git lfs checkout
 
       - name: Configure project
         run: |
