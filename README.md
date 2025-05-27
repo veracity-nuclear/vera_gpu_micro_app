@@ -69,7 +69,7 @@ cmake --install kokkos/build
 rm -rf kokkos
 ```
 
-6. Export enrvironment variables
+6. Export environment variables
 ```
 export KOKKOS_ROOT=/opt/kokkos
 ```

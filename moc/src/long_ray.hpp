@@ -3,6 +3,13 @@
 #include <vector>
 #include "highfive/highfive.hpp"
 
+const int RAY_START = 0; // Index for the start of the ray
+const int RAY_END = 1;   // Index for the end of the ray
+const int WEST = 0;    // Index for the west face
+const int NORTH = 1;   // Index for the north face
+const int EAST = 2;    // Index for the east face
+const int SOUTH = 3;   // Index for the south face
+
 // Defines the angular flux boundary condition for a single face and a single angle
 class AngFluxBCFace
 {
@@ -68,10 +75,10 @@ class LongRay
             for (int i = 0; i < points_data.size(); i += 3) {
                 _starting_points.push_back(std::make_pair(points_data[i], points_data[i + 1]));
             };
-            _bc_face[0] -= 1;
-            _bc_face[1] -= 1;
-            _bc_index[0] -= 1;
-            _bc_index[1] -= 1;
+            _bc_face[RAY_START] -= 1;
+            _bc_face[RAY_END] -= 1;
+            _bc_index[RAY_START] -= 1;
+            _bc_index[RAY_END] -= 1;
         };
         int angle() const { return _angle_index; };
 };
