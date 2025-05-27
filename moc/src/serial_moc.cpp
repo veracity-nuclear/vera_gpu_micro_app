@@ -8,6 +8,7 @@
 #include "c5g7_library.hpp"
 #include <unistd.h>
 
+// Reads all long rays from MPACT-generated HDF5 file
 std::vector<LongRay> read_rays(HighFive::File file) {
     auto domain = file.getGroup("/MOC_Ray_Data/Domain_00001");
 
@@ -52,6 +53,7 @@ std::vector<LongRay> read_rays(HighFive::File file) {
     return rays;
 }
 
+// Get the total cross sections for each FSR from the library
 std::vector<std::vector<double>> get_xstr(
     const int num_fsr,
     const int starting_xsr,
@@ -66,6 +68,7 @@ std::vector<std::vector<double>> get_xstr(
     return xs;
 }
 
+// Build the fission source term for each FSR based on the scalar flux and nu-fission cross sections
 std::vector<double> build_fissrc(
     const c5g7_library& library,
     const std::vector<int>& fsr_mat_id,
@@ -87,6 +90,7 @@ std::vector<double> build_fissrc(
     return fissrc;
 }
 
+// Build the total source term for each FSR based on the fission source and scattering cross sections
 std::vector<std::vector<double>> build_source(
     const c5g7_library& library,
     const std::vector<int>& fsr_mat_id,
@@ -119,23 +123,19 @@ std::vector<std::vector<double>> build_source(
     return source;
 }
 
+// Reflect the angle for reflecting boundary conditions
 int reflect_angle(int angle) {
     return angle % 2 == 0 ? angle + 1 : angle - 1;
 }
 
+// Main function to run the serial MOC sweep
 double serial_moc_sweep(const std::vector<std::string>& args) {
-    std::cout << "Current working directory: ";
-    char cwd[PATH_MAX];
-    if (getcwd(cwd, sizeof(cwd)) != nullptr) {
-        std::cout << cwd << std::endl;
-    } else {
-        std::cerr << "Error getting current working directory." << std::endl;
-    }
     if (args.size() != 3) {
         std::cerr << "Usage: " << args[0] << " <filename>" << std::endl;
         return 1;
     }
 
+    // Store the file names from the arguments
     std::string filename = args[1];
     std::string libname = args[2];
 
@@ -148,29 +148,22 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
     // Read mapping data
     auto xsrToFsrMap = file.getDataSet("/MOC_Ray_Data/Domain_00001/XSRtoFSR_Map").read<std::vector<int>>();
     auto starting_xsr = file.getDataSet("/MOC_Ray_Data/Domain_00001/Starting XSR").read<int>();
+
     // Adjust xsrToFsrMap by subtracting starting_xsr from each element
     for (auto& xsr : xsrToFsrMap) {
         xsr -= starting_xsr;
     }
+
+    // Read the FSR volumes and plane height
     auto fsr_vol = file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read<std::vector<double>>();
     auto pz = file.getDataSet("/MOC_Ray_Data/Domain_00001/plane_height").read<double>();
+    int nfsr = fsr_vol.size();
 
-    // Read solution data
-    auto temp_fsr_flux = file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/fsr_flux").read<std::vector<std::vector<double>>>();
-    std::vector<std::vector<double>> fsr_flux;
-    if (!temp_fsr_flux.empty()) {
-        size_t num_groups = temp_fsr_flux[0].size();
-        size_t num_fsrs = temp_fsr_flux.size();
-        fsr_flux.resize(num_groups, std::vector<double>(num_fsrs));
-        for (size_t i = 0; i < num_fsrs; ++i) {
-            for (size_t j = 0; j < num_groups; ++j) {
-                fsr_flux[j][i] = temp_fsr_flux[i][j];
-            }
-        }
-    }
-    int nfsr = fsr_flux.size();
-    int ng = fsr_flux[0].size();
+    // Initialize the library
+    c5g7_library library(libname);
+    int ng = library.get_num_groups();
 
+    // Read the material IDs
     auto tmp_mat_id = file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xsr_mat_id").read<std::vector<double>>();
     std::vector<int> xsr_mat_id;
     xsr_mat_id.reserve(tmp_mat_id.size());
@@ -179,6 +172,7 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
     }
     int nxsr = xsr_mat_id.size();
 
+    // Calculate the FSR material IDs
     std::vector<int> fsr_mat_id(nfsr);
     int ixsr = 0;
     int nReg;
@@ -188,9 +182,6 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
         }
         fsr_mat_id[i] = xsr_mat_id[ixsr - 1];
     }
-
-    // Initialize the library
-    c5g7_library library(libname);
 
     // Get XS
     auto xstr = get_xstr(nfsr, starting_xsr, fsr_mat_id, library);
@@ -209,11 +200,11 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
         }
     }
 
-    // Allocate scalar flux array
+    // Allocate scalar flux and source array
     double phid1, phid2, phio1, phio2;
-    std::vector<std::vector<double>> scalar_flux = fsr_flux;
+    std::vector<std::vector<double>> scalar_flux(nfsr);
     for (size_t i = 0; i < nfsr; ++i) {
-        std::fill(scalar_flux[i].begin(), scalar_flux[i].end(), 1.0);
+        scalar_flux[i].resize(ng, 1.0);
     }
     auto old_scalar_flux = scalar_flux;
     auto source = scalar_flux;
@@ -246,13 +237,7 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
         }
     }
 
-    // If no spacing found, use a default value
-    if (ray_spacing.empty()) {
-        std::cout << "Warning: No ray spacing data found, using default value of 0.03" << std::endl;
-        ray_spacing.push_back(0.03);
-    }
-
-    // Build weights
+    // Build angle weights
     std::vector<std::vector<double>> angle_weights;
     angle_weights.reserve(nazi);
     for (int iazi = 0; iazi < nazi; iazi++) {
@@ -262,30 +247,35 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
                 * M_PI * std::sin(polar_angles[ipol]);
         }
     }
+
+    // Store the inverse polar angle sine
     std::vector<double> rsinpolang(npol);
     for (int ipol = 0; ipol < npol; ipol++) {
         rsinpolang[ipol] = 1.0 / std::sin(polar_angles[ipol]);
     }
 
-    // Miscellaneous
+    // Initialize old values and a few scratch values
     double keff = 1.0;
     double old_keff = 1.0;
     std::vector<double> fissrc = build_fissrc(library, fsr_mat_id, scalar_flux, keff);
     std::vector<double> old_fissrc = fissrc;
-    int iseg1, iseg2, ireg1, ireg2;
+    int iseg1, iseg2, ireg1, ireg2, refl_angle;
+    auto old_angflux = angflux;
 
+    // Initialize iteration controls and print the header
     std::cout << "Iteration         keff       knorm      fnorm" << std::endl;
     double relaxation = 1.0;
     int max_iters = 10000;
     double kconv = 1.0e-8;
     double fconv = 1.0e-8;
-    int refl_angle;
-    auto old_angflux = angflux;
     int debug_angle = 0;
-    for (int iteration = 0; iteration < max_iters; iteration++) {
 
+    // Source iteration loop
+    for (int iteration = 0; iteration < max_iters; iteration++) {
         // Build source and zero the fluxes
         source = build_source(library, fsr_mat_id, old_scalar_flux, fissrc);
+
+        // Initialize the scalar flux to 0.0
         for (auto i = 0; i < nfsr; i++) {
             for (auto g = 0; g < ng; g++) {
                 scalar_flux[i][g] = 0.0;
@@ -293,13 +283,16 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
             }
         }
 
-        // Sweep
+        // Sweep all the long rayse
         for (const auto& ray : rays) {
             // if (ray.angle() == 2) {
             //     throw std::runtime_error("Beginning of ray loop");
             // }
+
+            // Swepp all the polar angles
             for (size_t ipol = 0; ipol < npol; ipol++) {
-                // Initialize the angular flux to 1.0
+
+                // Initialize the ray flux with the angular flux BCs
                 for (size_t ig = 0; ig < ng; ig++) {
                     segflux[0][0][ig] =
                         ray._bc_index[0] == -1
@@ -310,13 +303,16 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
                         ? 0.0
                         : old_angflux[ray.angle()]._faces[ray._bc_face[1]]._angflux[ray._bc_index[1]][ipol][ig];
                 }
-                // Sweep the segments
+
+                // Sweep the segments bi-directionally
                 iseg2 = ray._fsrs.size();
                 for (iseg1 = 0; iseg1 < ray._fsrs.size(); iseg1++) {
                     ireg1 = ray._fsrs[iseg1] - 1;
                     ireg2 = ray._fsrs[iseg2 - 1] - 1;
-                    // Sweep the groups
+
+                    // Sweep the groups on the 2 segments
                     for (size_t ig = 0; ig < ng; ig++) {
+                        // Forward segment sweep
                         phid1 = segflux[0][iseg1][ig] - source[ireg1][ig];
                         // if (ray.angle() == debug_angle) {
                         //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " " << segflux[0][iseg1][ig] << " " << source[ireg1][ig] << " " << phid1 << std::endl;
@@ -339,6 +335,7 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
                         //         << scalar_flux[ireg1][ig] << " " << phid1 << " " << angle_weights[ray.angle()][ipol] << std::endl;
                         // }
 
+                        // Backward segment sweep
                         phid2 = segflux[1][iseg2][ig] - source[ireg2][ig];
                         // if (ray.angle() == debug_angle) {
                         //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " " << segflux[1][iseg2][ig] << " " << source[ireg2][ig] << " " << phid2 << std::endl;
@@ -363,7 +360,8 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
                     // throw std::runtime_error("end of first segment");
                     iseg2--;
                 }
-                // Store the angular flux
+
+                // Store the final segments' angular flux into the BCs
                 for (size_t ig = 0; ig < ng; ig++) {
                     refl_angle = reflect_angle(ray.angle());
                     if (ray._bc_index[0] != -1) {
@@ -381,7 +379,7 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
             // throw std::runtime_error("End of polar loop");
         }
 
-        // Scale the flux
+        // Scale the flux with source, volume, and transport XS
         for (size_t i = 0; i < nfsr; ++i) {
             for (size_t g = 0; g < ng; ++g) {
                 // std::cout << i << " " << g << " scale " << scalar_flux[i][g] << " " << xstr[i][g] << " " << fsr_vol[i] << " " << pz << " " << source[i][g] << " " << 4.0 * M_PI << std::endl;
@@ -420,12 +418,18 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
                 fnorm += (scalar_flux[i][g] - old_scalar_flux[i][g]) * library.nufiss(fsr_mat_id[i], g) * fsr_vol[i];
             }
         }
-        double knorm = keff - old_keff;
         fnorm = sqrt(fnorm * fnorm / double(fissrc.size()));
+
+        // Calculate the keff convergence metric
+        double knorm = keff - old_keff;
+
+        // Print the iteration results
         std::cout << " " << std::setw(8) << iteration
                   << "   " << std::fixed << std::setprecision(8) << keff
                   << "   " << std::scientific << std::setprecision(2) << knorm
                   << "   " << fnorm << std::endl;
+
+        // Check for convergence
         if (fabs(knorm) < kconv && fabs(fnorm) < fconv) {
             std::cout << "Converged after " << iteration + 1 << " iterations." << std::endl;
             break;

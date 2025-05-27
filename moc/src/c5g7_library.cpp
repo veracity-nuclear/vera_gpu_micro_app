@@ -24,14 +24,17 @@ c5g7_library::c5g7_library(std::string name) {
     int iline = 0;
     int isetline = -1;
     while (std::getline(input_file, line)) {
+        // The first 3 lines are header material that we don't need right now
         if (iline < 3 || line.find_first_not_of(" \t\r\n") == std::string::npos) {
             iline++;
             continue;
         }
+        // If a line starts with '!', it is a comment and we skip it
         if (line.substr(0, 1) == "!") {
             iline++;
             continue;
         }
+        // If a line starts with 'XSMACRO', it indicates a new material set
         if (line.substr(0, 7) == "XSMACRO") {
             iset += 1;
             _abs[iset].resize(7, 0.0);
@@ -44,6 +47,7 @@ c5g7_library::c5g7_library(std::string name) {
             iline++;
             continue;
         }
+        // The first 7 lines after 'XSMACRO' contain absorption, nu-fission, fission, and chi data
         if (isetline < 7) {
             // Parse the line to get the 4 doubles
             std::stringstream ss(line);
@@ -56,6 +60,7 @@ c5g7_library::c5g7_library(std::string name) {
             _total[iset][isetline] += _abs[iset][isetline];
             isetline++;
         }
+        // The next 7 lines contain the scattering matrix
         else {
             int ig = isetline - 7;
             _scat[iset][ig].resize(7, 0.0);
@@ -71,6 +76,10 @@ c5g7_library::c5g7_library(std::string name) {
     }
 
     input_file.close();
+}
+
+int c5g7_library::get_num_groups() const {
+    return _total[0].size();
 }
 
 std::vector<double> c5g7_library::abs(int set) const {
