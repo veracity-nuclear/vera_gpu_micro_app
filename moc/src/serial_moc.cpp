@@ -1,11 +1,12 @@
 #include "serial_moc.hpp"
 #include <iostream>
 #include <string>
+#include <iomanip>
 #include <highfive/H5Easy.hpp>
-#include <H5Cpp.h>
 #include "highfive/highfive.hpp"
 #include "long_ray.hpp"
 #include "c5g7_library.hpp"
+#include <unistd.h>
 
 std::vector<LongRay> read_rays(HighFive::File file) {
     auto domain = file.getGroup("/MOC_Ray_Data/Domain_00001");
@@ -122,13 +123,21 @@ int reflect_angle(int angle) {
     return angle % 2 == 0 ? angle + 1 : angle - 1;
 }
 
-double serial_moc_sweep(int argc, char* argv[]) {
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <filename>" << std::endl;
+double serial_moc_sweep(const std::vector<std::string>& args) {
+    std::cout << "Current working directory: ";
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+        std::cout << cwd << std::endl;
+    } else {
+        std::cerr << "Error getting current working directory." << std::endl;
+    }
+    if (args.size() != 3) {
+        std::cerr << "Usage: " << args[0] << " <filename>" << std::endl;
         return 1;
     }
 
-    std::string filename = argv[1];
+    std::string filename = args[1];
+    std::string libname = args[2];
 
     // Process the file here
     HighFive::File file(filename, HighFive::File::ReadOnly);
@@ -181,7 +190,7 @@ double serial_moc_sweep(int argc, char* argv[]) {
     }
 
     // Initialize the library
-    c5g7_library library("../data/c5g7.xsl");
+    c5g7_library library(libname);
 
     // Get XS
     auto xstr = get_xstr(nfsr, starting_xsr, fsr_mat_id, library);

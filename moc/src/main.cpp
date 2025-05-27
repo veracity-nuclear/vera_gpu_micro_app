@@ -12,7 +12,8 @@ int main(int argc, char* argv[]) {
     });
   }
 
-  double keff = serial_moc_sweep(argc, argv);
+  const std::vector<std::string> args(argv, argv + argc);
+  double keff = serial_moc_sweep(args);
 
   Kokkos::finalize();
   return 0;
