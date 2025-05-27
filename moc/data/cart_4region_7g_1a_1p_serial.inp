@@ -1,4 +1,4 @@
-CASEID cart_1region_7g_16a_3p_serial
+CASEID cart_4region_7g_1a_1p_serial
 
 MATERIAL
   mat  1 2 :: UO2-3.3
@@ -8,9 +8,9 @@ MATERIAL
 GEOM
  mod_dim 1.26 1.26 1.0
 ! pinMesh 1 cyl 0.540 0.62 / 1.26 / 1.0 / 5 2 / 1 4*8 2*8 12 / 5 !Pin mesh
-  pinMesh 2 rec 1.26 / 1.26 / 1.0 / 1 / 1 / 1                   !Reflector mesh
+  pinMesh 2 rec 1.26 / 1.26 / 1.0 / 2 / 2 / 1                   !Reflector mesh
 
- pin 2 2 / 1 !UO2-4.3 Pin
+ pin 2 2 / 1 !UO2-3.3 Pin
 
 !Pin modular ray tracing
  module 2 3*1
@@ -33,7 +33,7 @@ OPTION
   bound_cond 1 1 1 1 1 1
   solver 1 2
   cmfd F mgnode F 0.0 1.0 150 F
-  ray 0.03 CHEBYSHEV-YAMAMOTO 16 3
+  ray 0.03 CHEBYSHEV-YAMAMOTO 1 1
   !parallel 1 1 1 16
   conv_crit 2*1.e-8
   iter_lim 10000 1 1

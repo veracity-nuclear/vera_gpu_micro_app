@@ -24,11 +24,19 @@ the accuracy and performance of the implementation.
 
 ## Dependency Installation
 ### Build essentials, CMake, OpenMP and HDF5 from apt package manager
+
+1. Build packages
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
     build-essential cmake git curl wget \
     gfortran libhdf5-dev libopenmpi-dev openmpi-bin
+```
+
+2. Export environment variables
+You should export the HDF5 environment variable:
+```
+export HDF5_ROOT=/usr/bin
 ```
 
 ### Kokkos
@@ -61,6 +69,11 @@ cmake --install kokkos/build
 rm -rf kokkos
 ```
 
+6. Export environment variables
+```
+export KOKKOS_ROOT=/opt/kokkos
+```
+
 ### PETSc
 1. Set environment variables
 ```
@@ -82,8 +95,6 @@ cd $PETSC_DIR
   --with-fc=0 \
   --with-debugging=0 \
   --with-rtlib=libc \
-  --download-mpich \
-  --download-hdf5 \
   --download-hwloc \
   --download-f2cblaslapack \
   --COPTFLAGS="-O3 -march=native" \
@@ -130,12 +141,19 @@ cmake --install HighFive/build
 rm -rf HighFive
 ```
 
+6. Export environment variables
+```
+export HIGHFIVE_ROOT=/opt/highfive
+```
+
 
 ## Package Configuration and Build
+Before building, you should `export` all the environment variables defined in the previous sections.
+
 From `~/vera_gpu_micro_app` execute the following commands to configure and build the micro-apps.
 ```
 mkdir -p build
-cmake -B build
+cmake -B build -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx
 cmake --build build -j4
 ```
 
@@ -154,7 +172,7 @@ Execute these commands from the `~/vera_gpu_micro_app/build` directory to run mi
 
 ```
 # MOC
-./moc/moc_exec
+./moc/micro_moc
 
 # CMFD
 ./cmfd/cmfd_exec

@@ -37,6 +37,8 @@
 *.out
 fort.*
 
+# VS Code stuff
+.vscode
+
 # Others
 build/
-.vscode/
