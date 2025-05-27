@@ -1,7 +1,7 @@
 #pragma once
 
 #include <vector>
-#include "highfive/highfive.hpp"
+#include <highfive/highfive.hpp>
 
 const int RAY_START = 0; // Index for the start of the ray
 const int RAY_END = 1;   // Index for the end of the ray

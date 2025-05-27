@@ -3,10 +3,9 @@
 #include <string>
 #include <iomanip>
 #include <highfive/H5Easy.hpp>
-#include "highfive/highfive.hpp"
+#include <highfive/highfive.hpp>
 #include "long_ray.hpp"
 #include "c5g7_library.hpp"
-#include <unistd.h>
 
 // Reads all long rays from MPACT-generated HDF5 file
 std::vector<LongRay> read_rays(HighFive::File file) {

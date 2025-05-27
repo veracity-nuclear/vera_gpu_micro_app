@@ -172,7 +172,7 @@ Execute these commands from the `~/vera_gpu_micro_app/build` directory to run mi
 
 ```
 # MOC
-./moc/moc_exec
+./moc/micro_moc
 
 # CMFD
 ./cmfd/cmfd_exec
