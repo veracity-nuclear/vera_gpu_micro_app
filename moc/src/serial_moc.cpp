@@ -1,6 +1,7 @@
+#include "serial_moc.hpp"
 #include <iostream>
 #include <string>
-#include <iomanip>
+#include <highfive/H5Easy.hpp>
 #include <H5Cpp.h>
 #include "highfive/highfive.hpp"
 #include "long_ray.hpp"
@@ -121,7 +122,7 @@ int reflect_angle(int angle) {
     return angle % 2 == 0 ? angle + 1 : angle - 1;
 }
 
-int main(int argc, char* argv[]) {
+double serial_moc_sweep(int argc, char* argv[]) {
     if (argc != 2) {
         std::cerr << "Usage: " << argv[0] << " <filename>" << std::endl;
         return 1;
@@ -433,5 +434,5 @@ int main(int argc, char* argv[]) {
         old_angflux = angflux;
     }
 
-    return 0;
+    return keff;
 }

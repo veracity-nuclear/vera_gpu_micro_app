@@ -37,12 +37,6 @@
 *.out
 fort.*
 
-# Cmake files
-*.cmake
-**/Makefile*
-**/CMakeFiles
-**/CMakeCache.txt
-
 # VS Code stuff
 .vscode
 

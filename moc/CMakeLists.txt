@@ -1,5 +1,7 @@
 add_library(moc_lib
     src/main.cpp
+    src/serial_moc.cpp
+    src/c5g7_library.cpp
 )
 
 target_link_libraries(moc_lib
@@ -7,10 +9,13 @@ target_link_libraries(moc_lib
     Kokkos::kokkos
 )
 
-add_executable(moc_exec
+add_executable(micro_moc
     src/main.cpp
 )
-target_link_libraries(moc_exec moc_lib)
+target_link_libraries(micro_moc moc_lib)
+
+# Copy the data directory to the build location
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/data DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 # --- Tests ---
 enable_testing()
