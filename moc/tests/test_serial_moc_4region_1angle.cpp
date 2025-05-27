@@ -1,7 +1,7 @@
 #include <string>
 #include <vector>
 #include <gtest/gtest.h>
-#include "../src/serial_moc.hpp"
+#include "serial_moc.hpp"
 
 TEST(BasicTest, cart_4region_7g_1a_1p_serial) {
     const std::vector<std::string> args = {"moc_tests", "data/cart_4region_7g_1a_1p_serial.h5", "data/c5g7.xsl"};

@@ -34,6 +34,7 @@ foreach(test ${TEST_EXECUTABLES})
         GTest::gtest
         GTest::gtest_main
     )
+    target_include_directories(${test} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME ${test} COMMAND ${test})
     message(STATUS "Added test: ${test}")
 endforeach()
