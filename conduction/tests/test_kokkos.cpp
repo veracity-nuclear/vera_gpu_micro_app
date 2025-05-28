@@ -1,7 +1,7 @@
 #include <Kokkos_Core.hpp>
 #include <gtest/gtest.h>
 
-TEST(KokkosTest, BasicTest) {
+void run_kokkos_test() {
     // Print a message to verify Kokkos is working
     Kokkos::printf("Hello from Kokkos!\n");
 
@@ -16,6 +16,10 @@ TEST(KokkosTest, BasicTest) {
     Kokkos::deep_copy(host_results, results);
 
     for (int i = 0; i < N; ++i) {
-        EXPECT_EQ(host_results(i), i * i);
+        ASSERT_EQ(host_results(i), i * i);
     }
+}
+
+TEST(KokkosTest, BasicTest) {
+    run_kokkos_test();
 }
