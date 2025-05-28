@@ -38,8 +38,8 @@ std::vector<std::vector<PetscScalar>> readMatrixFromHDF5(const HighFive::Group& 
   const std::vector<std::string> rowNames = AMatH5.listObjectNames();
 
   // assuming rows are in the correct order...
-  for (const std::string& row_name : rowNames) {
-      HighFive::DataSet rowDataset = AMatH5.getDataSet(row_name);
+  for (const std::string& rowName : rowNames) {
+      HighFive::DataSet rowDataset = AMatH5.getDataSet(rowName);
       rowDataset.read(rowData);
       AMatLocal.emplace_back(rowData);
   }
