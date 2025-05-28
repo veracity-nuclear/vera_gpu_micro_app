@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <highfive/H5Easy.hpp>
 #include <highfive/highfive.hpp>
+#include "exp_table.hpp"
 #include "long_ray.hpp"
 #include "c5g7_library.hpp"
 
@@ -236,6 +237,9 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
         }
     }
 
+    // Build the exponential table
+    const ExpTable exp_table = ExpTable();
+
     // Build angle weights
     std::vector<std::vector<double>> angle_weights;
     angle_weights.reserve(nazi);
@@ -298,7 +302,7 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
                 // Store the exponential arguments for this ray
                 for (size_t i = 0; i < ray._fsrs.size(); i++) {
                     for (size_t ig = 0; ig < ng; ig++) {
-                        exparg[i][ig] = 1.0 - std::exp(-xstr[ray._fsrs[i] - 1][ig] * ray._segments[i] * rsinpolang[ipol]);
+                        exparg[i][ig] = exp_table.expt(-xstr[ray._fsrs[i] - 1][ig] * ray._segments[i] * rsinpolang[ipol]);
                     }
                 }
 
