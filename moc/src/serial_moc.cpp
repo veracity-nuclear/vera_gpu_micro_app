@@ -238,7 +238,7 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
     }
 
     // Build the exponential table
-    const ExpTable exp_table = ExpTable();
+    const ExpTable exp_table;
 
     // Build angle weights
     std::vector<std::vector<double>> angle_weights;
