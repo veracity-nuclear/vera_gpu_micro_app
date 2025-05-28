@@ -2,6 +2,7 @@ add_library(moc_lib
     src/main.cpp
     src/serial_moc.cpp
     src/c5g7_library.cpp
+    src/exp_table.cpp
 )
 
 target_link_libraries(moc_lib
