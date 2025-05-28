@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <highfive/H5Easy.hpp>
 #include <highfive/highfive.hpp>
+#include "exp_table.hpp"
 #include "long_ray.hpp"
 #include "c5g7_library.hpp"
 
@@ -130,7 +131,7 @@ int reflect_angle(int angle) {
 // Main function to run the serial MOC sweep
 double serial_moc_sweep(const std::vector<std::string>& args) {
     if (args.size() != 3) {
-        std::cerr << "Usage: " << args[0] << " <filename>" << std::endl;
+        std::cerr << "Usage: " << args[0] << " <filename> <XS file>" << std::endl;
         return 1;
     }
 
@@ -236,6 +237,9 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
         }
     }
 
+    // Build the exponential table
+    const ExpTable exp_table;
+
     // Build angle weights
     std::vector<std::vector<double>> angle_weights;
     angle_weights.reserve(nazi);
@@ -260,6 +264,10 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
     std::vector<double> old_fissrc = fissrc;
     int iseg1, iseg2, ireg1, ireg2, refl_angle;
     auto old_angflux = angflux;
+    std::vector<std::vector<double>> exparg(max_segments + 1);
+    for (size_t i = 0; i < max_segments + 1; i++) {
+        exparg[i].resize(ng, 0.0);
+    }
 
     // Initialize iteration controls and print the header
     std::cout << "Iteration         keff       knorm      fnorm" << std::endl;
@@ -288,8 +296,15 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
             //     throw std::runtime_error("Beginning of ray loop");
             // }
 
-            // Swepp all the polar angles
+            // Sweep all the polar angles
             for (size_t ipol = 0; ipol < npol; ipol++) {
+
+                // Store the exponential arguments for this ray
+                for (size_t i = 0; i < ray._fsrs.size(); i++) {
+                    for (size_t ig = 0; ig < ng; ig++) {
+                        exparg[i][ig] = exp_table.expt(-xstr[ray._fsrs[i] - 1][ig] * ray._segments[i] * rsinpolang[ipol]);
+                    }
+                }
 
                 // Initialize the ray flux with the angular flux BCs
                 for (size_t ig = 0; ig < ng; ig++) {
@@ -317,7 +332,7 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
                         //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " " << segflux[RAY_START][iseg1][ig] << " " << source[ireg1][ig] << " " << phid1 << std::endl;
                         // }
                         // TODO: tabulate exp
-                        phid1 *= 1.0 - std::exp(-xstr[ireg1][ig] * ray._segments[iseg1] * rsinpolang[ipol]);
+                        phid1 *= exparg[iseg1][ig];
                         // if (ray.angle() == debug_angle) {
                         //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
                         //         << 1.0 - std::exp(-xstr[ireg1][ig] * ray._segments[iseg1] * rsinpolang[ipol]) << " : " << phid1 << std::endl;
@@ -339,7 +354,7 @@ double serial_moc_sweep(const std::vector<std::string>& args) {
                         // if (ray.angle() == debug_angle) {
                         //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " " << segflux[RAY_END][iseg2][ig] << " " << source[ireg2][ig] << " " << phid2 << std::endl;
                         // }
-                        phid2 *= 1.0 - std::exp(-xstr[ireg2][ig] * ray._segments[iseg2 - 1] * rsinpolang[ipol]);
+                        phid2 *= exparg[iseg2 - 1][ig];
                         // if (ray.angle() == debug_angle) {
                         //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " "
                         //     << 1.0 - std::exp(-xstr[ireg2][ig] * ray._segments[iseg2 - 1] * rsinpolang[ipol]) << " "
