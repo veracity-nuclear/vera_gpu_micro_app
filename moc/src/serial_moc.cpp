@@ -130,7 +130,7 @@ int reflect_angle(int angle) {
 // Main function to run the serial MOC sweep
 double serial_moc_sweep(const std::vector<std::string>& args) {
     if (args.size() != 3) {
-        std::cerr << "Usage: " << args[0] << " <filename>" << std::endl;
+        std::cerr << "Usage: " << args[0] << " <filename> <XS file>" << std::endl;
         return 1;
     }
 
