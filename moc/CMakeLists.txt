@@ -25,6 +25,8 @@ set(TEST_EXECUTABLES
     test_serial_moc_1region_16angle
     test_serial_moc_4region_1angle
     test_serial_moc_pin
+    test_serial_moc_7x7
+    heavy_test_serial_moc_mini-core
 )
 foreach(test ${TEST_EXECUTABLES})
     add_executable(${test} ${CMAKE_CURRENT_SOURCE_DIR}/tests/${test}.cpp)
