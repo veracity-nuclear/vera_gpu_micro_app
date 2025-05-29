@@ -1,6 +1,8 @@
 #include <Kokkos_Core.hpp>
 #include <iostream>
-#include "serial_moc.hpp"
+#include <vector>
+#include <string>
+#include "eigen_solver.hpp"
 
 int main(int argc, char* argv[]) {
   Kokkos::initialize(argc, argv);
@@ -13,7 +15,12 @@ int main(int argc, char* argv[]) {
   }
 
   const std::vector<std::string> args(argv, argv + argc);
-  double keff = serial_moc_sweep(args);
+  if (args.size() != 3) {
+      std::cerr << "Usage: " << args[0] << " <filename> <XS file>" << std::endl;
+      return 1;
+  }
+
+  run_eigenvalue_iteration(args);
 
   Kokkos::finalize();
   return 0;
