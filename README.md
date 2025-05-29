@@ -249,8 +249,8 @@ These datasets are inside `/CMFD_CoarseMesh` in the HDF5 file.
 | `scattering XS` | `float` | (n_groups, n_cells, n_groups) | The scattering cross section in each coarse mesh cell for each energy group. |
 | `chi` | `float` | (n_groups, n_cells) | The chi in each coarse mesh cell for each energy group. |
 | `surf2cell` | `int` | (n_surf, 2) | The surface to cell mapping for each coarse mesh cell; the first column is the cell index on the positive side (north, east, up) and the second column is the cell index on the negative side (south, west, down). |
-| `Dtilde` | `float` | (n_groups, n_surf) | The $`\tilde{D}`$ value for each surface in each energy group. |
-| `Dhat` | `float` | (n_groups, n_surf) | The $`\hat{D}`$ value for each surface in each energy group. |
+| `Dtilde` | `float` | (n_groups, n_surf) | The $`\tilde{D}`$ value multiplied by surface area for each surface in each energy group. |
+| `Dhat` | `float` | (n_groups, n_surf) | The $`\hat{D}`$ value multiplied by surface area for each surface in each energy group. |
 
 #### CMFD_FineMesh
 
