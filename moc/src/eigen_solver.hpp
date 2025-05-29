@@ -13,17 +13,16 @@ class EigenSolver {
         // Get the keff
         double keff();
     private:
-        SerialMOC _sweeper;
-        std::vector<double> _fsr_vol;
-        const std::vector<std::vector<double>> &_scalar_flux;
-        std::vector<std::vector<double>> _old_scalar_flux;
-        std::vector<double> _fissrc;
-        std::vector<double> _old_fissrc;
-        double _keff;
-        double _old_keff;
+        const int _max_iters = 10000; // Maximum number of iterations
         const double _relaxation = 1.0; // Relaxation factor for flux updates
-        const int _max_iters = 10000;
-        const double _kconv = 1.0e-8;
-        const double _fconv = 1.0e-8;
-        const int _debug_angle = 0;
+        const double _kconv = 1.0e-8; // Convergence criterion for keff
+        const double _fconv = 1.0e-8;  // Convergence criterion for fission source
+        double _keff; // Current eigenvalue estimate
+        double _old_keff; // Previous eigenvalue estimate
+        std::vector<double> _fsr_vol; // FSR volumes
+        const std::vector<std::vector<double>> &_scalar_flux; // Scalar flux from the sweeper
+        std::vector<std::vector<double>> _old_scalar_flux; // Previous scalar flux for convergence checks
+        std::vector<double> _fissrc; // Fission source vector
+        std::vector<double> _old_fissrc; // Previous fission source for convergence checks
+        SerialMOC _sweeper; // MOC sweeper object
 };
