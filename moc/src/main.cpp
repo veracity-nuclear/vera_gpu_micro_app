@@ -20,7 +20,9 @@ int main(int argc, char* argv[]) {
       return 1;
   }
 
-  run_eigenvalue_iteration(args);
+  EigenSolver solver(args);
+  solver.solve();
+  std::cout << "Final keff: " << solver.keff() << std::endl;
 
   Kokkos::finalize();
   return 0;

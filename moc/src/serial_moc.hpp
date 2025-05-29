@@ -10,13 +10,13 @@
 class SerialMOC {
     public:
         // Constructor
-        SerialMOC(const std::string& filename, const std::string& libname);
+        SerialMOC(const std::string filename, const std::string libname);
         // Run the MOC sweep
         void sweep();
         // Get the FSR volumes
         const std::vector<double>& fsr_vol() const { return _fsr_vol; }
         // Get the scalar flux
-        const std::vector<std::vector<double>>& scalar_flux() const;
+        const std::vector<std::vector<double>>& scalar_flux() const { return _scalar_flux; }
         // Calculate the fission source
         std::vector<double> fission_source(const double keff) const;
         // Set the total source

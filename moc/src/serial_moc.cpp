@@ -23,7 +23,7 @@ std::vector<std::vector<double>> get_xstr(
     return xs;
 }
 
-SerialMOC::SerialMOC(const std::string& filename, const std::string& libname)
+SerialMOC::SerialMOC(const std::string filename, const std::string libname)
     : _filename(filename), _library(c5g7_library(libname)), _file(HighFive::File(filename, HighFive::File::ReadOnly)) {
 
     // Process the file here
@@ -179,11 +179,6 @@ void SerialMOC::_read_rays() {
     }
     // Print a message with the number of rays and filename
     std::cout << "Successfully set up " << nrays << " rays from file: " << _filename << std::endl;
-}
-
-// Get the scalar flux for each FSR
-const std::vector<std::vector<double>>& SerialMOC::scalar_flux() const {
-    return _scalar_flux;
 }
 
 // Build the fission source term for each FSR based on the scalar flux and nu-fission cross sections
