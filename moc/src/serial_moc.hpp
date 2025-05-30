@@ -1,7 +1,6 @@
 #pragma once
 #include <string>
 #include <vector>
-#include <highfive/H5Easy.hpp>
 #include <highfive/highfive.hpp>
 #include "exp_table.hpp"
 #include "c5g7_library.hpp"
