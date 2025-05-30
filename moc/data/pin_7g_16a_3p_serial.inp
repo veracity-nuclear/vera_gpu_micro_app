@@ -41,4 +41,5 @@ OPTION
   param RAY->edit_ray_trace SBK T
   param CMFD->linear_solver SIK 4
   param CMFD->edit_cmfd_matrix SBK T
+  param CMFD->edit_coarse_mesh SBK T
 .
