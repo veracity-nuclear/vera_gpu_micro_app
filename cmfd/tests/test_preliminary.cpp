@@ -1,3 +1,8 @@
+/*
+  This file tests and demonstrates key functionalities of PETSc and Kokkos
+  needed for the CMFD code.
+*/
+
 #include "gtest/gtest.h"
 #include "petscksp.h"
 #include "Kokkos_Core.hpp"
@@ -21,10 +26,18 @@
  * This allows tests to be run separately or all at once
  */
 class CMFDPrelim : public ::testing::Environment{
+private:
+  int argc_;
+  char** argv_;
+
+public:
+  CMFDPrelim(int argc, char** argv) : argc_(argc), argv_(argv) {}
+
 protected:
   void SetUp() override {
     Kokkos::initialize();
-    PetscCallG(PetscInitializeNoArguments());
+    PetscCallG(PetscInitialize(&argc_, &argv_, NULL, NULL));
+    PetscCallG(PetscLogDefaultBegin());
   }
 
   void TearDown() override {
@@ -33,12 +46,13 @@ protected:
   }
 };
 
+// Convert a HighFive group (data sets are rows) to a 2D vector
 std::vector<std::vector<PetscScalar>> readMatrixFromHDF5(const HighFive::Group& AMatH5) {
   const std::vector<std::string> rowNames = AMatH5.listObjectNames();
   const size_t n = rowNames.size(); // Square matrix dimension
 
   std::vector<std::vector<PetscScalar>> AMatLocal(n, std::vector<PetscScalar>(n));
-  
+
   for (size_t i = 0; i < n; ++i) {
     HighFive::DataSet rowDataset = AMatH5.getDataSet(rowNames[i]);
     rowDataset.read(AMatLocal[i]);
@@ -47,11 +61,12 @@ std::vector<std::vector<PetscScalar>> readMatrixFromHDF5(const HighFive::Group& 
   return AMatLocal;
 }
 
+// Create a PETSc vector (passed by ref) from a std::vector<PetscScalar>
 PetscErrorCode createPetscVec(const std::vector<PetscScalar>& vec, Vec& vecPetsc) {
   PetscInt n = vec.size();
 
   PetscFunctionBeginUser;
-  
+
   PetscCall(VecCreate(PETSC_COMM_WORLD, &vecPetsc));
   PetscCall(VecSetSizes(vecPetsc, PETSC_DECIDE, n));
   PetscCall(VecSetFromOptions(vecPetsc));
@@ -66,12 +81,13 @@ PetscErrorCode createPetscVec(const std::vector<PetscScalar>& vec, Vec& vecPetsc
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+// Create a PETSc matrix (passed by ref) from a std::vector<std::vector<PetscScalar>>
 PetscErrorCode createPetscMat(const std::vector<std::vector<PetscScalar>>& vecOfVec, Mat& matPetsc) {
   PetscInt nRows = vecOfVec.size();
   PetscInt nCols = nRows; // Assuming square matrix for simplicity
 
   PetscFunctionBeginUser;
-  
+
   PetscCall(MatCreate(PETSC_COMM_WORLD, &matPetsc));
   PetscCall(MatSetSizes(matPetsc, PETSC_DECIDE, PETSC_DECIDE, nRows, nCols));
   PetscCall(MatSetFromOptions(matPetsc));
@@ -90,6 +106,7 @@ PetscErrorCode createPetscMat(const std::vector<std::vector<PetscScalar>>& vecOf
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+// Create a PETSc vector (passed by ref) of type VECKOKKOS
 PetscErrorCode createPetscVecKokkos(const std::vector<PetscScalar>& vec, Vec& vecPetsc) {
   PetscInt n = vec.size();
   std::vector<PetscInt> indices(n);
@@ -109,12 +126,13 @@ PetscErrorCode createPetscVecKokkos(const std::vector<PetscScalar>& vec, Vec& ve
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+// Create a PETSc matrix (passed by ref) of type MATAIJKOKKOS
 PetscErrorCode createPetscMatKokkos(const std::vector<std::vector<PetscScalar>>& vecOfVec, Mat& matPetsc) {
   PetscInt nRows = vecOfVec.size();
   PetscInt nCols = nRows;
 
   PetscFunctionBeginUser;
-  
+
   PetscInt numNonZero = 0;
   for (PetscInt i = 0; i < nRows; ++i) {
     for (PetscInt j = 0; j < nCols; ++j) {
@@ -123,22 +141,22 @@ PetscErrorCode createPetscMatKokkos(const std::vector<std::vector<PetscScalar>>&
       }
     }
   }
-  
+
   // There are a lot of options here for splitting up the matrix per mpi rank (on the PETSc side),
   // i.e., # of rows/cols per rank and number of zeros on and off the diagonal (per row).
-  PetscCall(MatCreateAIJKokkos(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, 
-                               nRows, nCols, 
+  PetscCall(MatCreateAIJKokkos(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE,
+                               nRows, nCols,
                                PETSC_DEFAULT, NULL,
-                               PETSC_DEFAULT, NULL, 
+                               PETSC_DEFAULT, NULL,
                                &matPetsc));
-  
+
   if (numNonZero > 0) {
     std::vector<PetscInt> rowIndices, colIndices;
     std::vector<PetscScalar> values;
     rowIndices.reserve(numNonZero);
     colIndices.reserve(numNonZero);
     values.reserve(numNonZero);
-    
+
     for (PetscInt i = 0; i < nRows; ++i) {
       for (PetscInt j = 0; j < nCols; ++j) {
         if (vecOfVec[i][j] != 0.0) {
@@ -148,7 +166,7 @@ PetscErrorCode createPetscMatKokkos(const std::vector<std::vector<PetscScalar>>&
         }
       }
     }
-    
+
     PetscCall(MatSetPreallocationCOO(matPetsc, numNonZero, rowIndices.data(), colIndices.data()));
     PetscCall(MatSetValuesCOO(matPetsc, values.data(), INSERT_VALUES));
   } else {
@@ -169,7 +187,7 @@ TEST(s01_hdf5, readVector) {
   HighFive::DataSet bVecH5 = file.getDataSet("CMFD_Matrix/b");
   bVecH5.read(bVecLocal);
 
-  ASSERT_FALSE(bVecLocal.empty()) << "The vector 'b' should not be empty.";    
+  ASSERT_FALSE(bVecLocal.empty()) << "The vector 'b' should not be empty.";
 }
 
 // Check if the matrix 'A' can be read from the HDF5 file
@@ -198,7 +216,7 @@ TEST(s02_petsc, hdf5ToVector){
   HighFive::File file(filename, HighFive::File::ReadOnly);
   HighFive::DataSet bVecH5 = file.getDataSet("CMFD_Matrix/b");
   bVecH5.read(bVecLocal);
-  
+
   PetscCallG(createPetscVec(bVecLocal, bVecPetsc));
 
   PetscScalar value;
@@ -261,7 +279,7 @@ TEST(s02_petsc, solve){
 
   xVecH5.read(xVecLocalGold);
   bVecH5.read(bVecLocal);
-  
+
   std::vector<std::vector<PetscScalar>> AMatLocal = readMatrixFromHDF5(AMatH5);
 
   PetscCallG(createPetscMat(AMatLocal, AMatPetsc));
@@ -293,6 +311,7 @@ TEST(s02_petsc, solve){
   PetscCallG(VecDestroy(&bVecPetsc));
 }
 
+// Create a PETSc vector of type VECKOKKOS
 TEST(s03_kokkos, petscKokkosVec){
   std::string filename = "data/pin_7g_16a_3p_serial.h5";
   std::vector<PetscScalar> bVecLocal;
@@ -315,9 +334,9 @@ TEST(s03_kokkos, petscKokkosVec){
   PetscCallG(VecDestroy(&bVecPetsc));
 }
 
+// Create a PETSc matrix of type MATAIJKOKKOS
 TEST(s03_kokkos, petscKokkosMat){
-  // std::string filename = "data/pin_7g_16a_3p_serial.h5";
-  std::string filename = "data/mini-core_7g_16a_3p_serial.h5";
+  std::string filename = "data/pin_7g_16a_3p_serial.h5";
   Mat AMatPetsc;
   PetscScalar dummyValue;
 
@@ -343,8 +362,62 @@ TEST(s03_kokkos, petscKokkosMat){
   PetscCallG(MatDestroy(&AMatPetsc));
 }
 
+// Solve a linear system using PETSc with Kokkos vectors and matrices
+TEST(s03_kokkos, solveKokkos){
+  double tol = 1.e-7;
+  // std::string filename = "data/pin_7g_16a_3p_serial.h5";
+  std::string filename = "data/mini-core_7g_16a_3p_serial.h5";
+  std::vector<PetscScalar> bVecLocal, xVecLocalGold;
+  Mat AMatPetsc;
+  Vec bVecPetsc, xVecPetsc;
+  KSP ksp;
+  PC pc;
+  PetscScalar value;
+  PetscLogEvent READ_FILE;
+
+  PetscFunctionBeginUser;
+  PetscCallG(PetscLogEventRegister("ReadHDF5File", 0, &READ_FILE));
+
+  PetscCallG(PetscLogEventBegin(READ_FILE, 0, 0, 0, 0));
+  HighFive::File file(filename, HighFive::File::ReadOnly);
+  HighFive::Group AMatH5 = file.getGroup("CMFD_Matrix/A");
+  HighFive::DataSet xVecH5 = file.getDataSet("CMFD_Matrix/x");
+  HighFive::DataSet bVecH5 = file.getDataSet("CMFD_Matrix/b");
+
+  xVecH5.read(xVecLocalGold);
+  bVecH5.read(bVecLocal);
+
+  std::vector<std::vector<PetscScalar>> AMatLocal = readMatrixFromHDF5(AMatH5);
+  PetscCallG(PetscLogEventEnd(READ_FILE, 0, 0, 0, 0));
+
+  PetscCallG(createPetscMatKokkos(AMatLocal, AMatPetsc));
+  PetscCallG(createPetscVecKokkos(bVecLocal, bVecPetsc));
+
+  PetscCallG(VecDuplicate(bVecPetsc, &xVecPetsc));
+
+  PetscCallG(KSPCreate(PETSC_COMM_WORLD, &ksp));
+  PetscCallG(KSPSetOperators(ksp, AMatPetsc, AMatPetsc));
+  PetscCallG(KSPSetTolerances(ksp, tol, PETSC_CURRENT, PETSC_CURRENT, PETSC_CURRENT));
+
+  PetscCallG(KSPGetPC(ksp, &pc));
+  PetscCallG(PCSetType(pc, PCJACOBI));
+
+  // This should use the default kokkos execution space
+  PetscCallG(KSPSolve(ksp, bVecPetsc, xVecPetsc));
+
+  for (PetscInt i = 0; i < xVecLocalGold.size(); i++) {
+    PetscCallG(VecGetValues(xVecPetsc, 1, &i, &value));
+    EXPECT_NEAR(value, xVecLocalGold[i], 10*tol) << "Value mismatch at index " << i;
+  }
+
+  PetscCallG(KSPDestroy(&ksp));
+  PetscCallG(MatDestroy(&AMatPetsc));
+  PetscCallG(VecDestroy(&xVecPetsc));
+  PetscCallG(VecDestroy(&bVecPetsc));
+}
+
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
-  ::testing::AddGlobalTestEnvironment(new CMFDPrelim());
+  ::testing::AddGlobalTestEnvironment(new CMFDPrelim(argc, argv));
   return RUN_ALL_TESTS();
 }
