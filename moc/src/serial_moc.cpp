@@ -23,7 +23,7 @@ std::vector<std::vector<double>> get_xstr(
     return xs;
 }
 
-SerialMOC::SerialMOC(const std::string filename, const std::string libname)
+SerialMOC::SerialMOC(const std::string& filename, const std::string& libname)
     : _filename(filename), _library(c5g7_library(libname)), _file(HighFive::File(filename, HighFive::File::ReadOnly)) {
 
     // Process the file here

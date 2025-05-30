@@ -10,7 +10,7 @@
 class SerialMOC {
     public:
         // Constructor
-        SerialMOC(const std::string filename, const std::string libname);
+        SerialMOC(const std::string& filename, const std::string& libname);
         // Run the MOC sweep
         void sweep();
         // Get the FSR volumes
@@ -43,7 +43,7 @@ class SerialMOC {
         std::vector<std::vector<std::vector<double>>> _segflux;  // Segment flux array
         std::vector<std::vector<double>> _exparg;  // Exponential arguments for each segment and group
         std::vector<std::vector<double>> _scalar_flux;  // Scalar flux array
-        std::vector<std::vector<double>> _source;  // Scalar flux array
+        std::vector<std::vector<double>> _source;  // Multrigroup total source term for each FSR
         std::vector<AngFluxBCAngle> _angflux;  // Angular flux for each angle
         std::vector<AngFluxBCAngle> _old_angflux;  // Angular flux for each angle
 };

@@ -3,7 +3,6 @@
 #include <string>
 #include "serial_moc.hpp"
 
-double run_eigenvalue_iteration(const std::vector<std::string> args);
 class EigenSolver {
     public:
         // Build the solver; first argument is the HDF5 file name, second is the cross-section library name

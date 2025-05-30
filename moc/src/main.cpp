@@ -17,6 +17,7 @@ int main(int argc, char* argv[]) {
   const std::vector<std::string> args(argv, argv + argc);
   if (args.size() != 3) {
       std::cerr << "Usage: " << args[0] << " <filename> <XS file>" << std::endl;
+      Kokkos::finalize();
       return 1;
   }
 
