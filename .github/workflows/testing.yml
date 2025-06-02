@@ -8,7 +8,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: micahbest/vera-gpu:latest
+      image: micahbest/vera-gpu:v1.0.1
 
     steps:
       - name: Checkout repository

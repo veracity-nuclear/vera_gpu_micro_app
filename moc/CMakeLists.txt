@@ -1,5 +1,6 @@
 add_library(moc_lib
     src/main.cpp
+    src/eigen_solver.cpp
     src/serial_moc.cpp
     src/c5g7_library.cpp
     src/exp_table.cpp
