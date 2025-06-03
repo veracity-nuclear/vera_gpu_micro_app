@@ -4,7 +4,8 @@
 */
 
 #include "gtest/gtest.h"
-#include <petscvec_kokkos.hpp>
+#include "petscvec_kokkos.hpp"
+#include "petscmat_kokkos.hpp"
 #include "petscksp.h"
 #include "Kokkos_Core.hpp"
 #include "highfive/H5File.hpp"
@@ -143,8 +144,8 @@ PetscErrorCode createPetscMatKokkos(const std::vector<std::vector<PetscScalar>>&
     }
   }
 
-  // There are a lot of options here for splitting up the matrix per mpi rank (on the PETSc side),
-  // i.e., # of rows/cols per rank and number of zeros on and off the diagonal (per row).
+  // There are a lot of options here for splitting up the matrix into submatrices per mpi rank
+  //  (on the PETSc side), i.e., # of rows/cols per rank and number of zeros on and off the diagonal (per row).
   PetscCall(MatCreateAIJKokkos(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE,
                                nRows, nCols,
                                PETSC_DEFAULT, NULL,
@@ -180,31 +181,52 @@ PetscErrorCode createPetscMatKokkos(const std::vector<std::vector<PetscScalar>>&
 }
 
 // Generates dummy data for a Kokkos view using parallel_for, which can't be used in the body of a TEST
-void generateKokkosView(Kokkos::View<PetscScalar*>& bVecKokkos, const int vecSize = 5) {
+void generateDummyKokkosView(Kokkos::View<PetscScalar*>& vecKokkos, const int vecSize = 5) {
   const PetscScalar number = -3.14;
   Kokkos::parallel_for("Initialize bVec", vecSize, KOKKOS_LAMBDA(const int i) {
-    bVecKokkos(i) = Kokkos::exp(static_cast<PetscScalar>(i) / number); // Example data generation
+    vecKokkos(i) = Kokkos::exp(static_cast<PetscScalar>(i) / number); // Example data generation
   });
 
   Kokkos::fence();
 }
 
+/**
+ * @brief Generates a square tridiagonal matrix in CSR format using Kokkos.
+ * @param aValues 1D (nnz) Kokkos view for non-zero values of the matrix.
+ * @param iRow 1D (nRows + 1) Kokkos view that encodes the index of aValues where each row starts.
+ * @param jCol 1D (nnz) Kokkos view that encodes the column indices of aValues.
+ * @param nRows The number of rows (and thus columns) in the matrix.
+ *
+ * https://en.wikipedia.org/wiki/Sparse_matrix#Compressed_sparse_row_(CSR,_CRS_or_Yale_format)
+ */
+void generateTridiagKokkosAIJ(Kokkos::View<PetscScalar*>& aValues, Kokkos::View<PetscInt*>& iRow, Kokkos::View<PetscInt*>& jCol, const int nRows) {
+  Kokkos::parallel_for("fillTriAIJ", nRows, KOKKOS_LAMBDA(const int rowIdx) {
+      const PetscInt diagElementIdx = rowIdx * 3;
+      if (rowIdx > 0) {
+        iRow(rowIdx) = diagElementIdx - 1;
 
-PetscErrorCode kokkosViewToPetscMat(Mat& AMatPetsc, const int matSize = 5) {
-  PetscFunctionBeginUser;
+        // lower diagonal
+        aValues(diagElementIdx - 1) = diagElementIdx * Kokkos::cosh(diagElementIdx) - 3 * nRows;
+        jCol(diagElementIdx - 1) = rowIdx - 1;
+      } else {
+        iRow(rowIdx) = 0;
 
-  Kokkos::View<PetscScalar**> AMat("AMat", matSize, matSize);
-  std::cout << "AMat memory space: " << typeid(decltype(AMat)::memory_space).name() << std::endl;
+        // We only need to do this once and take advantage of the if else already used
+        // This entry does not correspond to rowIdx == 0
+        iRow(nRows) = 3 * nRows - 2; // last element is NNZ
+      }
 
-  // For AIJ this needs to be different
-  // Kokkos::parallel_for("Initialize AMat",
-  //   Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {n, n}),
-  //   KOKKOS_LAMBDA(const int i, const int j) {
-  //   AMat(i, j) = Kokkos::exp(i / n) * j / n;
-  //   });
-  // PetscCall(MatCreateSeqAIJKokkosWithKokkosViews); // https://petsc.org/release/manualpages/Mat/MatCreateSeqAIJKokkosWithKokkosViews/
+      // diagonal
+      aValues(diagElementIdx) = Kokkos::sqrt(Kokkos::sinh(diagElementIdx) + nRows);
+      jCol(diagElementIdx) = rowIdx;
 
-  PetscFunctionReturn(PETSC_SUCCESS);
+      // upper diagonal
+      if (rowIdx < nRows - 1) {
+        aValues(diagElementIdx + 1) = 1;
+        jCol(diagElementIdx + 1) = rowIdx + 1;
+      }
+  });
+  Kokkos::fence();
 }
 
 // Test if a HDF5 file can be opened and read
@@ -283,8 +305,10 @@ TEST(s02_petsc, hdf5ToMatrix){
   }
 
   PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_STDOUT_WORLD));
-  PetscCallG(PetscOptionsSetValue(NULL, "-draw_size", "1920,1080")); // Set the size of the draw window
-  PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_DRAW_WORLD)); // need x11 but allows visualization
+  #ifndef NDEBUG
+    PetscCallG(PetscOptionsSetValue(NULL, "-draw_size", "1920,1080")); // Set the size of the draw window
+    PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_DRAW_WORLD)); // need x11 but allows visualization
+  #endif
 
   PetscCallG(MatDestroy(&AMatPetsc));
 }
@@ -457,7 +481,7 @@ TEST(s03_kokkos, kokkosViewToPetscVec){
 
   PetscFunctionBeginUser;
 
-  generateKokkosView(bVecKokkos, vectorLength); // You can't use Kokkos Lambdas in a TEST...
+  generateDummyKokkosView(bVecKokkos, vectorLength); // You can't use Kokkos Lambdas in a TEST...
 
   // Create a PETSc vector from the Kokkos view
   PetscCallG(VecCreateSeqKokkosWithArray(PETSC_COMM_SELF, 1, vectorLength, bVecKokkos.data(), &bVecPetsc));
@@ -484,6 +508,88 @@ TEST(s03_kokkos, kokkosViewToPetscVec){
 
   PetscCallG(VecRestoreKokkosView(bVecPetsc, &d_values));
 
+  // You can also view the vector using PETSc's built-in viewer,
+  //  but calculating the norm (what is done in other tests to
+  //  verify data integrity) doesn't work with this vector for some reason
+  PetscCallG(VecView(bVecPetsc, PETSC_VIEWER_STDOUT_WORLD));
+
+  PetscCallG(VecDestroy(&bVecPetsc));
+}
+
+// Test if we can use an A, I, and J Kokkos view to create a tridiagonal PETSc matrix
+TEST(s03_kokkos, kokkosViewToPetscMat){
+  const PetscInt numRows = 5;
+  const PetscInt numNonZero = 3 * numRows - 2; // 3 non-zero elements per row, except for the first and last rows
+  Mat AMatPetsc;
+  Kokkos::View<PetscScalar*> aValues("aValues", numNonZero);
+  Kokkos::View<PetscInt*> iRow("iRow", numRows+1);
+  Kokkos::View<PetscInt*> jCol("jCol", numNonZero);
+
+  PetscFunctionBeginUser;
+
+  generateTridiagKokkosAIJ(aValues, iRow, jCol, numRows);
+
+  // The NULL allows you to specify the number of non-zero elements per row,
+  //  which doesn't make a big difference for a tridiagonal matrix
+  PetscCallG(MatCreateSeqAIJKokkos(PETSC_COMM_SELF, numRows, numRows, numNonZero, NULL, &AMatPetsc));
+  PetscCallG(MatCreateSeqAIJKokkosWithKokkosViews(PETSC_COMM_SELF, numRows, numRows, iRow, jCol, aValues, &AMatPetsc));
+
+  PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_STDOUT_WORLD));
+
+  // Calculate norm of the matrix to verify it is non-zero
+  PetscReal norm;
+  PetscCallG(MatNorm(AMatPetsc, NORM_FROBENIUS, &norm));
+  ASSERT_FALSE(norm == 0.0) << "The matrix norm is 0, likely garbage data";
+  ASSERT_FALSE(std::isnan(norm)) << "The matrix norm is NaN, likely garbage data";
+  ASSERT_FALSE(std::isinf(norm)) << "The matrix norm is Inf, likely garbage data";
+
+  // Don't destroy AMatPetsc as Kokkos::finalize will do it for us
+}
+
+// Test if we can solve a linear system with PETSc initialized with Kokkos views
+TEST(s03_kokkos, solveFromViews){
+  const PetscScalar tol = 1.e-7;
+  const PetscInt numRows = 10;
+  const PetscInt numNonZero = 3 * numRows - 2;
+
+  Vec bVecPetsc, xVecPetsc;
+  Mat AMatPetsc;
+  KSP ksp;
+  PC pc;
+  Kokkos::View<PetscScalar*> bVecKokkos("bVec", numRows);
+  Kokkos::View<PetscScalar*> aValues("aValues", numNonZero);
+  Kokkos::View<PetscInt*> iRow("iRow", numRows+1);
+  Kokkos::View<PetscInt*> jCol("jCol", numNonZero);
+
+  PetscFunctionBeginUser;
+
+  generateDummyKokkosView(bVecKokkos, numRows);
+  PetscCallG(VecCreateSeqKokkosWithArray(PETSC_COMM_SELF, 1, numRows, bVecKokkos.data(), &bVecPetsc));
+  PetscCallG(VecDuplicate(bVecPetsc, &xVecPetsc));
+
+  generateTridiagKokkosAIJ(aValues, iRow, jCol, numRows);
+  PetscCallG(MatCreateSeqAIJKokkos(PETSC_COMM_SELF, numRows, numRows, numNonZero, NULL, &AMatPetsc));
+  PetscCallG(MatCreateSeqAIJKokkosWithKokkosViews(PETSC_COMM_SELF, numRows, numRows, iRow, jCol, aValues, &AMatPetsc));
+
+  PetscCallG(KSPCreate(PETSC_COMM_SELF, &ksp));
+  PetscCallG(KSPSetOperators(ksp, AMatPetsc, AMatPetsc));
+  PetscCallG(KSPSetTolerances(ksp, tol, PETSC_CURRENT, PETSC_CURRENT, PETSC_CURRENT));
+
+  PetscCallG(KSPGetPC(ksp, &pc));
+  PetscCallG(PCSetType(pc, PCJACOBI));
+
+  PetscCallG(KSPSolve(ksp, bVecPetsc, xVecPetsc));
+
+  PetscCallG(VecView(xVecPetsc, PETSC_VIEWER_STDOUT_WORLD));
+
+  PetscReal norm;
+  PetscCallG(VecNorm(xVecPetsc, NORM_2, &norm));
+  ASSERT_FALSE(norm == 0.0) << "The solution vector norm is 0, likely garbage data";
+  ASSERT_FALSE(std::isnan(norm)) << "The solution vector norm is NaN, likely garbage data";
+  ASSERT_FALSE(std::isinf(norm)) << "The solution vector norm is Inf, likely garbage data";
+
+  PetscCallG(KSPDestroy(&ksp));
+  PetscCallG(VecDestroy(&xVecPetsc));
   PetscCallG(VecDestroy(&bVecPetsc));
 }
 
