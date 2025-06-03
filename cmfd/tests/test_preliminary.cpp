@@ -4,6 +4,7 @@
 */
 
 #include "gtest/gtest.h"
+#include <petscvec_kokkos.hpp>
 #include "petscksp.h"
 #include "Kokkos_Core.hpp"
 #include "highfive/H5File.hpp"
@@ -178,6 +179,34 @@ PetscErrorCode createPetscMatKokkos(const std::vector<std::vector<PetscScalar>>&
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+// Generates dummy data for a Kokkos view using parallel_for, which can't be used in the body of a TEST
+void generateKokkosView(Kokkos::View<PetscScalar*>& bVecKokkos, const int vecSize = 5) {
+  const PetscScalar number = -3.14;
+  Kokkos::parallel_for("Initialize bVec", vecSize, KOKKOS_LAMBDA(const int i) {
+    bVecKokkos(i) = Kokkos::exp(static_cast<PetscScalar>(i) / number); // Example data generation
+  });
+
+  Kokkos::fence();
+}
+
+
+PetscErrorCode kokkosViewToPetscMat(Mat& AMatPetsc, const int matSize = 5) {
+  PetscFunctionBeginUser;
+
+  Kokkos::View<PetscScalar**> AMat("AMat", matSize, matSize);
+  std::cout << "AMat memory space: " << typeid(decltype(AMat)::memory_space).name() << std::endl;
+
+  // For AIJ this needs to be different
+  // Kokkos::parallel_for("Initialize AMat",
+  //   Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {n, n}),
+  //   KOKKOS_LAMBDA(const int i, const int j) {
+  //   AMat(i, j) = Kokkos::exp(i / n) * j / n;
+  //   });
+  // PetscCall(MatCreateSeqAIJKokkosWithKokkosViews); // https://petsc.org/release/manualpages/Mat/MatCreateSeqAIJKokkosWithKokkosViews/
+
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
 // Test if a HDF5 file can be opened and read
 TEST(s01_hdf5, readVector) {
   std::vector<PetscScalar> bVecLocal;
@@ -231,6 +260,7 @@ TEST(s02_petsc, hdf5ToVector){
 // Test if a matrix can be created in PETSc and filled with data from an HDF5 file
 TEST(s02_petsc, hdf5ToMatrix){
   std::string filename = "data/pin_7g_16a_3p_serial.h5";
+  // std::string filename = "data/7x7_7g_16a_3p_serial.h5";
   Mat AMatPetsc;
   PetscScalar dummyValue;
 
@@ -253,7 +283,8 @@ TEST(s02_petsc, hdf5ToMatrix){
   }
 
   PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_STDOUT_WORLD));
-  // PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_DRAW_WORLD)); // need x11 but allows visualization
+  PetscCallG(PetscOptionsSetValue(NULL, "-draw_size", "1920,1080")); // Set the size of the draw window
+  PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_DRAW_WORLD)); // need x11 but allows visualization
 
   PetscCallG(MatDestroy(&AMatPetsc));
 }
@@ -413,6 +444,46 @@ TEST(s03_kokkos, solveKokkos){
   PetscCallG(KSPDestroy(&ksp));
   PetscCallG(MatDestroy(&AMatPetsc));
   PetscCallG(VecDestroy(&xVecPetsc));
+  PetscCallG(VecDestroy(&bVecPetsc));
+}
+
+// Test if a Kokkos view can be converted to a PETSc vectors
+TEST(s03_kokkos, kokkosViewToPetscVec){
+  const size_t vectorLength = 5;
+  Vec bVecPetsc;
+  Kokkos::View<PetscScalar*> bVecKokkos("bVec", vectorLength);
+
+  std::cout << "bVec memory space: " << typeid(decltype(bVecKokkos)::memory_space).name() << std::endl;
+
+  PetscFunctionBeginUser;
+
+  generateKokkosView(bVecKokkos, vectorLength); // You can't use Kokkos Lambdas in a TEST...
+
+  // Create a PETSc vector from the Kokkos view
+  PetscCallG(VecCreateSeqKokkosWithArray(PETSC_COMM_SELF, 1, vectorLength, bVecKokkos.data(), &bVecPetsc));
+
+  // Get the Kokkos view from the PETSc vector (must be const data type in view)
+  Kokkos::View<const PetscScalar*, Kokkos::DefaultExecutionSpace::memory_space> d_values;
+  PetscCallG(VecGetKokkosView(bVecPetsc, &d_values));
+
+  // Copy the values to the host from the device so we can inspect it
+  Kokkos::View<PetscScalar*, Kokkos::HostSpace::memory_space> h_values("bVecHost", vectorLength);
+  Kokkos::deep_copy(h_values, d_values);
+  Kokkos::fence(); // Ensure the copy is complete before accessing
+
+  PetscScalar value;
+  for (size_t i = 0; i < vectorLength; ++i) {
+    value = h_values(i);
+    std::cout << "bVec[" << i << "] = " << value << std::endl;
+
+    // These range of values are determined generateKokkosView,
+    //  but the purpose of these tests is to make sure data are valid
+    ASSERT_GT(value, 0.0) << "Value should be greater than zero. The data may not have been initialized correctly.";
+    ASSERT_LE(value, 1.0) << "Value should be less than or equal to one. The data may not have been initialized correctly.";
+  }
+
+  PetscCallG(VecRestoreKokkosView(bVecPetsc, &d_values));
+
   PetscCallG(VecDestroy(&bVecPetsc));
 }
 
