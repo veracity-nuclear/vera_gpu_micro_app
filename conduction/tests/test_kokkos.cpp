@@ -9,7 +9,7 @@ void run_kokkos_test() {
     const int N = 5;
     Kokkos::View<int*> results("results", N);
 
-    Kokkos::parallel_for("FillArray", N, KOKKOS_LAMBDA(int i) {
+    Kokkos::parallel_for("FillArray", N, KOKKOS_LAMBDA(const int i) {
         results(i) = i * i;
     });
 
