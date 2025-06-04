@@ -1,6 +1,7 @@
 #include <Kokkos_Core.hpp>
 #include <gtest/gtest.h>
 
+namespace {
 void run_kokkos_test() {
 
     // Print a message to verify Kokkos is working
