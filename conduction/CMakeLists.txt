@@ -28,7 +28,6 @@ target_link_libraries(conduction_tests
     Kokkos::kokkos
     PETSc::PETSc
     GTest::gtest
-    GTest::gtest_main
 )
 
 add_test(NAME conduction_tests COMMAND conduction_tests)
