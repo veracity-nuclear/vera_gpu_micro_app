@@ -11,14 +11,6 @@ find_path(GTEST_INCLUDE_DIR
   PATH_SUFFIXES include include/gtest
 )
 
-# Create an INTERFACE imported target for googletest
-#add_library(GTest::gtest INTERFACE IMPORTED)
-
-# Specify include directories
-#target_include_directories(GTest::gtest INTERFACE
-#  ${GTEST_INCLUDE_DIR}
-#)
-
 find_library(GTEST_LIBRARY
   NAMES gtest
   HINTS
