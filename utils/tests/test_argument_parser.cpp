@@ -1,7 +1,4 @@
 #include "argument_parser.hpp"
-#include <cassert>
-#include <iostream>
-#include <sstream>
 #include <cstring>
 #include <gtest/gtest.h>
 
@@ -44,18 +41,12 @@ void cleanup_args(int argc, char** argv) {
 
 // Test constructor and basic setup
 TEST(BasicTest, Constructor) {
-    std::cout << "Testing constructor... ";
-
-    ArgumentParser parser("test_program", "Test description");
-
     // Not much to test here - just make sure it doesn't crash
-    std::cout << "PASSED\n";
+    ArgumentParser parser("test_program", "Test description");
 }
 
 // Test adding and retrieving positional arguments
 TEST(BasicTest, PositionalArguments) {
-    std::cout << "Testing positional arguments... ";
-
     ArgumentParser parser("test_program", "Test description");
     parser.add_argument("input", "Input file");
     parser.add_argument("output", "Output file");
@@ -65,23 +56,19 @@ TEST(BasicTest, PositionalArguments) {
     char** argv;
     make_args(args, argc, argv);
 
-    bool success = parser.parse(argc, argv);
-    assert(success);
+    ASSERT_TRUE(parser.parse(argc, argv));
 
     std::string input = parser.get_positional(0);
     std::string output = parser.get_positional(1);
 
-    assert(input == "file1.txt");
-    assert(output == "file2.txt");
+    ASSERT_EQ(input, "file1.txt");
+    ASSERT_EQ(output, "file2.txt");
 
     cleanup_args(argc, argv);
-    std::cout << "PASSED\n";
 }
 
 // Test adding and retrieving optional arguments
 TEST(BasicTest, OptionalArguments) {
-    std::cout << "Testing optional arguments... ";
-
     ArgumentParser parser("test_program", "Test description");
     parser.add_option("threads", "Number of threads", "1");
     parser.add_option("output", "Output file", "output.txt");
@@ -92,38 +79,44 @@ TEST(BasicTest, OptionalArguments) {
     char** argv;
     make_args(args, argc, argv);
 
-    bool success = parser.parse(argc, argv);
-    assert(success);
+    ASSERT_TRUE(parser.parse(argc, argv));
 
     std::string threads = parser.get_option("threads");
     std::string output = parser.get_option("output");
 
-    assert(threads == "4");
-    assert(output == "custom.txt");
+    ASSERT_EQ(threads, "4");
+    ASSERT_EQ(output, "custom.txt");
 
     cleanup_args(argc, argv);
+}
+
+// Test default values for optional arguments
+TEST(BasicTest, DefaultValues) {
+    ArgumentParser parser("test_program", "Test description");
+    parser.add_option("threads", "Number of threads", "1");
+    parser.add_option("output", "Output file", "output.txt");
+    int argc;
+    char** argv;
+    // Test with no optional arguments provided
+    std::vector<std::string> args = {"test_program"};
 
     // Test with default values
     std::vector<std::string> args2 = {"test_program"};
     make_args(args2, argc, argv);
 
-    success = parser.parse(argc, argv);
-    assert(success);
+    ASSERT_TRUE(parser.parse(argc, argv));
 
-    threads = parser.get_option("threads");
-    output = parser.get_option("output");
+    std::string threads = parser.get_option("threads");
+    std::string output = parser.get_option("output");
 
-    assert(threads == "1");
-    assert(output == "output.txt");
+    ASSERT_EQ(threads, "1");
+    ASSERT_EQ(output, "output.txt");
 
     cleanup_args(argc, argv);
-    std::cout << "PASSED\n";
 }
 
 // Test option validation
 TEST(BasicTest, OptionValidation) {
-    std::cout << "Testing option validation... ";
-
     ArgumentParser parser("test_program", "Test description");
     std::vector<std::string> valid_levels = {"low", "medium", "high"};
     parser.add_option("level", "Detail level", "medium", valid_levels);
@@ -134,11 +127,10 @@ TEST(BasicTest, OptionValidation) {
     char** argv;
     make_args(args, argc, argv);
 
-    bool success = parser.parse(argc, argv);
-    assert(success);
+    ASSERT_TRUE(parser.parse(argc, argv));
 
     std::string level = parser.get_option("level");
-    assert(level == "high");
+    ASSERT_EQ(level, "high");
 
     cleanup_args(argc, argv);
 
@@ -147,20 +139,16 @@ TEST(BasicTest, OptionValidation) {
     make_args(args2, argc, argv);
 
     CaptureStderr capture;
-    success = parser.parse(argc, argv);
+    ASSERT_FALSE(parser.parse(argc, argv));
     std::string error_output = capture.get_output();
 
-    assert(!success);
-    assert(error_output.find("Invalid value") != std::string::npos);
+    ASSERT_NE(error_output.find("Invalid value"), std::string::npos);
 
     cleanup_args(argc, argv);
-    std::cout << "PASSED\n";
 }
 
 // Test boolean flags
 TEST(BasicTest, Flags) {
-    std::cout << "Testing boolean flags... ";
-
     ArgumentParser parser("test_program", "Test description");
     parser.add_flag("verbose", "Verbosity flag");
     parser.add_flag("debug", "Debug flag");
@@ -171,23 +159,19 @@ TEST(BasicTest, Flags) {
     char** argv;
     make_args(args, argc, argv);
 
-    bool success = parser.parse(argc, argv);
-    assert(success);
+    ASSERT_TRUE(parser.parse(argc, argv));
 
     bool verbose = parser.get_flag("verbose");
     bool debug = parser.get_flag("debug");
 
-    assert(verbose == true);
-    assert(debug == false);
+    ASSERT_TRUE(verbose);
+    ASSERT_FALSE(debug);
 
     cleanup_args(argc, argv);
-    std::cout << "PASSED\n";
 }
 
 // Test help flag and output
 TEST(BasicTest, Help) {
-    std::cout << "Testing help output... ";
-
     ArgumentParser parser("test_program", "Test description");
     parser.add_argument("input", "Input file");
     parser.add_option("output", "Output file", "out.txt");
@@ -199,23 +183,19 @@ TEST(BasicTest, Help) {
     make_args(args, argc, argv);
 
     CaptureStderr capture;
-    bool success = parser.parse(argc, argv);
-    std::string help_output = capture.get_output();
 
-    assert(!success); // Help should return false to stop further processing
-    assert(help_output.find("Usage:") != std::string::npos);
-    assert(help_output.find("input") != std::string::npos);
-    assert(help_output.find("output") != std::string::npos);
-    assert(help_output.find("verbose") != std::string::npos);
+    ASSERT_FALSE(parser.parse(argc, argv)); // Help should return false to stop further processing
+    std::string help_output = capture.get_output();
+    ASSERT_NE(help_output.find("Usage:"), std::string::npos);
+    ASSERT_NE(help_output.find("input"), std::string::npos);
+    ASSERT_NE(help_output.find("output"), std::string::npos);
+    ASSERT_NE(help_output.find("verbose"), std::string::npos);
 
     cleanup_args(argc, argv);
-    std::cout << "PASSED\n";
 }
 
 // Test error cases
 TEST(BasicTest, ErrorCases) {
-    std::cout << "Testing error cases... ";
-
     ArgumentParser parser("test_program", "Test description");
     parser.add_argument("input", "Input file");
     parser.add_option("output", "Output file", "out.txt");
@@ -227,11 +207,10 @@ TEST(BasicTest, ErrorCases) {
     make_args(args, argc, argv);
 
     CaptureStderr capture1;
-    bool success = parser.parse(argc, argv);
+    ASSERT_FALSE(parser.parse(argc, argv));
     std::string error_output = capture1.get_output();
 
-    assert(!success);
-    assert(error_output.find("Not enough positional arguments") != std::string::npos);
+    ASSERT_NE(error_output.find("Not enough positional arguments"), std::string::npos);
 
     cleanup_args(argc, argv);
 
@@ -240,11 +219,10 @@ TEST(BasicTest, ErrorCases) {
     make_args(args2, argc, argv);
 
     CaptureStderr capture2;
-    success = parser.parse(argc, argv);
+    ASSERT_FALSE(parser.parse(argc, argv));
     error_output = capture2.get_output();
 
-    assert(!success);
-    assert(error_output.find("Unknown option") != std::string::npos);
+    ASSERT_NE(error_output.find("Unknown option"), std::string::npos);
 
     cleanup_args(argc, argv);
 
@@ -253,20 +231,16 @@ TEST(BasicTest, ErrorCases) {
     make_args(args3, argc, argv);
 
     CaptureStderr capture3;
-    success = parser.parse(argc, argv);
+    ASSERT_FALSE(parser.parse(argc, argv));
     error_output = capture3.get_output();
 
-    assert(!success);
-    assert(error_output.find("requires a value") != std::string::npos);
+    ASSERT_NE(error_output.find("requires a value"), std::string::npos);
 
     cleanup_args(argc, argv);
-    std::cout << "PASSED\n";
 }
 
 // Test get_args method
 TEST(BasicTest, GetArgs) {
-    std::cout << "Testing get_args method... ";
-
     ArgumentParser parser("test_program", "Test description");
     parser.add_argument("input", "Input file");
     parser.add_argument("output", "Output file");
@@ -277,23 +251,19 @@ TEST(BasicTest, GetArgs) {
     char** argv;
     make_args(args, argc, argv);
 
-    bool success = parser.parse(argc, argv);
-    assert(success);
+    ASSERT_TRUE(parser.parse(argc, argv));
 
     std::vector<std::string> solver_args = parser.get_args("test_program");
 
-    assert(solver_args.size() == 3); // program_name + 2 positional args
-    assert(solver_args[0] == "test_program");
-    assert(solver_args[1] == "in.txt");
-    assert(solver_args[2] == "out.txt");
+    ASSERT_EQ(solver_args.size(), 3); // program_name + 2 positional args
+    ASSERT_EQ(solver_args[0], "test_program");
+    ASSERT_EQ(solver_args[1], "in.txt");
+    ASSERT_EQ(solver_args[2], "out.txt");
 
     cleanup_args(argc, argv);
-    std::cout << "PASSED\n";
 }
 
 int main() {
-    std::cout << "Running ArgumentParser Unit Tests\n";
-
     testing::InitGoogleTest();
     return RUN_ALL_TESTS();
 }
