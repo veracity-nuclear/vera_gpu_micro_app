@@ -20,7 +20,9 @@ find_package(HighFive REQUIRED)
 
 # GTest via FetchContent (if not system-installed)
 find_package(googletest)
-IF (NOT ${googletest_FOUND})
+IF (${googletest_FOUND})
+    MESSAGE(STATUS "googletest installation found: ${GTEST_LIBRARY}")
+ELSE()
     MESSAGE(STATUS "googletest not found; defaulting to FetchContent")
     include(FetchContent)
     FetchContent_Declare(
@@ -30,8 +32,6 @@ IF (NOT ${googletest_FOUND})
     # Prevent overriding the parent project's compiler/linker settings
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(googletest)
-ELSE()
-	MESSAGE(STATUS "googletest installation found: ${GTEST_LIBRARY}")
 ENDIF()
 
 enable_testing()
