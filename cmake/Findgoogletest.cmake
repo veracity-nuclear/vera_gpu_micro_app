@@ -20,9 +20,6 @@ find_library(GTEST_LIBRARY
   PATH_SUFFIXES lib lib64
 )
 
-message(STATUS "GTest include dir: ${GTEST_INCLUDE_DIR}")
-message(STATUS "GTest library: ${GTEST_LIBRARY}")
-
 # Create IMPORTED target
 if(GTEST_INCLUDE_DIR AND GTEST_LIBRARY)
   add_library(GTest::gtest SHARED IMPORTED)
@@ -30,6 +27,4 @@ if(GTEST_INCLUDE_DIR AND GTEST_LIBRARY)
     IMPORTED_LOCATION "${GTEST_LIBRARY}"
     INTERFACE_INCLUDE_DIRECTORIES "${GTEST_INCLUDE_DIR}"
   )
-else()
-  message(FATAL_ERROR "Failed to find GTest include and/or library.")
 endif()
