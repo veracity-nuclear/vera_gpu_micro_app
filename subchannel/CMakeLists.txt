@@ -25,7 +25,6 @@ target_link_libraries(subchannel_tests
     Kokkos::kokkos
     PETSc::PETSc
     GTest::gtest
-    GTest::gtest_main
 )
 
 add_test(NAME subchannel_tests COMMAND subchannel_tests)

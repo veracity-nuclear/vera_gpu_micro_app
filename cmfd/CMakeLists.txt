@@ -23,7 +23,6 @@ target_link_libraries(cmfd_tests
     HighFive::HighFive
     Kokkos::kokkos
     GTest::gtest
-    GTest::gtest_main
 )
 
 add_test(NAME cmfd_tests COMMAND cmfd_tests)
