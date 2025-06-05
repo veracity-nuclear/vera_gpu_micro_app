@@ -2,9 +2,10 @@
 #include <string>
 #include <vector>
 #include <highfive/highfive.hpp>
+#include <Kokkos_Core.hpp>
 #include "exp_table.hpp"
 #include "c5g7_library.hpp"
-#include "long_ray.hpp"
+#include "kokkos_long_ray.hpp"
 #include "base_moc.hpp"
 #include "argument_parser.hpp"
 
@@ -43,7 +44,7 @@ class KokkosMOC : public BaseMOC {
         std::vector<double> _fsr_vol;  // FSR volumes
         std::vector<int> _fsr_mat_id;  // FSR material IDs
         std::vector<std::vector<double>> _xstr;  // Cross-sections for each FSR
-        std::vector<LongRay> _rays;  // Long rays for MOC
+        Kokkos::View<KokkosLongRay*> _rays;  // Long rays for MOC
         std::vector<double> _ray_spacing;
         std::vector<std::vector<double>> _angle_weights;  // Weights for each angle
         std::vector<double> _rsinpolang;  // Precomputed sin(polar angle) values for ray tracing

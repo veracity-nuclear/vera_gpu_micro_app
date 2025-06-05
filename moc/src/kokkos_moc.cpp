@@ -5,7 +5,7 @@
 #include <highfive/H5Easy.hpp>
 #include <highfive/highfive.hpp>
 #include "exp_table.hpp"
-#include "long_ray.hpp"
+#include "kokkos_long_ray.hpp"
 #include "c5g7_library.hpp"
 
 namespace {
@@ -127,8 +127,8 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
 
     // Allocate segment flux array
     _max_segments = 0;
-    for (const auto& ray : _rays) {
-        _max_segments = std::max(_max_segments, ray._fsrs.size());
+    for (int i = 0; i < _rays.size(); i++) {
+        _max_segments = std::max(_max_segments, _rays(i)._fsrs.size());
     }
     _segflux.resize(2);
     for (size_t j = 0; j < 2; j++) {
@@ -165,7 +165,7 @@ void KokkosMOC::_read_rays() {
     }
 
     // Set up the rays
-    _rays.reserve(nrays);
+    _rays = Kokkos::View<KokkosLongRay*>("rays", nrays);
     nrays = 0;
     for (const auto& objName : domain.listObjectNames()) {
         if (objName.substr(0, 6) == "Angle_") {
@@ -177,7 +177,7 @@ void KokkosMOC::_read_rays() {
             for (const auto& rayName : angleGroup.listObjectNames()) {
                 if (rayName.substr(0, 8) == "LongRay_") {
                     auto rayGroup = angleGroup.getGroup(rayName);
-                    _rays.push_back(LongRay(rayGroup, angleIndex, radians));
+                    _rays(nrays) = KokkosLongRay(rayGroup, angleIndex, radians);
                     nrays++;
                 }
             }
@@ -239,8 +239,9 @@ void KokkosMOC::sweep() {
         }
     }
 
-    // Sweep all the long rayse
-    for (const auto& ray : _rays) {
+    // Sweep all the long rays
+    for (int i = 0; i < _rays.size(); i++) {
+        const auto& ray = _rays(i);
         // if (ray.angle() == 2) {
         //     throw std::runtime_error("Beginning of ray loop");
         // }

@@ -4,7 +4,7 @@
 #include <highfive/highfive.hpp>
 #include "base_moc.hpp"
 
-struct LongRay
+struct KokkosLongRay
 {
     public:
         std::vector<int> _fsrs;
@@ -17,7 +17,8 @@ struct LongRay
 
         // Constructor that initializes the LongRay object from a HighFive::Group
         // for a specific angle index and radians value
-        LongRay(const HighFive::Group& group, int angle_index, double radians)
+        KokkosLongRay() = default;
+        KokkosLongRay(const HighFive::Group& group, int angle_index, double radians)
         : _radians(radians),
           _angle_index(angle_index),
           _fsrs(group.getDataSet("FSRs").read<std::vector<int>>()),
