@@ -10,16 +10,18 @@
 
 namespace {
     // Get the total cross sections for each FSR from the library
-    std::vector<std::vector<double>> get_xstr(
+    Kokkos::View<double**> get_xstr(
         const int num_fsr,
         const int starting_xsr,
         const std::vector<int>& fsr_mat_id,
         const c5g7_library& library
     ) {
-        std::vector<std::vector<double>> xs;
-        xs.resize(num_fsr);
+        Kokkos::View<double**> xs("xstr", num_fsr, library.get_num_groups());
         for (auto i = 0; i < fsr_mat_id.size(); i++) {
-            xs[i] = library.total(fsr_mat_id[i]);
+            auto total_xs = library.total(fsr_mat_id[i]);
+            for (int g = 0; g < library.get_num_groups(); g++) {
+                xs(i, g) = total_xs[g];
+            }
         }
         return xs;
     }
@@ -120,9 +122,9 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
     }
 
     // Store the inverse polar angle sine
-    _rsinpolang.resize(_npol);
+    _rsinpolang = Kokkos::View<double*>("rsinpolang", _npol);
     for (int ipol = 0; ipol < _npol; ipol++) {
-        _rsinpolang[ipol] = 1.0 / std::sin(polar_angles[ipol]);
+        _rsinpolang(ipol) = 1.0 / std::sin(polar_angles[ipol]);
     }
 
     // Allocate segment flux array
@@ -139,10 +141,7 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
     }
 
     // Initialize the exponential argument array
-    _exparg.resize(_max_segments + 1);
-    for (size_t i = 0; i < _max_segments + 1; i++) {
-        _exparg[i].resize(_ng, 0.0);
-    }
+    _exparg = Kokkos::View<double**>("exparg", _max_segments + 1, _ng);
 }
 
 void KokkosMOC::_read_rays() {
@@ -252,7 +251,7 @@ void KokkosMOC::sweep() {
             // Store the exponential arguments for this ray
             for (size_t i = 0; i < ray._fsrs.size(); i++) {
                 for (size_t ig = 0; ig < _ng; ig++) {
-                    _exparg[i][ig] = _exp_table.expt(-_xstr[ray._fsrs[i] - 1][ig] * ray._segments[i] * _rsinpolang[ipol]);
+                    _exparg(i, ig) = _exp_table.expt(-_xstr(ray._fsrs[i] - 1, ig) * ray._segments[i] * _rsinpolang(ipol));
                 }
             }
 
@@ -282,7 +281,7 @@ void KokkosMOC::sweep() {
                     //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " " << _segflux[RAY_START][iseg1][ig] << " " << source[ireg1][ig] << " " << phid1 << std::endl;
                     // }
                     // TODO: tabulate exp
-                    phid1 *= _exparg[iseg1][ig];
+                    phid1 *= _exparg(iseg1, ig);
                     // if (ray.angle() == debug_angle) {
                     //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
                     //         << 1.0 - std::exp(-_xstr[ireg1][ig] * ray._segments[iseg1] * _rsinpolang[ipol]) << " : " << phid1 << std::endl;
@@ -304,7 +303,7 @@ void KokkosMOC::sweep() {
                     // if (ray.angle() == debug_angle) {
                     //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " " << _segflux[RAY_END][iseg2][ig] << " " << source[ireg2][ig] << " " << phid2 << std::endl;
                     // }
-                    phid2 *= _exparg[iseg2 - 1][ig];
+                    phid2 *= _exparg(iseg2 - 1, ig);
                     // if (ray.angle() == debug_angle) {
                     //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " "
                     //     << 1.0 - std::exp(-_xstr[ireg2][ig] * ray._segments[iseg2 - 1] * _rsinpolang[ipol]) << " "
@@ -347,7 +346,7 @@ void KokkosMOC::sweep() {
     for (size_t i = 0; i < _nfsr; ++i) {
         for (size_t g = 0; g < _ng; ++g) {
             // std::cout << i << " " << g << " scale " << _scalar_flux[i][g] << " " << _xstr[i][g] << " " << _fsr_vol[i] << " " << _plane_height << " " << source[i][g] << " " << 4.0 * M_PI << std::endl;
-            _scalar_flux[i][g] = _scalar_flux[i][g] / (_xstr[i][g] * _fsr_vol[i] / _plane_height) + _source[i][g] * 4.0 * M_PI;
+            _scalar_flux[i][g] = _scalar_flux[i][g] / (_xstr(i, g) * _fsr_vol[i] / _plane_height) + _source[i][g] * 4.0 * M_PI;
         }
     }
 

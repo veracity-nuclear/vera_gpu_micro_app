@@ -43,13 +43,13 @@ class KokkosMOC : public BaseMOC {
         const ExpTable _exp_table;  // Exponential table for calculations
         std::vector<double> _fsr_vol;  // FSR volumes
         std::vector<int> _fsr_mat_id;  // FSR material IDs
-        std::vector<std::vector<double>> _xstr;  // Cross-sections for each FSR
+        Kokkos::View<double**> _xstr;  // Cross-sections for each FSR
         Kokkos::View<KokkosLongRay*> _rays;  // Long rays for MOC
         std::vector<double> _ray_spacing;
         std::vector<std::vector<double>> _angle_weights;  // Weights for each angle
-        std::vector<double> _rsinpolang;  // Precomputed sin(polar angle) values for ray tracing
+        Kokkos::View<double*> _rsinpolang;  // Precomputed sin(polar angle) values
         std::vector<std::vector<std::vector<double>>> _segflux;  // Segment flux array
-        std::vector<std::vector<double>> _exparg;  // Exponential arguments for each segment and group
+        Kokkos::View<double**> _exparg;  // Exponential arguments for each segment and group
         std::vector<std::vector<double>> _scalar_flux;  // Scalar flux array
         std::vector<std::vector<double>> _source;  // Multrigroup total source term for each FSR
         std::vector<AngFluxBCAngle> _angflux;  // Angular flux for each angle
