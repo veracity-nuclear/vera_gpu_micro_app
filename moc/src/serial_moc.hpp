@@ -20,7 +20,7 @@ class SerialMOC : public BaseMOC {
         const std::vector<double>& fsr_vol() const override { return _fsr_vol; }
 
         // Get the scalar flux
-        const std::vector<std::vector<double>>& scalar_flux() const override { return _scalar_flux; }
+        std::vector<std::vector<double>> scalar_flux() const override { return _scalar_flux; }
 
         // Calculate the fission source
         std::vector<double> fission_source(const double keff) const override;

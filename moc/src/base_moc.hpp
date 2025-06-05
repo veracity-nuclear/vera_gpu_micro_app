@@ -62,7 +62,7 @@ public:
     virtual const std::vector<double>& fsr_vol() const = 0;
 
     // Get the scalar flux
-    virtual const std::vector<std::vector<double>>& scalar_flux() const = 0;
+    virtual std::vector<std::vector<double>> scalar_flux() const = 0;
 
     // Calculate the fission source
     virtual std::vector<double> fission_source(const double keff) const = 0;

@@ -3,7 +3,6 @@
 #include <vector>
 #include <highfive/highfive.hpp>
 #include <Kokkos_Core.hpp>
-#include "exp_table.hpp"
 #include "c5g7_library.hpp"
 #include "kokkos_long_ray.hpp"
 #include "base_moc.hpp"
@@ -21,7 +20,15 @@ class KokkosMOC : public BaseMOC {
         const std::vector<double>& fsr_vol() const override { return _fsr_vol; }
 
         // Get the scalar flux
-        const std::vector<std::vector<double>>& scalar_flux() const override { return _scalar_flux; }
+        std::vector<std::vector<double>> scalar_flux() const override {
+            std::vector<std::vector<double>> result(_nfsr, std::vector<double>(_ng));
+            for (int i = 0; i < _nfsr; ++i) {
+                for (int g = 0; g < _ng; ++g) {
+                    result[i][g] = _scalar_flux(i, g);
+                }
+            }
+            return result;
+        }
 
         // Calculate the fission source
         std::vector<double> fission_source(const double keff) const override;
@@ -40,7 +47,6 @@ class KokkosMOC : public BaseMOC {
         std::string _filename;  // HDF5 file name
         HighFive::File _file; // HDF5 file object
         const c5g7_library _library;  // Cross-section library object
-        const ExpTable _exp_table;  // Exponential table for calculations
         std::vector<double> _fsr_vol;  // FSR volumes
         std::vector<int> _fsr_mat_id;  // FSR material IDs
         Kokkos::View<double**> _xstr;  // Cross-sections for each FSR
@@ -50,8 +56,8 @@ class KokkosMOC : public BaseMOC {
         Kokkos::View<double*> _rsinpolang;  // Precomputed sin(polar angle) values
         std::vector<std::vector<std::vector<double>>> _segflux;  // Segment flux array
         Kokkos::View<double**> _exparg;  // Exponential arguments for each segment and group
-        std::vector<std::vector<double>> _scalar_flux;  // Scalar flux array
-        std::vector<std::vector<double>> _source;  // Multrigroup total source term for each FSR
+        Kokkos::View<double**> _scalar_flux;  // Scalar flux array
+        Kokkos::View<double**> _source;  // Multrigroup total source term for each FSR
         std::vector<AngFluxBCAngle> _angflux;  // Angular flux for each angle
         std::vector<AngFluxBCAngle> _old_angflux;  // Angular flux for each angle
 };

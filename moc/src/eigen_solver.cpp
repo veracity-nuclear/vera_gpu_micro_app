@@ -7,10 +7,10 @@
 #include "base_moc.hpp"
 
 EigenSolver::EigenSolver(const std::vector<std::string> args, BaseMOC* sweeper)
-  : _sweeper(sweeper),
-    _scalar_flux(sweeper->scalar_flux())
+  : _sweeper(sweeper)
   {
   _fsr_vol = _sweeper->fsr_vol();
+  _scalar_flux = _sweeper->scalar_flux();
   _old_scalar_flux = _scalar_flux;
 
   _keff = 1.0;
@@ -31,6 +31,7 @@ void EigenSolver::solve() {
       _sweeper->sweep();
 
       // Update fission source and keff
+      _scalar_flux = _sweeper->scalar_flux();
       _fissrc = _sweeper->fission_source(_keff);
       double numerator = 0.0;
       double denominator = 0.0;

@@ -4,7 +4,6 @@
 #include <iomanip>
 #include <highfive/H5Easy.hpp>
 #include <highfive/highfive.hpp>
-#include "exp_table.hpp"
 #include "kokkos_long_ray.hpp"
 #include "c5g7_library.hpp"
 
@@ -79,11 +78,14 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
     _xstr = get_xstr(_nfsr, starting_xsr, _fsr_mat_id, _library);
 
     // Allocate scalar flux and source array
-    _scalar_flux.resize(_nfsr);
+    _scalar_flux = Kokkos::View<double**>("scalar_flux", _nfsr, _ng);
+    _source = Kokkos::View<double**>("source", _nfsr, _ng);
     for (size_t i = 0; i < _nfsr; ++i) {
-        _scalar_flux[i].resize(_ng, 1.0);
+        for (size_t j = 0; j < _ng; ++j) {
+            _scalar_flux(i, j) = 1.0;
+            _source(i, j) = 1.0;
+        }
     }
-    _source = _scalar_flux;  // Initialize source to scalar flux
 
     // Read ray spacings and angular flux BC dimensions
     auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
@@ -193,7 +195,7 @@ std::vector<double> KokkosMOC::fission_source(const double keff) const {
     for (size_t i = 0; i < _nfsr; i++) {
         if (_library.is_fissile(_fsr_mat_id[i])) {
             for (int g = 0; g < _ng; g++) {
-                fissrc[i] += _library.nufiss(_fsr_mat_id[i], g) * _scalar_flux[i][g] / keff;
+                fissrc[i] += _library.nufiss(_fsr_mat_id[i], g) * _scalar_flux(i, g) / keff;
                 // std::cout << i << " " << g << " " << fissrc[i] << " " << library.nufiss(fsr_mat_id[i], g) / keff << " " << scalar_flux[i][g] << std::endl;
             }
         }
@@ -203,22 +205,22 @@ std::vector<double> KokkosMOC::fission_source(const double keff) const {
 
 // Build the total source term for each FSR based on the fission source and scattering cross sections
 void KokkosMOC::update_source(const std::vector<double>& fissrc) {
-    int _nfsr = _scalar_flux.size();
-    int ng = _scalar_flux[0].size();
+    int _nfsr = _scalar_flux.extent(0);
+    int ng = _scalar_flux.extent(1);
     int ixsr = 1;
     for (size_t i = 0; i < _nfsr; i++) {
         for (int g = 0; g < ng; g++) {
-            _source[i][g] = fissrc[i] * _library.chi(_fsr_mat_id[i], g);
+            _source(i, g) = fissrc[i] * _library.chi(_fsr_mat_id[i], g);
             // std::cout << "mgfs " << i << " " << g << " " << i << " " << fissrc[i] << " " << library.chi(fsr_mat_id[i], g) << " : " << _source[i][g] << std::endl;
             for (int g2 = 0; g2 < ng; g2++) {
                 if (g != g2) {
-                    _source[i][g] += _library.scat(_fsr_mat_id[i], g, g2) * _scalar_flux[i][g2];
+                    _source(i, g) += _library.scat(_fsr_mat_id[i], g, g2) * _scalar_flux(i, g2);
                     // std::cout << "inscatter " << i << " " << g << " " << g2 << " " << " " << _scalar_flux[i][g2] << " " << library.scat(fsr_mat_id[i], g, g2) << " : " << _source[i][g] << std::endl;
                 }
             }
-            _source[i][g] += _library.self_scat(_fsr_mat_id[i], g) * _scalar_flux[i][g];
+            _source(i, g) += _library.self_scat(_fsr_mat_id[i], g) * _scalar_flux(i, g);
             // std::cout << "selfscatter a " << g << " " << i << " " << old_source << " " << library.self_scat(fsr_mat_id[i], g) << " " << _scalar_flux[i][g] << " : " << source[i][g] << std::endl;
-            _source[i][g] /= (_library.total(_fsr_mat_id[i], g) * 4.0 * M_PI);
+            _source(i, g) /= (_library.total(_fsr_mat_id[i], g) * 4.0 * M_PI);
             // std::cout << "selfscatter b " << g << " " << i << " " << 4.0 * M_PI << " " << library.total(fsr_mat_id[i], g) <<  " : " << source[i][g] << std::endl;
         }
     }
@@ -226,17 +228,20 @@ void KokkosMOC::update_source(const std::vector<double>& fissrc) {
 
 // Main function to run the serial MOC sweep
 void KokkosMOC::sweep() {
+    // std::cout << "Execution Space: " << Kokkos::DefaultExecutionSpace::name() << std::endl;
+    using MemSpace  = Kokkos::HostSpace;
+    using ExecSpace = MemSpace::execution_space;
+
     // Initialize old values and a few scratch values
     int iseg1, iseg2, ireg1, ireg2, refl_angle;
     double phid1, phid2, phio1, phio2;
 
     // Initialize the scalar flux to 0.0
-    for (auto i = 0; i < _nfsr; i++) {
-        for (auto g = 0; g < _ng; g++) {
-            _scalar_flux[i][g] = 0.0;
-            // std::cout << "source " << i << " " << g << " " << source[i][g] << " " << _old__scalar_flux[i][g] << std::endl;
-        }
-    }
+    Kokkos::parallel_for("InitializeScalarFlux",
+        Kokkos::MDRangePolicy<ExecSpace, Kokkos::Rank<2>>({0, 0}, {_nfsr, _ng}),
+        KOKKOS_LAMBDA(int i, int j) {
+            _scalar_flux(i, j) = 0.0;
+    });
 
     // Sweep all the long rays
     for (int i = 0; i < _rays.size(); i++) {
@@ -249,11 +254,11 @@ void KokkosMOC::sweep() {
         for (size_t ipol = 0; ipol < _npol; ipol++) {
 
             // Store the exponential arguments for this ray
-            for (size_t i = 0; i < ray._fsrs.size(); i++) {
-                for (size_t ig = 0; ig < _ng; ig++) {
-                    _exparg(i, ig) = _exp_table.expt(-_xstr(ray._fsrs[i] - 1, ig) * ray._segments[i] * _rsinpolang(ipol));
-                }
-            }
+            Kokkos::parallel_for("InitializeExparg",
+                Kokkos::MDRangePolicy<ExecSpace, Kokkos::Rank<2>>({0, 0}, {static_cast<long int>(ray._fsrs.size()), _ng}),
+                KOKKOS_LAMBDA(int i, int ig) {
+                    _exparg(i, ig) = 1.0 - exp(-_xstr(ray._fsrs[i] - 1, ig) * ray._segments[i] * _rsinpolang(ipol));
+            });
 
             // Initialize the ray flux with the angular flux BCs
             for (size_t ig = 0; ig < _ng; ig++) {
@@ -276,11 +281,10 @@ void KokkosMOC::sweep() {
                 // Sweep the groups on the 2 segments
                 for (size_t ig = 0; ig < _ng; ig++) {
                     // Forward segment sweep
-                    phid1 = _segflux[RAY_START][iseg1][ig] - _source[ireg1][ig];
+                    phid1 = _segflux[RAY_START][iseg1][ig] - _source(ireg1, ig);
                     // if (ray.angle() == debug_angle) {
                     //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " " << _segflux[RAY_START][iseg1][ig] << " " << source[ireg1][ig] << " " << phid1 << std::endl;
                     // }
-                    // TODO: tabulate exp
                     phid1 *= _exparg(iseg1, ig);
                     // if (ray.angle() == debug_angle) {
                     //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
@@ -292,14 +296,14 @@ void KokkosMOC::sweep() {
                     //         << _segflux[RAY_START][iseg1 + 1][ig] << " " << _segflux[RAY_START][iseg1][ig] << " " << phid1
                     //         << std::endl;
                     // }
-                    _scalar_flux[ireg1][ig] += phid1 * _angle_weights[ray.angle()][ipol];
+                    _scalar_flux(ireg1, ig) += phid1 * _angle_weights[ray.angle()][ipol];
                     // if (ray.angle() == debug_angle) {
                     //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
                     //         << _scalar_flux[ireg1][ig] << " " << phid1 << " " << _angle_weights[ray.angle()][ipol] << std::endl;
                     // }
 
                     // Backward segment sweep
-                    phid2 = _segflux[RAY_END][iseg2][ig] - _source[ireg2][ig];
+                    phid2 = _segflux[RAY_END][iseg2][ig] - _source(ireg2, ig);
                     // if (ray.angle() == debug_angle) {
                     //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " " << _segflux[RAY_END][iseg2][ig] << " " << source[ireg2][ig] << " " << phid2 << std::endl;
                     // }
@@ -314,7 +318,7 @@ void KokkosMOC::sweep() {
                     //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " "
                     //         << _segflux[RAY_END][iseg2 - 1][ig] << " " << _segflux[RAY_END][iseg2][ig] << " " << phid2 << std::endl;
                     // }
-                    _scalar_flux[ireg2][ig] += phid2 * _angle_weights[ray.angle()][ipol];
+                    _scalar_flux(ireg2, ig) += phid2 * _angle_weights[ray.angle()][ipol];
                     // if (ray.angle() == debug_angle) {
                     //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " "
                     //         << _scalar_flux[ireg2][ig] << " " << phid2 << " " << _angle_weights[ray.angle()][ipol] << std::endl;
@@ -343,12 +347,11 @@ void KokkosMOC::sweep() {
     }
 
     // Scale the flux with source, volume, and transport XS
-    for (size_t i = 0; i < _nfsr; ++i) {
-        for (size_t g = 0; g < _ng; ++g) {
-            // std::cout << i << " " << g << " scale " << _scalar_flux[i][g] << " " << _xstr[i][g] << " " << _fsr_vol[i] << " " << _plane_height << " " << source[i][g] << " " << 4.0 * M_PI << std::endl;
-            _scalar_flux[i][g] = _scalar_flux[i][g] / (_xstr(i, g) * _fsr_vol[i] / _plane_height) + _source[i][g] * 4.0 * M_PI;
-        }
-    }
+    Kokkos::parallel_for("ScaleScalarFlux",
+        Kokkos::MDRangePolicy<ExecSpace, Kokkos::Rank<2>>({0, 0}, {_nfsr, _ng}),
+        KOKKOS_LAMBDA(int i, int g) {
+            _scalar_flux(i, g) = _scalar_flux(i, g) / (_xstr(i, g) * _fsr_vol[i] / _plane_height) + _source(i, g) * 4.0 * M_PI;
+    });
 
     // Print the scalar flux
     // std::cout << "Scalar Flux:" << std::endl;
