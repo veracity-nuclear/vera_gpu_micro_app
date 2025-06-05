@@ -36,6 +36,9 @@ ENDIF()
 
 enable_testing()
 
+# Add utils before other micro-apps
+add_subdirectory(utils)
+
 # Add micro-apps
 add_subdirectory(cmfd)
 add_subdirectory(moc)

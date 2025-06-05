@@ -9,6 +9,7 @@ add_library(moc_lib
 target_link_libraries(moc_lib
     HighFive::HighFive
     Kokkos::kokkos
+    utils
 )
 
 add_executable(micro_moc
