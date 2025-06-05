@@ -30,12 +30,11 @@ namespace {
     }
 }
 
-SerialMOC::SerialMOC(const std::string& filename, const std::string& libname)
-    : _filename(filename), _library(c5g7_library(libname)), _file(HighFive::File(filename, HighFive::File::ReadOnly)) {
-
-    // Process the file here
-    _file = HighFive::File(filename, HighFive::File::ReadOnly);
-
+SerialMOC::SerialMOC(const ArgumentParser& args) :
+    _filename(args.get_positional(0)),
+    _library(args.get_positional(1)),
+    _file(HighFive::File(_filename, HighFive::File::ReadOnly))
+{
     // Read the rays
     _read_rays();
 

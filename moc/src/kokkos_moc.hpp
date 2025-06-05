@@ -6,11 +6,12 @@
 #include "c5g7_library.hpp"
 #include "long_ray.hpp"
 #include "base_moc.hpp"
+#include "argument_parser.hpp"
 
 class KokkosMOC : public BaseMOC {
     public:
         // Constructor
-        KokkosMOC(const std::string& filename, const std::string& libname);
+        KokkosMOC(const ArgumentParser& args);
 
         // Run the MOC sweep
         void sweep() override;

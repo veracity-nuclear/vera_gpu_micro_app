@@ -78,6 +78,20 @@ int main(int argc, char* argv[]) {
 
   }
 
+  // Optional: Access specific arguments if needed
+  bool verbose = parser.get_flag("verbose");
+  if (verbose) {
+      // Print positional arguments
+      std::cout << "Input file: " << parser.get_positional(0) << std::endl;
+      std::cout << "XS file: " << parser.get_positional(1) << std::endl;
+
+      // Print optional arguments
+      std::cout << "Threads: " << parser.get_option("threads") << std::endl;
+      std::cout << "Verbose: " << (parser.get_flag("verbose") ? "true" : "false") << std::endl;
+      std::cout << "Sweeper: " << parser.get_option("sweeper") << std::endl;
+      std::cout << "Device: " << parser.get_option("device") << std::endl;
+  }
+
   // Get a vector of arguments compatible with the original EigenSolver constructor
   std::vector<std::string> solver_args = parser.get_args(argv[0]);
 
@@ -85,16 +99,9 @@ int main(int argc, char* argv[]) {
   std::string sweeper_type = parser.get_option("sweeper");
   BaseMOC* sweeper;
   if (sweeper_type == "kokkos") {
-    sweeper = new KokkosMOC(parser.get_positional(0), parser.get_positional(1));
+    sweeper = new KokkosMOC(parser);
   } else if (sweeper_type == "serial") {
-    sweeper = new SerialMOC(parser.get_positional(0), parser.get_positional(1));
-  }
-
-  // Optional: Access specific arguments if needed
-  bool verbose = parser.get_flag("verbose");
-  if (verbose) {
-      std::cout << "Input file: " << parser.get_positional(0) << std::endl;
-      std::cout << "XS file: " << parser.get_positional(1) << std::endl;
+    sweeper = new SerialMOC(parser);
   }
 
   // Pass by reference to EigenSolver
