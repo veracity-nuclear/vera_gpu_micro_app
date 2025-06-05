@@ -1,4 +1,4 @@
-#include "serial_moc.hpp"
+#include "kokkos_moc.hpp"
 #include <iostream>
 #include <string>
 #include <iomanip>
@@ -30,7 +30,7 @@ namespace {
     }
 }
 
-SerialMOC::SerialMOC(const std::string& filename, const std::string& libname)
+KokkosMOC::KokkosMOC(const std::string& filename, const std::string& libname)
     : _filename(filename), _library(c5g7_library(libname)), _file(HighFive::File(filename, HighFive::File::ReadOnly)) {
 
     // Process the file here
@@ -146,7 +146,7 @@ SerialMOC::SerialMOC(const std::string& filename, const std::string& libname)
     }
 }
 
-void SerialMOC::_read_rays() {
+void KokkosMOC::_read_rays() {
     auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
 
     // Count the rays
@@ -189,7 +189,7 @@ void SerialMOC::_read_rays() {
 }
 
 // Build the fission source term for each FSR based on the scalar flux and nu-fission cross sections
-std::vector<double> SerialMOC::fission_source(const double keff) const {
+std::vector<double> KokkosMOC::fission_source(const double keff) const {
     std::vector<double> fissrc(_nfsr, 0.0);
     int ixsr = 1;
     for (size_t i = 0; i < _nfsr; i++) {
@@ -204,7 +204,7 @@ std::vector<double> SerialMOC::fission_source(const double keff) const {
 }
 
 // Build the total source term for each FSR based on the fission source and scattering cross sections
-void SerialMOC::update_source(const std::vector<double>& fissrc) {
+void KokkosMOC::update_source(const std::vector<double>& fissrc) {
     int _nfsr = _scalar_flux.size();
     int ng = _scalar_flux[0].size();
     int ixsr = 1;
@@ -227,7 +227,7 @@ void SerialMOC::update_source(const std::vector<double>& fissrc) {
 }
 
 // Main function to run the serial MOC sweep
-void SerialMOC::sweep() {
+void KokkosMOC::sweep() {
     // Initialize old values and a few scratch values
     int iseg1, iseg2, ireg1, ireg2, refl_angle;
     double phid1, phid2, phio1, phio2;

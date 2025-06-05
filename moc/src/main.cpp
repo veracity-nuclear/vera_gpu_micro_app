@@ -5,6 +5,7 @@
 #include "argument_parser.hpp"
 #include "base_moc.hpp"
 #include "serial_moc.hpp"
+#include "kokkos_moc.hpp"
 #include "eigen_solver.hpp"
 
 int main(int argc, char* argv[]) {
@@ -84,15 +85,9 @@ int main(int argc, char* argv[]) {
   std::string sweeper_type = parser.get_option("sweeper");
   BaseMOC* sweeper;
   if (sweeper_type == "kokkos") {
-    std::cerr << "Error: Kokkos sweeper is not yet implemented" << std::endl;
-    Kokkos::finalize();
-    return 1;
+    sweeper = new KokkosMOC(parser.get_positional(0), parser.get_positional(1));
   } else if (sweeper_type == "serial") {
-    // Initialize a SerialMOC object with a reference of type BaseMOC
-    std::cout << "Using serial sweeper" << std::endl;
     sweeper = new SerialMOC(parser.get_positional(0), parser.get_positional(1));
-    std::cout << "sweeper flux " << sweeper->scalar_flux().size() << " x "
-              << sweeper->scalar_flux()[0].size() << std::endl;
   }
 
   // Optional: Access specific arguments if needed
