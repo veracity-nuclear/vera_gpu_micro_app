@@ -2,13 +2,13 @@
 #include <string>
 #include <vector>
 
-class MOCBase {
+class BaseMOC {
 public:
     // Constructor
-    MOCBase() = default;
+    BaseMOC() = default;
 
     // Virtual destructor
-    virtual ~MOCBase() = default;
+    virtual ~BaseMOC() = default;
 
     // Run the MOC sweep
     virtual void sweep() = 0;

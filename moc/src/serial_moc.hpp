@@ -5,9 +5,9 @@
 #include "exp_table.hpp"
 #include "c5g7_library.hpp"
 #include "long_ray.hpp"
-#include "moc_base.hpp"
+#include "base_moc.hpp"
 
-class SerialMOC : public MOCBase {
+class SerialMOC : public BaseMOC {
     public:
         // Constructor
         SerialMOC(const std::string& filename, const std::string& libname);

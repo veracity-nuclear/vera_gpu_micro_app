@@ -1,11 +1,14 @@
 #include <string>
 #include <vector>
 #include <gtest/gtest.h>
+#include "base_moc.hpp"
+#include "serial_moc.hpp"
 #include "eigen_solver.hpp"
 
 TEST(BasicTest, pin_7g_16a_3p_serial) {
-    const std::vector<std::string> args = {"serial_moc.exe", "data/pin_7g_16a_3p_serial.h5", "data/c5g7.xsl"};
-    EigenSolver solver(args);
+    BaseMOC* sweeper = new SerialMOC("data/pin_7g_16a_3p_serial.h5", "data/c5g7.xsl");
+    const std::vector<std::string> args = {};
+    EigenSolver solver(args, sweeper);
     solver.solve();
     EXPECT_NEAR(solver.keff(), 1.32569524, 1.0e-7);
 }

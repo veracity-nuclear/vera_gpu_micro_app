@@ -3,6 +3,8 @@
 #include <vector>
 #include <string>
 #include "argument_parser.hpp"
+#include "base_moc.hpp"
+#include "serial_moc.hpp"
 #include "eigen_solver.hpp"
 
 int main(int argc, char* argv[]) {
@@ -65,16 +67,33 @@ int main(int argc, char* argv[]) {
   // Add some optional arguments (examples)
   parser.add_option("threads", "Number of threads to use", "0");
   parser.add_flag("verbose", "Enable verbose output");
+  parser.add_option("sweeper", "Sweeper type (serial, kokkos)", "serial", {"serial", "kokkos"});
   parser.add_option("device", "Device to use (serial, openmp, cuda)", "serial", {"serial", "openmp", "cuda"});
 
   // Parse arguments
   if (!parser.parse(argc, argv)) {
       Kokkos::finalize();
       return 1;
+
   }
 
   // Get a vector of arguments compatible with the original EigenSolver constructor
   std::vector<std::string> solver_args = parser.get_args(argv[0]);
+
+  // Read the sweeper argument
+  std::string sweeper_type = parser.get_option("sweeper");
+  BaseMOC* sweeper;
+  if (sweeper_type == "kokkos") {
+    std::cerr << "Error: Kokkos sweeper is not yet implemented" << std::endl;
+    Kokkos::finalize();
+    return 1;
+  } else if (sweeper_type == "serial") {
+    // Initialize a SerialMOC object with a reference of type BaseMOC
+    std::cout << "Using serial sweeper" << std::endl;
+    sweeper = new SerialMOC(parser.get_positional(0), parser.get_positional(1));
+    std::cout << "sweeper flux " << sweeper->scalar_flux().size() << " x "
+              << sweeper->scalar_flux()[0].size() << std::endl;
+  }
 
   // Optional: Access specific arguments if needed
   bool verbose = parser.get_flag("verbose");
@@ -83,9 +102,12 @@ int main(int argc, char* argv[]) {
       std::cout << "XS file: " << parser.get_positional(1) << std::endl;
   }
 
-  EigenSolver solver(solver_args);
-  solver.solve();
-  std::cout << "Final keff: " << solver.keff() << std::endl;
+  // Pass by reference to EigenSolver
+  EigenSolver eigen_solver(solver_args, sweeper);
+
+  // Use the eigen_solver
+  eigen_solver.solve();
+  std::cout << "Final keff: " << eigen_solver.keff() << std::endl;
 
   Kokkos::finalize();
   return 0;

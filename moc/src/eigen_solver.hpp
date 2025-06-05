@@ -1,12 +1,12 @@
 #pragma once
 #include <vector>
 #include <string>
-#include "serial_moc.hpp"
+#include "base_moc.hpp"
 
 class EigenSolver {
     public:
         // Build the solver; first argument is the HDF5 file name, second is the cross-section library name
-        EigenSolver(const std::vector<std::string>& args);
+        EigenSolver(const std::vector<std::string> args, BaseMOC* sweeper);
         // Run the eigenvalue iteration
         void solve();
         // Get the keff
@@ -23,5 +23,5 @@ class EigenSolver {
         std::vector<std::vector<double>> _old_scalar_flux; // Previous scalar flux for convergence checks
         std::vector<double> _fissrc; // Fission source vector
         std::vector<double> _old_fissrc; // Previous fission source for convergence checks
-        SerialMOC _sweeper; // MOC sweeper object
+        BaseMOC* _sweeper; // MOC sweeper object
 };
