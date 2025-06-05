@@ -9,10 +9,7 @@
 TEST(BasicTest, mini_core_7g_16a_3p_serial) {
     const char* raw_args[] = {"exe", "data/mini-core_7g_16a_3p_serial.h5", "data/c5g7.xsl"};
     char** args = const_cast<char**>(raw_args);
-    ArgumentParser parser("heavy_test_serial_moc_mini-core",
-                          "Test Serial MOC with mini-core, 16 angles, and 7 energy groups");
-    parser.add_argument("input_file", "Input HDF5 file");
-    parser.add_argument("cross_sections", "Cross section library file");
+    auto parser = ArgumentParser::vera_gpu_moc_parser(raw_args[0]);
     parser.parse(3, args);
     BaseMOC* sweeper = new SerialMOC(parser);
     EigenSolver solver(parser.get_args("heavy_test_serial_moc_mini-core.exe"), sweeper);

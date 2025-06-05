@@ -58,18 +58,8 @@ int main(int argc, char* argv[]) {
 
   }
 
-  // Create argument parser
-  ArgumentParser parser(argv[0], "VERA GPU Micro-App for eigenvalue calculations");
-
-  // Add required positional arguments
-  parser.add_argument("filename", "Input geometry file");
-  parser.add_argument("xs_file", "Cross-section data file");
-
-  // Add some optional arguments (examples)
-  parser.add_option("threads", "Number of threads to use", "0");
-  parser.add_flag("verbose", "Enable verbose output");
-  parser.add_option("sweeper", "Sweeper type (serial, kokkos)", "serial", {"serial", "kokkos"});
-  parser.add_option("device", "Device to use (serial, openmp, cuda)", "serial", {"serial", "openmp", "cuda"});
+  // Create argument parser with pre-configured arguments
+  ArgumentParser parser = ArgumentParser::vera_gpu_moc_parser(argv[0]);
 
   // Parse arguments
   if (!parser.parse(argc, argv)) {

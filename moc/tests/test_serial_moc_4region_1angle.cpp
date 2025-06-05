@@ -9,10 +9,7 @@
 TEST(BasicTest, cart_4region_7g_1a_1p_serial) {
     const char* raw_args[] = {"exe", "data/cart_4region_7g_1a_1p_serial.h5", "data/c5g7.xsl"};
     char** args = const_cast<char**>(raw_args);
-    ArgumentParser parser("test_serial_moc_4region_1angle",
-                          "Test Serial MOC with 4 regions, 1 angle, and 7 energy groups");
-    parser.add_argument("input_file", "Input HDF5 file");
-    parser.add_argument("cross_sections", "Cross section library file");
+    auto parser = ArgumentParser::vera_gpu_moc_parser(raw_args[0]);
     parser.parse(3, args);
     BaseMOC* sweeper = new SerialMOC(parser);
     EigenSolver solver(parser.get_args("test_serial_moc_4region_1angle.exe"), sweeper);
