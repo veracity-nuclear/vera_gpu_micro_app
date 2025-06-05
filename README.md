@@ -49,11 +49,13 @@ git clone --branch develop https://github.com/kokkos/kokkos.git
 2. Configure the build with CMake (may need to sudo for access to /opt directory)
 ```
 cmake -B kokkos/build \
+  -DKokkos_ENABLE_SERIAL=ON \
   -DKokkos_ENABLE_OPENMP=ON \
   -DKokkos_ENABLE_INSTALL=ON \
   -DCMAKE_INSTALL_PREFIX=/opt/kokkos \
   kokkos
 ```
+Optionally, add the `-DKokkos_ENABLE_CUDA=ON` to build with CUDA support.
 
 3. Build Kokkos (any number of processors can be used)
 ```

@@ -228,8 +228,11 @@ void KokkosMOC::update_source(const std::vector<double>& fissrc) {
 
 // Main function to run the serial MOC sweep
 void KokkosMOC::sweep() {
-    // std::cout << "Execution Space: " << Kokkos::DefaultExecutionSpace::name() << std::endl;
-    using MemSpace  = Kokkos::HostSpace;
+    // Define execution and memory spaces based on device selection
+    // using MemSpace = Kokkos::DefaultExecutionSpace::memory_space;
+    using MemSpace = Kokkos::Serial;
+    // using MemSpace = Kokkos::OpenMP;
+    // using MemSpace = Kokkos::Cuda;
     using ExecSpace = MemSpace::execution_space;
 
     // Initialize old values and a few scratch values
