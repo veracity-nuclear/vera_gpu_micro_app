@@ -5,21 +5,28 @@
 #include "exp_table.hpp"
 #include "c5g7_library.hpp"
 #include "long_ray.hpp"
+#include "moc_base.hpp"
 
-class SerialMOC {
+class SerialMOC : public MOCBase {
     public:
         // Constructor
         SerialMOC(const std::string& filename, const std::string& libname);
+
         // Run the MOC sweep
-        void sweep();
+        void sweep() override;
+
         // Get the FSR volumes
-        const std::vector<double>& fsr_vol() const { return _fsr_vol; }
+        const std::vector<double>& fsr_vol() const override { return _fsr_vol; }
+
         // Get the scalar flux
-        const std::vector<std::vector<double>>& scalar_flux() const { return _scalar_flux; }
+        const std::vector<std::vector<double>>& scalar_flux() const override { return _scalar_flux; }
+
         // Calculate the fission source
-        std::vector<double> fission_source(const double keff) const;
+        std::vector<double> fission_source(const double keff) const override;
+
         // Set the total source
-        void update_source(const std::vector<double>& fissrc);
+        void update_source(const std::vector<double>& fissrc) override;
+
     private:
         void _read_rays();  // Read rays from the HDF5 file
 
