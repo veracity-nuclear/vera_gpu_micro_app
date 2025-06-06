@@ -262,7 +262,7 @@ void KokkosMOC::_impl_sweep_openmp() {
         int ig = teamMember.league_rank() % _ng;
         const auto& ray = _rays(iray);
         Kokkos::View<double*, typename team_member::scratch_memory_space> exparg(teamMember.team_scratch(0), ray._fsrs.size() + 1);
-        Kokkos::View<double**, typename team_member::scratch_memory_space> segflux(teamMember.team_scratch(1), 2, ray._fsrs.size() + 1);
+        Kokkos::View<double**, typename team_member::scratch_memory_space> segflux(teamMember.team_scratch(0), 2, ray._fsrs.size() + 1);
 
         // Allocate and initialize exparg with dimensions [ray._fsrs.size()][_ng]
         for (int j = 0; j < ray._fsrs.size(); j++) {
