@@ -277,8 +277,7 @@ void KokkosMOC::_impl_sweep_openmp() {
         segflux(0) = _old_angflux[ray.angle()]._faces[ray._bc_face_start]._angflux[ray._bc_index_frwd_start][ipol][ig];
         for (int iseg = 0; iseg < ray._fsrs.size(); iseg++) {
             ireg = ray._fsrs[iseg] - 1;
-            phid = segflux(iseg) - _source(ireg, ig);
-            phid *= exparg(iseg);
+            phid = (segflux(iseg) - _source(ireg, ig)) * exparg(iseg);
             segflux(iseg + 1) = segflux(iseg) - phid;
             Kokkos::atomic_add(&_scalar_flux(ireg, ig), phid * _angle_weights[ray.angle()][ipol]);
         }
@@ -288,8 +287,7 @@ void KokkosMOC::_impl_sweep_openmp() {
         segflux(ray._fsrs.size()) = _old_angflux[ray.angle()]._faces[ray._bc_face_end]._angflux[ray._bc_index_bkwd_end][ipol][ig];
         for (int iseg = ray._fsrs.size(); iseg > 0; iseg--) {
             ireg = ray._fsrs[iseg - 1] - 1;
-            phid = segflux(iseg) - _source(ireg, ig);
-            phid *= exparg(iseg - 1);
+            phid = (segflux(iseg) - _source(ireg, ig)) * exparg(iseg - 1);
             segflux(iseg - 1) = segflux(iseg) - phid;
             Kokkos::atomic_add(&_scalar_flux(ireg, ig), phid * _angle_weights[ray.angle()][ipol]);
         }
@@ -297,10 +295,11 @@ void KokkosMOC::_impl_sweep_openmp() {
     });
 
     // Scale the flux with source, volume, and transport XS
+    const double fourpi = 4.0 * M_PI;
     Kokkos::parallel_for("ScaleScalarFlux",
         Kokkos::MDRangePolicy<ExecSpace, Kokkos::Rank<2>>({0, 0}, {_nfsr, _ng}),
         KOKKOS_LAMBDA(int i, int g) {
-            _scalar_flux(i, g) = _scalar_flux(i, g) / (_xstr(i, g) * _fsr_vol[i] / _plane_height) + _source(i, g) * 4.0 * M_PI;
+            _scalar_flux(i, g) = _scalar_flux(i, g) * _plane_height / (_xstr(i, g) * _fsr_vol[i]) + _source(i, g) * fourpi;
     });
 }
 
