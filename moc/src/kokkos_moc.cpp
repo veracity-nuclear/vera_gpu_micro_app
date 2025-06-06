@@ -252,7 +252,7 @@ void KokkosMOC::_impl_sweep_openmp() {
     team_policy policy(static_cast<long int>(_rays.size()) * _npol * _ng, Kokkos::AUTO, Kokkos::AUTO);
     const size_t bytes_needed_per_team =
         Kokkos::View<double*, typename team_member::scratch_memory_space>::shmem_size(_max_segments + 1) // exparg
-        + Kokkos::View<double**, typename team_member::scratch_memory_space>::shmem_size(2, _max_segments + 1); // segflux
+        + Kokkos::View<double*, typename team_member::scratch_memory_space>::shmem_size(_max_segments + 1); // segflux
     policy.set_scratch_size(0, Kokkos::PerTeam(bytes_needed_per_team));
 
     // Sweep all the long rays
@@ -262,42 +262,38 @@ void KokkosMOC::_impl_sweep_openmp() {
         int ig = teamMember.league_rank() % _ng;
         const auto& ray = _rays(iray);
         Kokkos::View<double*, typename team_member::scratch_memory_space> exparg(teamMember.team_scratch(0), ray._fsrs.size() + 1);
-        Kokkos::View<double**, typename team_member::scratch_memory_space> segflux(teamMember.team_scratch(0), 2, ray._fsrs.size() + 1);
+        Kokkos::View<double*, typename team_member::scratch_memory_space> segflux(teamMember.team_scratch(0), ray._fsrs.size() + 1);
 
         // Allocate and initialize exparg with dimensions [ray._fsrs.size()][_ng]
         for (int j = 0; j < ray._fsrs.size(); j++) {
             exparg(j) = 1.0 - exp(-_xstr(ray._fsrs[j] - 1, ig) * ray._segments[j] * _rsinpolang(ipol));
         }
 
-        segflux(RAY_START, 0) = _old_angflux[ray.angle()]._faces[ray._bc_face_start]._angflux[ray._bc_index_frwd_start][ipol][ig];
-        segflux(RAY_END, ray._fsrs.size()) = _old_angflux[ray.angle()]._faces[ray._bc_face_end]._angflux[ray._bc_index_bkwd_end][ipol][ig];
-
-        int iseg2 = ray._fsrs.size();
+        int ireg;
         double phid;
-        for (int iseg1 = 0; iseg1 < ray._fsrs.size(); iseg1++) {
-            int ireg1 = ray._fsrs[iseg1] - 1;
-            int ireg2 = ray._fsrs[ray._fsrs.size() - iseg1 - 1] - 1;
-
-            // Forward segment sweep
-            phid = segflux(RAY_START, iseg1) - _source(ireg1, ig);
-            phid *= exparg(iseg1);
-            segflux(RAY_START, iseg1 + 1) = segflux(RAY_START, iseg1) - phid;
-            Kokkos::atomic_add(&_scalar_flux(ireg1, ig), phid * _angle_weights[ray.angle()][ipol]);
-
-            // Backward segment sweep
-            phid = segflux(RAY_END, iseg2) - _source(ireg2, ig);
-            phid *= exparg(iseg2 - 1);
-            segflux(RAY_END, iseg2 - 1) = segflux(RAY_END, iseg2) - phid;
-            Kokkos::atomic_add(&_scalar_flux(ireg2, ig), phid * _angle_weights[ray.angle()][ipol]);
-            iseg2--;
-        }
-
-        // Store the final segments' angular flux into the BCs
         int refl_angle = reflect_angle(ray.angle());
-        _angflux[refl_angle]._faces[ray._bc_face_end]._angflux[ray._bc_index_frwd_end][ipol][ig] =
-                segflux(RAY_START, ray._fsrs.size());
-        _angflux[refl_angle]._faces[ray._bc_face_start]._angflux[ray._bc_index_bkwd_start][ipol][ig] =
-            segflux(RAY_END, 0);
+
+        // Forward segment sweep
+        segflux(0) = _old_angflux[ray.angle()]._faces[ray._bc_face_start]._angflux[ray._bc_index_frwd_start][ipol][ig];
+        for (int iseg = 0; iseg < ray._fsrs.size(); iseg++) {
+            ireg = ray._fsrs[iseg] - 1;
+            phid = segflux(iseg) - _source(ireg, ig);
+            phid *= exparg(iseg);
+            segflux(iseg + 1) = segflux(iseg) - phid;
+            Kokkos::atomic_add(&_scalar_flux(ireg, ig), phid * _angle_weights[ray.angle()][ipol]);
+        }
+        _angflux[refl_angle]._faces[ray._bc_face_end]._angflux[ray._bc_index_frwd_end][ipol][ig] = segflux(ray._fsrs.size());
+
+        // Backward segment sweep
+        segflux(ray._fsrs.size()) = _old_angflux[ray.angle()]._faces[ray._bc_face_end]._angflux[ray._bc_index_bkwd_end][ipol][ig];
+        for (int iseg = ray._fsrs.size(); iseg > 0; iseg--) {
+            ireg = ray._fsrs[iseg - 1] - 1;
+            phid = segflux(iseg) - _source(ireg, ig);
+            phid *= exparg(iseg - 1);
+            segflux(iseg - 1) = segflux(iseg) - phid;
+            Kokkos::atomic_add(&_scalar_flux(ireg, ig), phid * _angle_weights[ray.angle()][ipol]);
+        }
+        _angflux[refl_angle]._faces[ray._bc_face_start]._angflux[ray._bc_index_bkwd_start][ipol][ig] = segflux(0);
     });
 
     // Scale the flux with source, volume, and transport XS
