@@ -130,15 +130,17 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
         _rsinpolang(ipol) = 1.0 / std::sin(polar_angles[ipol]);
     }
 
-    // Allocate segment flux array
+    // Count maximum segments across all rays
     _max_segments = 0;
     for (int i = 0; i < _rays.size(); i++) {
         _max_segments = std::max(_max_segments, _rays(i)._fsrs.size());
     }
-    _segflux = Kokkos::View<double***>("segflux", 2, _max_segments + 1, _ng);
 
-    // Initialize the exponential argument array
-    _exparg = Kokkos::View<double**>("exparg", _max_segments + 1, _ng);
+    // Allocate arrays needed during serial sweep
+    if (_device == "serial") {
+        _segflux = Kokkos::View<double***>("segflux", 2, _max_segments + 1, _ng);
+        _exparg = Kokkos::View<double**>("exparg", _max_segments + 1, _ng);
+    }
 }
 
 void KokkosMOC::_read_rays() {
@@ -233,22 +235,24 @@ void KokkosMOC::_impl_sweep_openmp() {
     });
 
     // Sweep all the long rays
-    Kokkos::View<double****, ExecSpace> segflux("segflux 2", 2, _npol, _max_segments + 1, _ng);
     for (int i = 0; i < _rays.size(); i++) {
         const auto& ray = _rays(i);
 
+        // Prepare scratch space
         typedef Kokkos::TeamPolicy<ExecSpace> team_policy;
         typedef typename team_policy::member_type team_member;
         team_policy policy(_npol, Kokkos::AUTO, Kokkos::AUTO);
-        const size_t bytes_needed_per_team = Kokkos::View<double**, typename team_member::scratch_memory_space>::shmem_size(ray._fsrs.size() + 1, _ng);
+        const size_t bytes_needed_per_team = Kokkos::View<double**, typename team_member::scratch_memory_space>::shmem_size(ray._fsrs.size() + 1, _ng)
+            + Kokkos::View<double***, typename team_member::scratch_memory_space>::shmem_size(2, ray._fsrs.size() + 1, _ng);
         policy.set_scratch_size(0, Kokkos::PerTeam(bytes_needed_per_team));
-        Kokkos::parallel_for("Sweep Polar Angles",
-            policy,
-            KOKKOS_LAMBDA(const team_member& teamMember) {
-                int ipol = teamMember.league_rank();
+
+        // Sweep all polar angles using a team strategy
+        Kokkos::parallel_for("Sweep Polar Angles", policy, KOKKOS_LAMBDA(const team_member& teamMember) {
+            int ipol = teamMember.league_rank();
 
             // Allocate and initialize exparg with dimensions [ray._fsrs.size()][_ng]
             Kokkos::View<double**, typename team_member::scratch_memory_space> exparg(teamMember.team_scratch(0), ray._fsrs.size() + 1, _ng);
+            Kokkos::View<double***, typename team_member::scratch_memory_space> segflux(teamMember.team_scratch(1), 2, ray._fsrs.size() + 1, _ng);
             for (int j = 0; j < ray._fsrs.size(); j++) {
                 for (int ig = 0; ig < _ng; ig++) {
                     exparg(j, ig) = 1.0 - exp(-_xstr(ray._fsrs[j] - 1, ig) * ray._segments[j] * _rsinpolang(ipol));
@@ -263,11 +267,11 @@ void KokkosMOC::_impl_sweep_openmp() {
             }
 
             for (int ig = 0; ig < _ng; ig++) {
-                segflux(0, ipol, 0, ig) =
+                segflux(0, 0, ig) =
                     ray._bc_index[0] == -1
                     ? 0.0
                     : _old_angflux[ray.angle()]._faces[ray._bc_face[0]]._angflux[ray._bc_index[0]][ipol][ig];
-                segflux(1, ipol, ray._fsrs.size(), ig) =
+                segflux(1, ray._fsrs.size(), ig) =
                     ray._bc_index[1] == -1
                     ? 0.0
                     : _old_angflux[ray.angle()]._faces[ray._bc_face[1]]._angflux[ray._bc_index[1]][ipol][ig];
@@ -281,15 +285,15 @@ void KokkosMOC::_impl_sweep_openmp() {
 
                 for (size_t ig = 0; ig < _ng; ig++) {
                     // Forward segment sweep
-                    phid = segflux(0, ipol, iseg1, ig) - _source(ireg1, ig);
+                    phid = segflux(0, iseg1, ig) - _source(ireg1, ig);
                     phid *= exparg(iseg1, ig);
-                    segflux(0, ipol, iseg1 + 1, ig) = segflux(0, ipol, iseg1, ig) - phid;
+                    segflux(0, iseg1 + 1, ig) = segflux(0, iseg1, ig) - phid;
                     Kokkos::atomic_add(&_scalar_flux(ireg1, ig), phid * _angle_weights[ray.angle()][ipol]);
 
                     // Backward segment sweep
-                    phid = segflux(1, ipol, iseg2, ig) - _source(ireg2, ig);
+                    phid = segflux(1, iseg2, ig) - _source(ireg2, ig);
                     phid *= exparg(iseg2 - 1, ig);
-                    segflux(1, ipol, iseg2 - 1, ig) = segflux(1, ipol, iseg2, ig) - phid;
+                    segflux(1, iseg2 - 1, ig) = segflux(1, iseg2, ig) - phid;
                     Kokkos::atomic_add(&_scalar_flux(ireg2, ig), phid * _angle_weights[ray.angle()][ipol]);
                 }
                 iseg2--;
@@ -300,11 +304,11 @@ void KokkosMOC::_impl_sweep_openmp() {
             for (size_t ig = 0; ig < _ng; ig++) {
                 if (ray._bc_index[RAY_START] != -1) {
                     _angflux[refl_angle]._faces[ray._bc_face[RAY_END]]._angflux[ray._bc_index[RAY_END]][ipol][ig] =
-                    segflux(RAY_START, ipol, ray._fsrs.size(), ig);
+                    segflux(RAY_START, ray._fsrs.size(), ig);
                 }
                 if (ray._bc_index[RAY_END] != -1) {
                     _angflux[refl_angle]._faces[ray._bc_face[RAY_START]]._angflux[ray._bc_index[RAY_START]][ipol][ig] =
-                    segflux(RAY_END, ipol, 0, ig);
+                    segflux(RAY_END, 0, ig);
                 }
             }
         });
