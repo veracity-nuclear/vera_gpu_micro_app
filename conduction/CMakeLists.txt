@@ -1,5 +1,6 @@
 add_library(conduction_lib
     src/main.cpp
+    src/cylindrical_solver.cpp
 )
 
 target_link_libraries(conduction_lib
@@ -25,7 +26,6 @@ foreach(test ${TEST_EXECUTABLES})
     target_link_libraries(${test}
         conduction_lib
         GTest::gtest
-        GTest::gtest_main
     )
     target_include_directories(${test} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(${test} PRIVATE TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
