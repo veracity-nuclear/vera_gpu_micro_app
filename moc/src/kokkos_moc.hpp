@@ -38,6 +38,8 @@ class KokkosMOC : public BaseMOC {
 
     private:
         void _read_rays();  // Read rays from the HDF5 file
+        void _impl_sweep_openmp();  // Implementation of the MOC sweep using OpenMP
+        void _impl_sweep_serial();  // Implementation of the MOC sweep using serial
 
         size_t _max_segments;  // Maximum number of segments in any ray
         int _nfsr;  // Number of FSRs
@@ -54,10 +56,11 @@ class KokkosMOC : public BaseMOC {
         std::vector<double> _ray_spacing;
         std::vector<std::vector<double>> _angle_weights;  // Weights for each angle
         Kokkos::View<double*> _rsinpolang;  // Precomputed sin(polar angle) values
-        std::vector<std::vector<std::vector<double>>> _segflux;  // Segment flux array
+        Kokkos::View<double***> _segflux;  // Segment flux array
         Kokkos::View<double**> _exparg;  // Exponential arguments for each segment and group
         Kokkos::View<double**> _scalar_flux;  // Scalar flux array
         Kokkos::View<double**> _source;  // Multrigroup total source term for each FSR
         std::vector<AngFluxBCAngle> _angflux;  // Angular flux for each angle
         std::vector<AngFluxBCAngle> _old_angflux;  // Angular flux for each angle
+        std::string _device;  // Name of the target Kokkos device
 };

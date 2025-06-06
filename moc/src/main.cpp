@@ -82,9 +82,10 @@ int main(int argc, char* argv[]) {
       });
     }
 #endif
-    std::cout << "Kokkos default backend: " << Kokkos::DefaultExecutionSpace::name() << "\n";
-
   }
+
+  // Read the sweeper argument
+  std::string sweeper_type = parser.get_option("sweeper");
 
   // Print all the argument options
   if (verbose) {
@@ -97,13 +98,17 @@ int main(int argc, char* argv[]) {
       std::cout << "Verbose: " << (parser.get_flag("verbose") ? "true" : "false") << std::endl;
       std::cout << "Sweeper: " << parser.get_option("sweeper") << std::endl;
       std::cout << "Device: " << parser.get_option("device") << std::endl;
+  } else {
+      if (sweeper_type == "kokkos") {
+          std::string device = parser.get_option("device");
+          std::cout << "Selected kokkos backend: " << device << std::endl;
+      }
   }
 
   // Get a vector of arguments compatible with the original EigenSolver constructor
   std::vector<std::string> solver_args = parser.get_args(argv[0]);
 
-  // Read the sweeper argument
-  std::string sweeper_type = parser.get_option("sweeper");
+  // Set up the sweeper
   BaseMOC* sweeper;
   if (sweeper_type == "kokkos") {
     sweeper = new KokkosMOC(parser);

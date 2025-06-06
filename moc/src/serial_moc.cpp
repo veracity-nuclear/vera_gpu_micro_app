@@ -25,7 +25,7 @@ namespace {
     }
 
     // Reflect the angle for reflecting boundary conditions
-    int reflect_angle(int angle) {
+    inline int reflect_angle(int angle) {
         return angle % 2 == 0 ? angle + 1 : angle - 1;
     }
 }
@@ -280,7 +280,6 @@ void SerialMOC::sweep() {
                     // if (ray.angle() == debug_angle) {
                     //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " " << _segflux[RAY_START][iseg1][ig] << " " << source[ireg1][ig] << " " << phid1 << std::endl;
                     // }
-                    // TODO: tabulate exp
                     phid1 *= _exparg[iseg1][ig];
                     // if (ray.angle() == debug_angle) {
                     //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
