@@ -233,27 +233,19 @@ void KokkosMOC::_impl_sweep_openmp() {
     });
 
     // Sweep all the long rays
-    // Kokkos::View<double*, ExecSpace> exparg("exparg 2", _max_segments + 1);
-    // Kokkos::View<double**> exparg("exparg 2", _max_segments + 1, _ng);
     Kokkos::View<double****, ExecSpace> segflux("segflux 2", 2, _npol, _max_segments + 1, _ng);
-    // Kokkos::View<double**, ExecSpace> segflux("segflux 2", 2,, _max_segments + 1);
-    // Kokkos::parallel_for("Sweep",
-    //     Kokkos::MDRangePolicy<ExecSpace, Kokkos::Rank<3>>({0, 0, 0}, {static_cast<long int>(_rays.size()), _npol, _ng}),
-    //     KOKKOS_LAMBDA(int i, int ipol, int ig)
-    // {
-        for (int i = 0; i < _rays.size(); i++) {
-            const auto& ray = _rays(i);
+    for (int i = 0; i < _rays.size(); i++) {
+        const auto& ray = _rays(i);
 
-            typedef Kokkos::TeamPolicy<ExecSpace> team_policy;
-            typedef typename team_policy::member_type team_member;
-            team_policy policy(_npol, Kokkos::AUTO, Kokkos::AUTO);
-            const size_t bytes_needed_per_team = Kokkos::View<double**, typename team_member::scratch_memory_space>::shmem_size(ray._fsrs.size() + 1, _ng);
-            policy.set_scratch_size(0, Kokkos::PerTeam(bytes_needed_per_team));
-            // for (size_t ipol = 0; ipol < _npol; ipol++) {
-            Kokkos::parallel_for("Sweep Polar Angles",
-                policy,
-                KOKKOS_LAMBDA(const team_member& teamMember) {
-                    int ipol = teamMember.league_rank();
+        typedef Kokkos::TeamPolicy<ExecSpace> team_policy;
+        typedef typename team_policy::member_type team_member;
+        team_policy policy(_npol, Kokkos::AUTO, Kokkos::AUTO);
+        const size_t bytes_needed_per_team = Kokkos::View<double**, typename team_member::scratch_memory_space>::shmem_size(ray._fsrs.size() + 1, _ng);
+        policy.set_scratch_size(0, Kokkos::PerTeam(bytes_needed_per_team));
+        Kokkos::parallel_for("Sweep Polar Angles",
+            policy,
+            KOKKOS_LAMBDA(const team_member& teamMember) {
+                int ipol = teamMember.league_rank();
 
             // Allocate and initialize exparg with dimensions [ray._fsrs.size()][_ng]
             Kokkos::View<double**, typename team_member::scratch_memory_space> exparg(teamMember.team_scratch(0), ray._fsrs.size() + 1, _ng);
@@ -263,23 +255,19 @@ void KokkosMOC::_impl_sweep_openmp() {
                 }
             }
 
+            // Store the exponential arguments for this ray
             for (int j = 0; j < ray._fsrs.size(); j++) {
-                // Store the exponential arguments for this ray
-                // exparg(j) = 1.0 - exp(-_xstr(ray._fsrs[j] - 1, ig) * ray._segments[j] * _rsinpolang(ipol));
                 for (int ig = 0; ig < _ng; ig++) {
                     exparg(j, ig) = 1.0 - exp(-_xstr(ray._fsrs[j] - 1, ig) * ray._segments[j] * _rsinpolang(ipol));
-                    // _exparg(j, ig) = 1.0 - exp(-_xstr(ray._fsrs[j] - 1, ig) * ray._segments[j] * _rsinpolang(ipol));
                 }
             }
 
             for (int ig = 0; ig < _ng; ig++) {
                 segflux(0, ipol, 0, ig) =
-                // _segflux(0, 0, ig) =
                     ray._bc_index[0] == -1
                     ? 0.0
                     : _old_angflux[ray.angle()]._faces[ray._bc_face[0]]._angflux[ray._bc_index[0]][ipol][ig];
                 segflux(1, ipol, ray._fsrs.size(), ig) =
-                // _segflux(1, ray._fsrs.size(), ig) =
                     ray._bc_index[1] == -1
                     ? 0.0
                     : _old_angflux[ray.angle()]._faces[ray._bc_face[1]]._angflux[ray._bc_index[1]][ipol][ig];
@@ -294,25 +282,15 @@ void KokkosMOC::_impl_sweep_openmp() {
                 for (size_t ig = 0; ig < _ng; ig++) {
                     // Forward segment sweep
                     phid = segflux(0, ipol, iseg1, ig) - _source(ireg1, ig);
-                    // double phid = _segflux(0, iseg1, ig) - _source(ireg1, ig);
-                    // phid *= exparg(iseg1);
                     phid *= exparg(iseg1, ig);
-                    // phid *= _exparg(iseg1, ig);
                     segflux(0, ipol, iseg1 + 1, ig) = segflux(0, ipol, iseg1, ig) - phid;
-                    // _segflux(0, iseg1 + 1, ig) = _segflux(0, iseg1, ig) - phid;
                     Kokkos::atomic_add(&_scalar_flux(ireg1, ig), phid * _angle_weights[ray.angle()][ipol]);
-                    // _scalar_flux(ireg1, ig) += phid * _angle_weights[ray.angle()][ipol];
 
                     // Backward segment sweep
                     phid = segflux(1, ipol, iseg2, ig) - _source(ireg2, ig);
-                    // phid = _segflux(1, iseg2, ig) - _source(ireg2, ig);
-                    // phid *= exparg(iseg2 - 1);
                     phid *= exparg(iseg2 - 1, ig);
-                    // phid *= _exparg(iseg2 - 1, ig);
                     segflux(1, ipol, iseg2 - 1, ig) = segflux(1, ipol, iseg2, ig) - phid;
-                    // _segflux(1, iseg2 - 1, ig) = _segflux(1, iseg2, ig) - phid;
                     Kokkos::atomic_add(&_scalar_flux(ireg2, ig), phid * _angle_weights[ray.angle()][ipol]);
-                    // _scalar_flux(ireg2, ig) += phid * _angle_weights[ray.angle()][ipol];
                 }
                 iseg2--;
             }
@@ -323,17 +301,14 @@ void KokkosMOC::_impl_sweep_openmp() {
                 if (ray._bc_index[RAY_START] != -1) {
                     _angflux[refl_angle]._faces[ray._bc_face[RAY_END]]._angflux[ray._bc_index[RAY_END]][ipol][ig] =
                     segflux(RAY_START, ipol, ray._fsrs.size(), ig);
-                    // _segflux(RAY_START, ray._fsrs.size(), ig);
                 }
                 if (ray._bc_index[RAY_END] != -1) {
                     _angflux[refl_angle]._faces[ray._bc_face[RAY_START]]._angflux[ray._bc_index[RAY_START]][ipol][ig] =
                     segflux(RAY_END, ipol, 0, ig);
-                    // _segflux(RAY_END, 0, ig);
                 }
             }
         });
     }
-    // });
 
     // Scale the flux with source, volume, and transport XS
     Kokkos::parallel_for("ScaleScalarFlux",
@@ -341,16 +316,6 @@ void KokkosMOC::_impl_sweep_openmp() {
         KOKKOS_LAMBDA(int i, int g) {
             _scalar_flux(i, g) = _scalar_flux(i, g) / (_xstr(i, g) * _fsr_vol[i] / _plane_height) + _source(i, g) * 4.0 * M_PI;
     });
-
-    // Print the scalar flux
-    // std::cout << "Scalar Flux:" << std::endl;
-    // for (size_t i = 0; i < _scalar_flux.size(); ++i) {
-    //     std::cout << "FSR " << i << ": ";
-    //     for (size_t g = 0; g < _scalar_flux[i].size(); ++g) {
-    //         std::cout << _scalar_flux[i][g] << " ";
-    //     }
-    //     std::cout << std::endl;
-    // }
 }
 
 void KokkosMOC::_impl_sweep_serial() {
