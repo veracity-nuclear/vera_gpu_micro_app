@@ -1,7 +1,7 @@
 // Pulled from https://gitlab.com/petsc/petsc/-/blob/1ac92d97bf2a8f968d21a9607f86d04310a2a1fd/src/snes/tutorials/ex3k.kokkos.cxx
 // with minor revisions to test the Kokkos functionality in PETSc
 
-static char help[] = "Newton methods to solve u'' + u^{2} = f in parallel. Uses Kokkos\n\\n";
+// static char help[] = "Newton methods to solve u'' + u^{2} = f in parallel. Uses Kokkos\n\\n";
 
 #include <petscdmda_kokkos.hpp>
 #include <petscsnes.h>
@@ -222,7 +222,7 @@ PetscErrorCode FormJacobian(SNES snes, Vec x, Mat jac, Mat B, void *ctx)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-int mainTest(int argc, char **argv)
+int mainTest()
 {
   SNES           snes;       /* SNES context */
   Mat            J;          /* Jacobian matrix */
@@ -234,7 +234,7 @@ int mainTest(int argc, char **argv)
   PetscBool      viewinitial = PETSC_FALSE;
 
   PetscFunctionBeginUser;
-  PetscCall(PetscInitialize(&argc, &argv, nullptr, help));
+  // PetscCall(PetscInitialize(&argc, &argv, nullptr, help));
   PetscCall(PetscOptionsGetInt(NULL, NULL, "-n", &N, NULL));
   ctx.h = 1.0 / (N - 1);
   PetscCall(PetscOptionsGetBool(NULL, NULL, "-view_initial", &viewinitial, NULL));
@@ -361,21 +361,19 @@ int mainTest(int argc, char **argv)
   PetscCall(MatDestroy(&J));
   PetscCall(SNESDestroy(&snes));
   PetscCall(DMDestroy(&ctx.da));
-  PetscCall(PetscFinalize());
+  // PetscCall(PetscFinalize());
   return 0;
 }
 
 TEST(ex3k, kokkos)
 {
-  int argc = 0;
-  char **argv = nullptr;
-  mainTest(argc, argv);
+  mainTest();
 }
 
-int main(int argc, char **argv) {
-  ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-}
+// int main(int argc, char **argv) {
+//   ::testing::InitGoogleTest(&argc, argv);
+//   return RUN_ALL_TESTS();
+// }
 
 /*TEST
 

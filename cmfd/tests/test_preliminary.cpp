@@ -2,60 +2,18 @@
   This file tests and demonstrates key functionalities of PETSc and Kokkos
   needed for the CMFD code.
 */
-
-#include "gtest/gtest.h"
-#include "petscvec_kokkos.hpp"
-#include "petscmat_kokkos.hpp"
-#include "petscksp.h"
-#include "Kokkos_Core.hpp"
-#include "highfive/H5File.hpp"
-
-#include <string>
-#include <vector>
-
-// PetscCall can't be used in the body of a TEST
-#define PetscCallG(call) ASSERT_EQ(call, PETSC_SUCCESS) << "PETSc call failed: " << #call;
-
-/**
- * Step 01: Can we read HDF5 files?
- * Step 02: Can we use PETSc and read data?
- * Step 03: Can we use Kokkos with PETSc?
- * TODO: Look into PETSc DMs
- */
-
-/**
- * @brief Test fixture for initializing and finalizing PETSc
- * This allows tests to be run separately or all at once
- */
-class CMFDPrelim : public ::testing::Environment{
-private:
-  int argc_;
-  char** argv_;
-
-public:
-  CMFDPrelim(int argc, char** argv) : argc_(argc), argv_(argv) {}
-
-protected:
-  void SetUp() override {
-    Kokkos::initialize();
-    PetscCallG(PetscInitialize(&argc_, &argv_, NULL, NULL));
-    PetscCallG(PetscLogDefaultBegin());
-  }
-
-  void TearDown() override {
-    PetscCallG(PetscFinalize());
-    Kokkos::finalize();
-  }
-};
+#include "PetscKokkosTestEnvironment.hpp"
 
 // Convert a HighFive group (data sets are rows) to a 2D vector
-std::vector<std::vector<PetscScalar>> readMatrixFromHDF5(const HighFive::Group& AMatH5) {
+std::vector<std::vector<PetscScalar>> readMatrixFromHDF5(const HighFive::Group &AMatH5)
+{
   const std::vector<std::string> rowNames = AMatH5.listObjectNames();
   const size_t n = rowNames.size(); // Square matrix dimension
 
   std::vector<std::vector<PetscScalar>> AMatLocal(n, std::vector<PetscScalar>(n));
 
-  for (size_t i = 0; i < n; ++i) {
+  for (size_t i = 0; i < n; ++i)
+  {
     HighFive::DataSet rowDataset = AMatH5.getDataSet(rowNames[i]);
     rowDataset.read(AMatLocal[i]);
   }
@@ -64,7 +22,8 @@ std::vector<std::vector<PetscScalar>> readMatrixFromHDF5(const HighFive::Group& 
 }
 
 // Create a PETSc vector (passed by ref) from a std::vector<PetscScalar>
-PetscErrorCode createPetscVec(const std::vector<PetscScalar>& vec, Vec& vecPetsc) {
+PetscErrorCode createPetscVec(const std::vector<PetscScalar> &vec, Vec &vecPetsc)
+{
   PetscInt n = vec.size();
 
   PetscFunctionBeginUser;
@@ -84,7 +43,8 @@ PetscErrorCode createPetscVec(const std::vector<PetscScalar>& vec, Vec& vecPetsc
 }
 
 // Create a PETSc matrix (passed by ref) from a std::vector<std::vector<PetscScalar>>
-PetscErrorCode createPetscMat(const std::vector<std::vector<PetscScalar>>& vecOfVec, Mat& matPetsc) {
+PetscErrorCode createPetscMat(const std::vector<std::vector<PetscScalar>> &vecOfVec, Mat &matPetsc)
+{
   PetscInt nRows = vecOfVec.size();
   PetscInt nCols = nRows; // Assuming square matrix for simplicity
 
@@ -94,9 +54,12 @@ PetscErrorCode createPetscMat(const std::vector<std::vector<PetscScalar>>& vecOf
   PetscCall(MatSetSizes(matPetsc, PETSC_DECIDE, PETSC_DECIDE, nRows, nCols));
   PetscCall(MatSetFromOptions(matPetsc));
 
-  for (PetscInt i = 0; i < nRows; ++i) {
-    for (PetscInt j = 0; j < nCols; ++j) {
-      if (vecOfVec[i][j] != 0.0) {
+  for (PetscInt i = 0; i < nRows; ++i)
+  {
+    for (PetscInt j = 0; j < nCols; ++j)
+    {
+      if (vecOfVec[i][j] != 0.0)
+      {
         PetscCall(MatSetValue(matPetsc, i, j, vecOfVec[i][j], INSERT_VALUES));
       }
     }
@@ -109,7 +72,8 @@ PetscErrorCode createPetscMat(const std::vector<std::vector<PetscScalar>>& vecOf
 }
 
 // Create a PETSc vector (passed by ref) of type VECKOKKOS
-PetscErrorCode createPetscVecKokkos(const std::vector<PetscScalar>& vec, Vec& vecPetsc) {
+PetscErrorCode createPetscVecKokkos(const std::vector<PetscScalar> &vec, Vec &vecPetsc)
+{
   PetscInt n = vec.size();
   std::vector<PetscInt> indices(n);
 
@@ -129,16 +93,20 @@ PetscErrorCode createPetscVecKokkos(const std::vector<PetscScalar>& vec, Vec& ve
 }
 
 // Create a PETSc matrix (passed by ref) of type MATAIJKOKKOS
-PetscErrorCode createPetscMatKokkos(const std::vector<std::vector<PetscScalar>>& vecOfVec, Mat& matPetsc) {
+PetscErrorCode createPetscMatKokkos(const std::vector<std::vector<PetscScalar>> &vecOfVec, Mat &matPetsc)
+{
   PetscInt nRows = vecOfVec.size();
   PetscInt nCols = nRows;
 
   PetscFunctionBeginUser;
 
   PetscInt numNonZero = 0;
-  for (PetscInt i = 0; i < nRows; ++i) {
-    for (PetscInt j = 0; j < nCols; ++j) {
-      if (vecOfVec[i][j] != 0.0) {
+  for (PetscInt i = 0; i < nRows; ++i)
+  {
+    for (PetscInt j = 0; j < nCols; ++j)
+    {
+      if (vecOfVec[i][j] != 0.0)
+      {
         numNonZero++;
       }
     }
@@ -152,16 +120,20 @@ PetscErrorCode createPetscMatKokkos(const std::vector<std::vector<PetscScalar>>&
                                PETSC_DEFAULT, NULL,
                                &matPetsc));
 
-  if (numNonZero > 0) {
+  if (numNonZero > 0)
+  {
     std::vector<PetscInt> rowIndices, colIndices;
     std::vector<PetscScalar> values;
     rowIndices.reserve(numNonZero);
     colIndices.reserve(numNonZero);
     values.reserve(numNonZero);
 
-    for (PetscInt i = 0; i < nRows; ++i) {
-      for (PetscInt j = 0; j < nCols; ++j) {
-        if (vecOfVec[i][j] != 0.0) {
+    for (PetscInt i = 0; i < nRows; ++i)
+    {
+      for (PetscInt j = 0; j < nCols; ++j)
+      {
+        if (vecOfVec[i][j] != 0.0)
+        {
           rowIndices.emplace_back(i);
           colIndices.emplace_back(j);
           values.emplace_back(vecOfVec[i][j]);
@@ -169,19 +141,45 @@ PetscErrorCode createPetscMatKokkos(const std::vector<std::vector<PetscScalar>>&
       }
     }
 
+    /* // Option A: Do not use Kokkos views (This works)
     PetscCall(MatSetPreallocationCOO(matPetsc, numNonZero, rowIndices.data(), colIndices.data()));
     PetscCall(MatSetValuesCOO(matPetsc, values.data(), INSERT_VALUES));
-  } else {
+    */
+
+    // Option B: Use Kokkos views on the host (This works)
+    Kokkos::View<PetscInt *, Kokkos::DefaultHostExecutionSpace> h_rowIndices("rowIndicesKokkos", numNonZero);
+    Kokkos::View<PetscInt *, Kokkos::DefaultHostExecutionSpace> h_colIndices("colIndicesKokkos", numNonZero);
+    Kokkos::View<PetscScalar *, Kokkos::DefaultHostExecutionSpace> h_values("valuesKokkos", numNonZero);
+    for (PetscInt i = 0; i < numNonZero; ++i)
+    {
+      h_rowIndices(i) = rowIndices[i];
+      h_colIndices(i) = colIndices[i];
+      h_values(i) = values[i];
+    }
+    PetscCall(MatSetPreallocationCOO(matPetsc, numNonZero, h_rowIndices.data(), h_colIndices.data()));
+    PetscCall(MatSetValuesCOO(matPetsc, h_values.data(), INSERT_VALUES));
+
+    /* // Option C: Use Kokkos views on the device (This does NOT work)
+    Kokkos::View<PetscInt *, Kokkos::Cuda> d_rowIndices = Kokkos::create_mirror_view_and_copy(Kokkos::Cuda(), h_rowIndices);
+    Kokkos::View<PetscInt *, Kokkos::Cuda> d_colIndices = Kokkos::create_mirror_view_and_copy(Kokkos::Cuda(), h_colIndices);
+    Kokkos::View<PetscScalar *, Kokkos::Cuda> d_values = Kokkos::create_mirror_view_and_copy(Kokkos::Cuda(), h_values);
+    PetscCall(MatSetPreallocationCOO(matPetsc, numNonZero, d_rowIndices.data(), d_colIndices.data()));
+    PetscCall(MatSetValuesCOO(matPetsc, d_values.data(), INSERT_VALUES));
+    */
+
+  }
+  else
+  {
     PetscCall(MatSetPreallocationCOO(matPetsc, 0, NULL, NULL));
   }
 
-  // Also don't need to call MatAssemblyBegin/End for COO matrices
-
+  // Don't need to (and shouldn't) call MatAssemblyBegin/End for COO matrices
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 // Generates dummy data for a Kokkos view using parallel_for, which can't be used in the body of a TEST
-void generateDummyKokkosView(Kokkos::View<PetscScalar*>& vecKokkos, const int vecSize = 5) {
+void generateDummyKokkosView(Kokkos::View<PetscScalar *> &vecKokkos, const int vecSize = 5)
+{
   const PetscScalar number = -3.14;
   Kokkos::parallel_for("Initialize bVec", vecSize, KOKKOS_LAMBDA(const int i) {
     vecKokkos(i) = Kokkos::exp(static_cast<PetscScalar>(i) / number); // Example data generation
@@ -199,7 +197,8 @@ void generateDummyKokkosView(Kokkos::View<PetscScalar*>& vecKokkos, const int ve
  *
  * https://en.wikipedia.org/wiki/Sparse_matrix#Compressed_sparse_row_(CSR,_CRS_or_Yale_format)
  */
-void generateTridiagKokkosAIJ(Kokkos::View<PetscScalar*>& aValues, Kokkos::View<PetscInt*>& iRow, Kokkos::View<PetscInt*>& jCol, const int nRows) {
+void generateTridiagKokkosAIJ(Kokkos::View<PetscScalar *> &aValues, Kokkos::View<PetscInt *> &iRow, Kokkos::View<PetscInt *> &jCol, const int nRows)
+{
   Kokkos::parallel_for("fillTriAIJ", nRows, KOKKOS_LAMBDA(const int rowIdx) {
       const PetscInt diagElementIdx = rowIdx * 3;
       if (rowIdx > 0) {
@@ -224,13 +223,13 @@ void generateTridiagKokkosAIJ(Kokkos::View<PetscScalar*>& aValues, Kokkos::View<
       if (rowIdx < nRows - 1) {
         aValues(diagElementIdx + 1) = 1;
         jCol(diagElementIdx + 1) = rowIdx + 1;
-      }
-  });
+      } });
   Kokkos::fence();
 }
 
 // Test if a HDF5 file can be opened and read
-TEST(s01_hdf5, readVector) {
+TEST(s01_hdf5, readVector)
+{
   std::vector<PetscScalar> bVecLocal;
   std::string filename = "data/pin_7g_16a_3p_serial.h5";
 
@@ -242,7 +241,8 @@ TEST(s01_hdf5, readVector) {
 }
 
 // Check if the matrix 'A' can be read from the HDF5 file
-TEST(s01_hdf5, readMatrix) {
+TEST(s01_hdf5, readMatrix)
+{
   std::string filename = "data/pin_7g_16a_3p_serial.h5";
 
   HighFive::File file(filename, HighFive::File::ReadOnly);
@@ -251,13 +251,89 @@ TEST(s01_hdf5, readMatrix) {
   std::vector<std::vector<PetscScalar>> AMatLocal = readMatrixFromHDF5(AMatH5);
 
   ASSERT_FALSE(AMatLocal.empty()) << "The matrix 'A' should not be empty.";
-  for (const auto& row : AMatLocal) {
-      ASSERT_FALSE(row.empty()) << "Each row of the matrix 'A' should not be empty.";
+  for (const auto &row : AMatLocal)
+  {
+    ASSERT_FALSE(row.empty()) << "Each row of the matrix 'A' should not be empty.";
+  }
+}
+
+TEST(s01_hdf5, hdf5ToKokkosView)
+{
+  std::string filename = "data/7x7_7g_16a_3p_serial.h5";
+  HighFive::File file(filename, HighFive::File::ReadOnly);
+  HighFive::DataSet dataH5 = file.getDataSet("CMFD_CoarseMesh/flux");
+  std::vector<size_t> dims = dataH5.getDimensions();
+
+  std::vector<std::vector<PetscScalar>> dataLocal(dims[0], std::vector<PetscScalar>(dims[1], 0.0));
+  dataH5.read(dataLocal);
+
+  // You can't read H5 into a Host mirror as the layout may be different
+  Kokkos::View<PetscScalar **, Kokkos::HostSpace> h_data(Kokkos::ViewAllocateWithoutInitializing("dataKokkos"), dims[0], dims[1]);
+  dataH5.read(h_data.data());
+
+  // Can only read views from HDF5 to Kokkos on the host space
+  Kokkos::View<PetscScalar**> d_data(Kokkos::ViewAllocateWithoutInitializing("device data"), dims[0], dims[1]);
+  Kokkos::View<PetscScalar**>::HostMirror h_mirrorData = Kokkos::create_mirror_view(d_data);
+  Kokkos::deep_copy(h_mirrorData, h_data); // Changes the layout to the device layout
+  // At this point we can deallocate h_data (Kokkos uses RAII)
+
+  // Check if the data matches the local data
+  for (size_t i = 0; i < dims[0]; ++i)
+  {
+    for (size_t j = 0; j < dims[1]; ++j)
+    {
+      ASSERT_EQ(h_mirrorData(i, j), dataLocal[i][j]) << "Error reading data from H5: ";
+      // printf("dataKokkos(%zu, %zu) = %f, dataLocal(%zu, %zu) = %f\n", i, j, dataKokkos(i, j), i, j, dataLocal[i][j]);
     }
+  }
+
+  // See if we can copy the data to the device and back
+  Kokkos::deep_copy(d_data, h_mirrorData);
+
+  Kokkos::View<PetscScalar**>::HostMirror h_dataCheck = Kokkos::create_mirror_view(d_data);
+  Kokkos::deep_copy(h_dataCheck, d_data);
+
+  for (size_t i = 0; i < dims[0]; ++i)
+  {
+    for (size_t j = 0; j < dims[1]; ++j)
+    {
+      ASSERT_EQ(h_dataCheck(i, j), dataLocal[i][j]) << "Error copying data to device and back: ";
+    }
+  }
+
+  // Testing dual view
+  using DualView = Kokkos::DualView<PetscScalar **>;
+  DualView dualData(Kokkos::ViewAllocateWithoutInitializing("dual"), dims[0], dims[1]);
+
+  DualView::t_host h_dualData = dualData.view_host();
+  Kokkos::deep_copy(h_dualData, h_data);
+  dualData.modify<DualView::host_mirror_space>();
+
+  for (size_t i = 0; i < dims[0]; ++i)
+  {
+    for (size_t j = 0; j < dims[1]; ++j)
+    {
+      ASSERT_EQ(h_dualData(i, j), dataLocal[i][j]) << "Error reading data into device dual view: ";
+    }
+  }
+
+  dualData.sync<Kokkos::DefaultExecutionSpace>();
+  DualView::t_dev d_dualData = dualData.view_device();
+
+  Kokkos::View<PetscScalar**>::HostMirror h_dualDataCheck = Kokkos::create_mirror_view(h_dualData);
+  Kokkos::deep_copy(h_dualDataCheck, d_dualData);
+  for (size_t i = 0; i < dims[0]; ++i)
+  {
+    for (size_t j = 0; j < dims[1]; ++j)
+    {
+      ASSERT_EQ(h_dualDataCheck(i, j), dataLocal[i][j]) << "Error copying data to device dual view and back: ";
+    }
+  }
 }
 
 // Test if a vector can be created in PETSc and filled with data from an HDF5 file
-TEST(s02_petsc, hdf5ToVector){
+TEST(s02_petsc, hdf5ToVector)
+{
   std::string filename = "data/pin_7g_16a_3p_serial.h5";
   std::vector<PetscScalar> bVecLocal;
   Vec bVecPetsc;
@@ -271,7 +347,8 @@ TEST(s02_petsc, hdf5ToVector){
   PetscCallG(createPetscVec(bVecLocal, bVecPetsc));
 
   PetscScalar value;
-  for (PetscInt i = 0; i < bVecLocal.size(); ++i) {
+  for (PetscInt i = 0; i < bVecLocal.size(); ++i)
+  {
     PetscCallG(VecGetValues(bVecPetsc, 1, &i, &value));
     ASSERT_EQ(value, bVecLocal[i]) << "Value mismatch at index " << i;
   }
@@ -280,7 +357,8 @@ TEST(s02_petsc, hdf5ToVector){
 }
 
 // Test if a matrix can be created in PETSc and filled with data from an HDF5 file
-TEST(s02_petsc, hdf5ToMatrix){
+TEST(s02_petsc, hdf5ToMatrix)
+{
   std::string filename = "data/pin_7g_16a_3p_serial.h5";
   // std::string filename = "data/7x7_7g_16a_3p_serial.h5";
   Mat AMatPetsc;
@@ -297,24 +375,27 @@ TEST(s02_petsc, hdf5ToMatrix){
   PetscInt nRows = AMatLocal.size();
 
   // Verify the matrix
-  for (size_t i = 0; i < nRows; ++i) {
-    for (size_t j = 0; j < nRows; ++j) {
-      PetscCallG(MatGetValue(AMatPetsc,i, j, &dummyValue));
+  for (size_t i = 0; i < nRows; ++i)
+  {
+    for (size_t j = 0; j < nRows; ++j)
+    {
+      PetscCallG(MatGetValue(AMatPetsc, i, j, &dummyValue));
       ASSERT_EQ(dummyValue, AMatLocal[i][j]) << "Value mismatch at (" << i << ", " << j << ")";
     }
   }
 
   PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_STDOUT_WORLD));
-  #ifndef NDEBUG
-    PetscCallG(PetscOptionsSetValue(NULL, "-draw_size", "1920,1080")); // Set the size of the draw window
-    PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_DRAW_WORLD)); // need x11 but allows visualization
-  #endif
+#ifndef NDEBUG
+  PetscCallG(PetscOptionsSetValue(NULL, "-draw_size", "1920,1080")); // Set the size of the draw window
+  PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_DRAW_WORLD));           // need x11 but allows visualization
+#endif
 
   PetscCallG(MatDestroy(&AMatPetsc));
 }
 
 // Test if a linear system can be solved using PETSc with data from an HDF5 file
-TEST(s02_petsc, solve){
+TEST(s02_petsc, solve)
+{
   // See petsc/src/ksp/ksp/tutorials/ex1.c for reference
   double tol = 1.e-7;
   std::string filename = "data/pin_7g_16a_3p_serial.h5";
@@ -322,7 +403,7 @@ TEST(s02_petsc, solve){
   Mat AMatPetsc;
   Vec bVecPetsc, xVecPetsc;
   KSP ksp; // Linear solver context
-  PC pc; // Preconditioner context
+  PC pc;   // Preconditioner context
   PetscScalar value;
 
   PetscFunctionBeginUser;
@@ -355,7 +436,8 @@ TEST(s02_petsc, solve){
 
   PetscCallG(KSPSolve(ksp, bVecPetsc, xVecPetsc));
 
-  for (PetscInt i = 0; i < xVecLocalGold.size(); i++) {
+  for (PetscInt i = 0; i < xVecLocalGold.size(); i++)
+  {
     PetscCallG(VecGetValues(xVecPetsc, 1, &i, &value));
     EXPECT_NEAR(value, xVecLocalGold[i], tol) << "Value mismatch at index " << i;
   }
@@ -367,7 +449,8 @@ TEST(s02_petsc, solve){
 }
 
 // Create a PETSc vector of type VECKOKKOS
-TEST(s03_kokkos, petscKokkosVec){
+TEST(s03_kokkos, petscKokkosVec)
+{
   std::string filename = "data/pin_7g_16a_3p_serial.h5";
   std::vector<PetscScalar> bVecLocal;
   Vec bVecPetsc;
@@ -381,7 +464,8 @@ TEST(s03_kokkos, petscKokkosVec){
   PetscCallG(createPetscVecKokkos(bVecLocal, bVecPetsc));
 
   PetscScalar value;
-  for (PetscInt i = 0; i < bVecLocal.size(); ++i) {
+  for (PetscInt i = 0; i < bVecLocal.size(); ++i)
+  {
     PetscCallG(VecGetValues(bVecPetsc, 1, &i, &value));
     ASSERT_EQ(value, bVecLocal[i]) << "Value mismatch at index " << i;
   }
@@ -390,7 +474,8 @@ TEST(s03_kokkos, petscKokkosVec){
 }
 
 // Create a PETSc matrix of type MATAIJKOKKOS
-TEST(s03_kokkos, petscKokkosMat){
+TEST(s03_kokkos, petscKokkosMat)
+{
   std::string filename = "data/pin_7g_16a_3p_serial.h5";
   Mat AMatPetsc;
   PetscScalar dummyValue;
@@ -405,9 +490,11 @@ TEST(s03_kokkos, petscKokkosMat){
   PetscCallG(createPetscMatKokkos(AMatLocal, AMatPetsc));
   PetscInt nRows = AMatLocal.size();
 
-  for (size_t i = 0; i < nRows; ++i) {
-    for (size_t j = 0; j < nRows; ++j) {
-      PetscCallG(MatGetValue(AMatPetsc,i, j, &dummyValue));
+  for (size_t i = 0; i < nRows; ++i)
+  {
+    for (size_t j = 0; j < nRows; ++j)
+    {
+      PetscCallG(MatGetValue(AMatPetsc, i, j, &dummyValue));
       ASSERT_EQ(dummyValue, AMatLocal[i][j]) << "Value mismatch at (" << i << ", " << j << ")";
     }
   }
@@ -418,7 +505,8 @@ TEST(s03_kokkos, petscKokkosMat){
 }
 
 // Solve a linear system using PETSc with Kokkos vectors and matrices
-TEST(s03_kokkos, solveKokkos){
+TEST(s03_kokkos, solveKokkos)
+{
   double tol = 1.e-7;
   // std::string filename = "data/pin_7g_16a_3p_serial.h5";
   std::string filename = "data/mini-core_7g_16a_3p_serial.h5";
@@ -460,9 +548,10 @@ TEST(s03_kokkos, solveKokkos){
   // This should use the default kokkos execution space
   PetscCallG(KSPSolve(ksp, bVecPetsc, xVecPetsc));
 
-  for (PetscInt i = 0; i < xVecLocalGold.size(); i++) {
+  for (PetscInt i = 0; i < xVecLocalGold.size(); i++)
+  {
     PetscCallG(VecGetValues(xVecPetsc, 1, &i, &value));
-    EXPECT_NEAR(value, xVecLocalGold[i], 10*tol) << "Value mismatch at index " << i;
+    EXPECT_NEAR(value, xVecLocalGold[i], 10 * tol) << "Value mismatch at index " << i;
   }
 
   PetscCallG(KSPDestroy(&ksp));
@@ -472,10 +561,11 @@ TEST(s03_kokkos, solveKokkos){
 }
 
 // Test if a Kokkos view can be converted to a PETSc vectors
-TEST(s03_kokkos, kokkosViewToPetscVec){
+TEST(s03_kokkos, kokkosViewToPetscVec)
+{
   const size_t vectorLength = 5;
   Vec bVecPetsc;
-  Kokkos::View<PetscScalar*> bVecKokkos("bVec", vectorLength);
+  Kokkos::View<PetscScalar *> bVecKokkos("bVec", vectorLength);
 
   std::cout << "bVec memory space: " << typeid(decltype(bVecKokkos)::memory_space).name() << std::endl;
 
@@ -487,16 +577,19 @@ TEST(s03_kokkos, kokkosViewToPetscVec){
   PetscCallG(VecCreateSeqKokkosWithArray(PETSC_COMM_SELF, 1, vectorLength, bVecKokkos.data(), &bVecPetsc));
 
   // Get the Kokkos view from the PETSc vector (must be const data type in view)
-  Kokkos::View<const PetscScalar*, Kokkos::DefaultExecutionSpace::memory_space> d_values;
+  Kokkos::View<const PetscScalar *, Kokkos::DefaultExecutionSpace::memory_space> d_values;
   PetscCallG(VecGetKokkosView(bVecPetsc, &d_values));
 
   // Copy the values to the host from the device so we can inspect it
-  Kokkos::View<PetscScalar*, Kokkos::HostSpace::memory_space> h_values("bVecHost", vectorLength);
+  // Kokkos::View<PetscScalar*, Kokkos::HostSpace::memory_space> h_values("bVecHost", vectorLength);
+  Kokkos::View<PetscScalar *, Kokkos::HostSpace::memory_space>::HostMirror h_values = Kokkos::create_mirror_view(d_values);
+
   Kokkos::deep_copy(h_values, d_values);
   Kokkos::fence(); // Ensure the copy is complete before accessing
 
   PetscScalar value;
-  for (size_t i = 0; i < vectorLength; ++i) {
+  for (size_t i = 0; i < vectorLength; ++i)
+  {
     value = h_values(i);
     std::cout << "bVec[" << i << "] = " << value << std::endl;
 
@@ -517,13 +610,14 @@ TEST(s03_kokkos, kokkosViewToPetscVec){
 }
 
 // Test if we can use an A, I, and J Kokkos view to create a tridiagonal PETSc matrix
-TEST(s03_kokkos, kokkosViewToPetscMat){
+TEST(s03_kokkos, kokkosViewToPetscMat)
+{
   const PetscInt numRows = 5;
   const PetscInt numNonZero = 3 * numRows - 2; // 3 non-zero elements per row, except for the first and last rows
   Mat AMatPetsc;
-  Kokkos::View<PetscScalar*> aValues("aValues", numNonZero);
-  Kokkos::View<PetscInt*> iRow("iRow", numRows+1);
-  Kokkos::View<PetscInt*> jCol("jCol", numNonZero);
+  Kokkos::View<PetscScalar *> aValues("aValues", numNonZero);
+  Kokkos::View<PetscInt *> iRow("iRow", numRows + 1);
+  Kokkos::View<PetscInt *> jCol("jCol", numNonZero);
 
   PetscFunctionBeginUser;
 
@@ -547,7 +641,8 @@ TEST(s03_kokkos, kokkosViewToPetscMat){
 }
 
 // Test if we can solve a linear system with PETSc initialized with Kokkos views
-TEST(s03_kokkos, solveFromViews){
+TEST(s03_kokkos, solveFromViews)
+{
   const PetscScalar tol = 1.e-7;
   const PetscInt numRows = 10;
   const PetscInt numNonZero = 3 * numRows - 2;
@@ -556,10 +651,10 @@ TEST(s03_kokkos, solveFromViews){
   Mat AMatPetsc;
   KSP ksp;
   PC pc;
-  Kokkos::View<PetscScalar*> bVecKokkos("bVec", numRows);
-  Kokkos::View<PetscScalar*> aValues("aValues", numNonZero);
-  Kokkos::View<PetscInt*> iRow("iRow", numRows+1);
-  Kokkos::View<PetscInt*> jCol("jCol", numNonZero);
+  Kokkos::View<PetscScalar *> bVecKokkos("bVec", numRows);
+  Kokkos::View<PetscScalar *> aValues("aValues", numNonZero);
+  Kokkos::View<PetscInt *> iRow("iRow", numRows + 1);
+  Kokkos::View<PetscInt *> jCol("jCol", numNonZero);
 
   PetscFunctionBeginUser;
 
@@ -591,10 +686,4 @@ TEST(s03_kokkos, solveFromViews){
   PetscCallG(KSPDestroy(&ksp));
   PetscCallG(VecDestroy(&xVecPetsc));
   PetscCallG(VecDestroy(&bVecPetsc));
-}
-
-int main(int argc, char **argv) {
-  ::testing::InitGoogleTest(&argc, argv);
-  ::testing::AddGlobalTestEnvironment(new CMFDPrelim(argc, argv));
-  return RUN_ALL_TESTS();
 }
