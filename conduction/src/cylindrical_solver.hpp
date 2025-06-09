@@ -1,5 +1,4 @@
-#ifndef CYLINDRICAL_SOLVER_HPP
-#define CYLINDRICAL_SOLVER_HPP
+#pragma once
 
 #include "cylinder_node.hpp"
 
@@ -17,5 +16,3 @@ private:
     std::vector<CylinderNode> nodes;
     std::vector<double> interface_temps;
 };
-
-#endif // CYLINDRICAL_SOLVER_HPP

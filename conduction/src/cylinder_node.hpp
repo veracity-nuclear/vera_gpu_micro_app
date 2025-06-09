@@ -1,11 +1,10 @@
-#ifndef CYLINDER_NODE_HPP
-#define CYLINDER_NODE_HPP
+#pragma once
 
 #include <iostream>
 #include <vector>
 #include <cmath>
 
-const double PI = 3.1415926535;
+#define PI M_PI
 
 class CylinderNode {
 public:
@@ -59,5 +58,3 @@ private:
     double r_in;
     double r_out;
 };
-
-#endif // CYLINDER_NODE_HPP
