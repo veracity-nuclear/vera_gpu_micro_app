@@ -33,15 +33,17 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
     }
 
     // Read the FSR volumes and plane height
-    auto fsr_vol = std::make_unique<std::vector<double>>();
-    _file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read(*fsr_vol);
-    _nfsr = fsr_vol->size();
-    _h_fsr_vol = Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>(fsr_vol->data(), _nfsr);
+    {
+        auto fsr_vol = std::make_unique<std::vector<double>>();
+        _file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read(*fsr_vol);
+        _nfsr = fsr_vol->size();
+        _h_fsr_vol = Kokkos::View<double*, Kokkos::HostSpace>("fsr_vol", _nfsr);
+        for (int i = 0; i < _nfsr; i++){
+            _h_fsr_vol(i) = (*fsr_vol)[i];
+        }
+    }
     _fsr_vol = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_fsr_vol);
     _plane_height = _file.getDataSet("/MOC_Ray_Data/Domain_00001/plane_height").read<double>();
-    for (int i = 0; i < _nfsr; i++){
-	    printf("Read FSR Volumes: %d %f %f\n", i, (*fsr_vol)[i], _h_fsr_vol(i));
-    }
 
     // Initialize the library
     _ng = _library.get_num_groups();
@@ -216,7 +218,6 @@ std::vector<double> KokkosMOC::fission_source(const double keff) const {
         if (_library.is_fissile(_fsr_mat_id[i])) {
             for (int g = 0; g < _ng; g++) {
                 fissrc[i] += _library.nufiss(_fsr_mat_id[i], g) * _h_scalar_flux(i, g) / keff;
-		printf("Calc fiss src: %d %d %f %f %f %f\n", i, g, fissrc[i], _library.nufiss(_fsr_mat_id[i], g), _h_scalar_flux(i, g), keff);
             }
         }
     }
@@ -247,7 +248,7 @@ void KokkosMOC::update_source(const std::vector<double>& fissrc) {
 void KokkosMOC::_impl_sweep_openmp() {
     using MemSpace = Kokkos::OpenMP;
     using ExecSpace = MemSpace::execution_space;
- 
+
     auto& scalar_flux = _h_scalar_flux;
     auto& rays = _h_rays;
     auto npol = _npol;
@@ -396,11 +397,6 @@ void KokkosMOC::_impl_sweep_serial() {
         KOKKOS_LAMBDA(int i, int g) {
             scalar_flux(i, g) = scalar_flux(i, g) / (xstr(i, g) * fsr_vol(i) / dz) + source(i, g) * 4.0 * M_PI;
     });
-
-    for (int i = 0; i < _nfsr; i++) {
-	    printf("Scalar flux: %f %f %f %f %f %f %f\n", _h_scalar_flux(i, 0), _h_scalar_flux(i,1), _h_scalar_flux(i,2), _h_scalar_flux(i,3), _h_scalar_flux(i,4), _h_scalar_flux(i,5), _h_scalar_flux(i,6));
-    }
-
 }
 
 // Main function to run the serial MOC sweep

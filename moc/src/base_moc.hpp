@@ -59,7 +59,7 @@ public:
     virtual void sweep() = 0;
 
     // Get the FSR volumes
-    virtual const std::vector<double>& fsr_vol() const = 0;
+    virtual std::vector<double> fsr_vol() const = 0;
 
     // Get the scalar flux
     virtual std::vector<std::vector<double>> scalar_flux() const = 0;

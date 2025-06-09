@@ -38,10 +38,8 @@ void EigenSolver::solve() {
       for (size_t i = 0; i < _fissrc.size(); ++i) {
         numerator += _fissrc[i] * _fsr_vol[i];
         denominator += _old_fissrc[i] * _fsr_vol[i];
-	printf("keff add: %d %f %f %f %f %f\n", i, _fissrc[i], _old_fissrc[i], _fsr_vol[i], numerator, denominator);
       }
       _keff = _old_keff * numerator / denominator;
-    throw std::runtime_error("End of first sweep");
 
       // Calculate fission source convergence metric
       double fnorm = 0.0;

@@ -19,11 +19,10 @@ class KokkosMOC : public BaseMOC {
         void _impl_sweep_serial();  // Implementation of the MOC sweep using serial
 
         // Get the FSR volumes
-        const std::vector<double>& fsr_vol() const override {
+        std::vector<double> fsr_vol() const override {
             std::vector<double> result(_nfsr);
             for (int i = 0; i < _nfsr; i++) {
                 result[i] = _h_fsr_vol(i);
-		printf("FSR Volume: %d %f\n", i, _h_fsr_vol(i));
             }
             return result;
 	}

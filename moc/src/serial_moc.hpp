@@ -17,7 +17,7 @@ class SerialMOC : public BaseMOC {
         void sweep() override;
 
         // Get the FSR volumes
-        const std::vector<double>& fsr_vol() const override { return _fsr_vol; }
+        std::vector<double> fsr_vol() const override { return _fsr_vol; }
 
         // Get the scalar flux
         std::vector<std::vector<double>> scalar_flux() const override { return _scalar_flux; }
