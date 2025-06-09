@@ -1,4 +1,7 @@
-# docker build -t your-dockerhub-username/your-image-name:tag -f test.dockerfile .
+# docker build -t your-dockerhub-username/vera-gpu:tag -f vera_gpu.dockerfile .
+# docker push your-dockerhub-username/vera-gpu:tag
+# docker tag your-dockerhub-username/vera-gpu:tag your-dockerhub-username/vera-gpu:latest
+# docker push your-dockerhub-username/vera-gpu:latest
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 
 # System dependencies
@@ -7,6 +10,9 @@ RUN apt-get update && \
     build-essential cmake git curl wget python3 \
     gfortran libhdf5-openmpi-dev openmpi-bin libopenmpi-dev \
     libomp-dev cuda-toolkit-12-4
+
+ENV CC=mpicc
+ENV CXX=mpicxx
 
 # --- Kokkos (with CUDA + OpenMP) ---
 RUN git clone --branch develop https://github.com/kokkos/kokkos.git && \
