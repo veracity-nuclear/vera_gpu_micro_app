@@ -4,6 +4,7 @@ add_library(cmfd_lib
 )
 
 target_link_libraries(cmfd_lib
+    MPI::MPI_CXX
     HighFive::HighFive
     Kokkos::kokkos
     PETSc::PETSc
