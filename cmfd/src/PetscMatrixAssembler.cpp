@@ -6,8 +6,8 @@ Mat SimpleMatrixAssembler::assemble() const
     PetscFunctionBeginUser;
 
     MatCreate(PETSC_COMM_WORLD, &mat);
-    // MatSetSizes(mat, PETSC_DECIDE, PETSC_DECIDE, m_nCells, m_nCells);
-    // MatSetFromOptions(mat);
+    MatSetSizes(mat, PETSC_DECIDE, PETSC_DECIDE, cmfdData.nCells, cmfdData.nCells);
+    MatSetFromOptions(mat);
 
     return mat;
 }

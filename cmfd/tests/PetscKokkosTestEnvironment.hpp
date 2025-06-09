@@ -58,3 +58,23 @@ inline void compare2DViewAndVector(
     }
   }
 }
+
+inline void compare2DHostAndDevice(
+    const Kokkos::View<PetscScalar **, Kokkos::HostSpace> &h_view,
+    const Kokkos::View<PetscScalar **, Kokkos::DefaultExecutionSpace> &d_view,
+    const std::string &message = "")
+{
+  ASSERT_EQ(h_view.extent(0), d_view.extent(0)) << message;
+  ASSERT_EQ(h_view.extent(1), d_view.extent(1)) << message;
+
+  Kokkos::View<PetscScalar **>::HostMirror h_viewCheck = Kokkos::create_mirror_view(d_view);
+  Kokkos::deep_copy(h_viewCheck, d_view);
+
+  for (size_t i = 0; i < h_view.extent(0); ++i)
+  {
+    for (size_t j = 0; j < h_view.extent(1); ++j)
+    {
+      ASSERT_DOUBLE_EQ(h_view(i, j), h_viewCheck(i, j)) << message;
+    }
+  }
+}

@@ -180,9 +180,9 @@ PetscErrorCode createPetscMatKokkos(const std::vector<std::vector<PetscScalar>> 
 // Generates dummy data for a Kokkos view using parallel_for, which can't be used in the body of a TEST
 void generateDummyKokkosView(Kokkos::View<PetscScalar *> &vecKokkos, const int vecSize = 5)
 {
-  const PetscScalar number = -3.14;
+  const PetscScalar number = 6.28;
   Kokkos::parallel_for("Initialize bVec", vecSize, KOKKOS_LAMBDA(const int i) {
-    vecKokkos(i) = Kokkos::exp(static_cast<PetscScalar>(i) / number); // Example data generation
+    vecKokkos(i) = Kokkos::sin(static_cast<PetscScalar>(i) / number); // Example data generation
   });
 
   Kokkos::fence();
@@ -199,13 +199,14 @@ void generateDummyKokkosView(Kokkos::View<PetscScalar *> &vecKokkos, const int v
  */
 void generateTridiagKokkosAIJ(Kokkos::View<PetscScalar *> &aValues, Kokkos::View<PetscInt *> &iRow, Kokkos::View<PetscInt *> &jCol, const int nRows)
 {
+  const PetscScalar float_nRows = static_cast<PetscScalar>(nRows);
   Kokkos::parallel_for("fillTriAIJ", nRows, KOKKOS_LAMBDA(const int rowIdx) {
       const PetscInt diagElementIdx = rowIdx * 3;
       if (rowIdx > 0) {
         iRow(rowIdx) = diagElementIdx - 1;
 
         // lower diagonal
-        aValues(diagElementIdx - 1) = diagElementIdx * Kokkos::cosh(diagElementIdx) - 3 * nRows;
+        aValues(diagElementIdx - 1) = diagElementIdx / float_nRows;
         jCol(diagElementIdx - 1) = rowIdx - 1;
       } else {
         iRow(rowIdx) = 0;
@@ -216,7 +217,7 @@ void generateTridiagKokkosAIJ(Kokkos::View<PetscScalar *> &aValues, Kokkos::View
       }
 
       // diagonal
-      aValues(diagElementIdx) = Kokkos::sqrt(Kokkos::sinh(diagElementIdx) + nRows);
+      aValues(diagElementIdx) = Kokkos::sqrt(Kokkos::sinh(diagElementIdx/float_nRows + 1.0));
       jCol(diagElementIdx) = rowIdx;
 
       // upper diagonal
@@ -307,7 +308,7 @@ TEST(s01_hdf5, hdf5ToKokkosView)
 
   DualView::t_host h_dualData = dualData.view_host();
   Kokkos::deep_copy(h_dualData, h_data);
-  dualData.modify<DualView::host_mirror_space>();
+  dualData.template modify<typename DualView::host_mirror_space>();
 
   for (size_t i = 0; i < dims[0]; ++i)
   {
@@ -317,7 +318,7 @@ TEST(s01_hdf5, hdf5ToKokkosView)
     }
   }
 
-  dualData.sync<Kokkos::DefaultExecutionSpace>();
+  dualData.template sync<typename Kokkos::DefaultExecutionSpace>();
   DualView::t_dev d_dualData = dualData.view_device();
 
   Kokkos::View<PetscScalar**>::HostMirror h_dualDataCheck = Kokkos::create_mirror_view(h_dualData);
@@ -595,7 +596,7 @@ TEST(s03_kokkos, kokkosViewToPetscVec)
 
     // These range of values are determined generateKokkosView,
     //  but the purpose of these tests is to make sure data are valid
-    ASSERT_GT(value, 0.0) << "Value should be greater than zero. The data may not have been initialized correctly.";
+    ASSERT_GT(value, -1.0) << "Value should be greater than -1. The data may not have been initialized correctly.";
     ASSERT_LE(value, 1.0) << "Value should be less than or equal to one. The data may not have been initialized correctly.";
   }
 
@@ -644,7 +645,7 @@ TEST(s03_kokkos, kokkosViewToPetscMat)
 TEST(s03_kokkos, solveFromViews)
 {
   const PetscScalar tol = 1.e-7;
-  const PetscInt numRows = 10;
+  const PetscInt numRows = 100;
   const PetscInt numNonZero = 3 * numRows - 2;
 
   Vec bVecPetsc, xVecPetsc;
@@ -675,7 +676,10 @@ TEST(s03_kokkos, solveFromViews)
 
   PetscCallG(KSPSolve(ksp, bVecPetsc, xVecPetsc));
 
-  PetscCallG(VecView(xVecPetsc, PETSC_VIEWER_STDOUT_WORLD));
+  if constexpr(numRows <= 100)
+  {
+    PetscCallG(VecView(xVecPetsc, PETSC_VIEWER_STDOUT_WORLD));
+  }
 
   PetscReal norm;
   PetscCallG(VecNorm(xVecPetsc, NORM_2, &norm));
