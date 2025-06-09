@@ -81,7 +81,9 @@ bool ArgumentParser::parse(int argc, char* argv[]) {
     for (size_t i = 1; i < args.size(); ++i) {
         const std::string& arg = args[i];
 
-        if (arg.substr(0, 1) == "-") {
+	if (arg.substr(0, 9) == "--kokkos-") {
+	    continue;
+	} else if (arg.substr(0, 1) == "-") {
             // It's an optional argument or flag
             std::string name = arg;
             if (name.size() > 1 && name[1] == '-') {

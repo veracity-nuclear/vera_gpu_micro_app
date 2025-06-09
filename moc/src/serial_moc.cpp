@@ -190,7 +190,6 @@ void SerialMOC::_read_rays() {
 // Build the fission source term for each FSR based on the scalar flux and nu-fission cross sections
 std::vector<double> SerialMOC::fission_source(const double keff) const {
     std::vector<double> fissrc(_nfsr, 0.0);
-    int ixsr = 1;
     for (size_t i = 0; i < _nfsr; i++) {
         if (_library.is_fissile(_fsr_mat_id[i])) {
             for (int g = 0; g < _ng; g++) {
@@ -206,7 +205,6 @@ std::vector<double> SerialMOC::fission_source(const double keff) const {
 void SerialMOC::update_source(const std::vector<double>& fissrc) {
     int _nfsr = _scalar_flux.size();
     int ng = _scalar_flux[0].size();
-    int ixsr = 1;
     for (size_t i = 0; i < _nfsr; i++) {
         for (int g = 0; g < ng; g++) {
             _source[i][g] = fissrc[i] * _library.chi(_fsr_mat_id[i], g);
@@ -229,7 +227,7 @@ void SerialMOC::update_source(const std::vector<double>& fissrc) {
 void SerialMOC::sweep() {
     // Initialize old values and a few scratch values
     int iseg1, iseg2, ireg1, ireg2, refl_angle;
-    double phid1, phid2, phio1, phio2;
+    double phid1, phid2;
 
     // Initialize the scalar flux to 0.0
     for (auto i = 0; i < _nfsr; i++) {

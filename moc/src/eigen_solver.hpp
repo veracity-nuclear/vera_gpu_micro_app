@@ -18,7 +18,7 @@ class EigenSolver {
         const double _fconv = 1.0e-8;  // Convergence criterion for fission source
         double _keff; // Current eigenvalue estimate
         double _old_keff; // Previous eigenvalue estimate
-        std::vector<double> _fsr_vol; // FSR volumes
+        const std::vector<double> _fsr_vol; // FSR volumes
         std::vector<std::vector<double>> _scalar_flux; // Scalar flux from the sweeper
         std::vector<std::vector<double>> _old_scalar_flux; // Previous scalar flux for convergence checks
         std::vector<double> _fissrc; // Fission source vector

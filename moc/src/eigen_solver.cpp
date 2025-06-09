@@ -7,9 +7,9 @@
 #include "base_moc.hpp"
 
 EigenSolver::EigenSolver(const std::vector<std::string> args, BaseMOC* sweeper)
-  : _sweeper(sweeper)
+  : _sweeper(sweeper),
+    _fsr_vol(sweeper->fsr_vol())
   {
-  _fsr_vol = _sweeper->fsr_vol();
   _scalar_flux = _sweeper->scalar_flux();
   _old_scalar_flux = _scalar_flux;
 
@@ -38,8 +38,10 @@ void EigenSolver::solve() {
       for (size_t i = 0; i < _fissrc.size(); ++i) {
         numerator += _fissrc[i] * _fsr_vol[i];
         denominator += _old_fissrc[i] * _fsr_vol[i];
+	printf("keff add: %d %f %f %f %f %f\n", i, _fissrc[i], _old_fissrc[i], _fsr_vol[i], numerator, denominator);
       }
       _keff = _old_keff * numerator / denominator;
+    throw std::runtime_error("End of first sweep");
 
       // Calculate fission source convergence metric
       double fnorm = 0.0;
