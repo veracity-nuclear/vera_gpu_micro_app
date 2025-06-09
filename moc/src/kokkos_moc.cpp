@@ -282,7 +282,7 @@ void KokkosMOC::_impl_sweep_openmp() {
 
         // Allocate and initialize exparg with dimensions [ray._fsrs.size()][ng]
         for (int j = 0; j < ray._fsrs.size(); j++) {
-            exparg(j) = 1.0 - exp(-_xstr(ray._fsrs[j] - 1, ig) * ray._segments[j] * _rsinpolang(ipol));
+            exparg(j) = 1.0 - exp(-_h_xstr(ray._fsrs[j] - 1, ig) * ray._segments[j] * _h_rsinpolang(ipol));
         }
 
         int ireg;
@@ -293,7 +293,7 @@ void KokkosMOC::_impl_sweep_openmp() {
         segflux(0) = _old_angflux[ray.angle()]._faces[ray._bc_face_start]._angflux[ray._bc_index_frwd_start][ipol][ig];
         for (int iseg = 0; iseg < ray._fsrs.size(); iseg++) {
             ireg = ray._fsrs[iseg] - 1;
-            phid = (segflux(iseg) - _source(ireg, ig)) * exparg(iseg);
+            phid = (segflux(iseg) - _h_source(ireg, ig)) * exparg(iseg);
             segflux(iseg + 1) = segflux(iseg) - phid;
             Kokkos::atomic_add(&scalar_flux(ireg, ig), phid * _angle_weights[ray.angle()][ipol]);
         }
@@ -303,7 +303,7 @@ void KokkosMOC::_impl_sweep_openmp() {
         segflux(ray._fsrs.size()) = _old_angflux[ray.angle()]._faces[ray._bc_face_end]._angflux[ray._bc_index_bkwd_end][ipol][ig];
         for (int iseg = ray._fsrs.size(); iseg > 0; iseg--) {
             ireg = ray._fsrs[iseg - 1] - 1;
-            phid = (segflux(iseg) - _source(ireg, ig)) * exparg(iseg - 1);
+            phid = (segflux(iseg) - _h_source(ireg, ig)) * exparg(iseg - 1);
             segflux(iseg - 1) = segflux(iseg) - phid;
             Kokkos::atomic_add(&scalar_flux(ireg, ig), phid * _angle_weights[ray.angle()][ipol]);
         }
@@ -315,7 +315,7 @@ void KokkosMOC::_impl_sweep_openmp() {
     Kokkos::parallel_for("ScaleScalarFlux",
         Kokkos::MDRangePolicy<ExecSpace, Kokkos::Rank<2>>({0, 0}, {nfsr, ng}),
         KOKKOS_LAMBDA(int i, int g) {
-            scalar_flux(i, g) = scalar_flux(i, g) * _plane_height / (_xstr(i, g) * _h_fsr_vol(i)) + _source(i, g) * fourpi;
+            scalar_flux(i, g) = scalar_flux(i, g) * _plane_height / (_h_xstr(i, g) * _h_fsr_vol(i)) + _h_source(i, g) * fourpi;
     });
 }
 
