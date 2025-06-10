@@ -18,13 +18,17 @@ jobs:
 
       - name: Configure project
         run: |
+          export PATH=/opt/views/view/bin:$PATH
+          which mpicxx
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=mpicxx
 
       - name: Build project
         run: |
+          export PATH=/opt/views/view/bin:$PATH
           cmake --build build --parallel 4
 
       - name: Run tests
         run: |
+          export PATH=/opt/views/view/bin:$PATH
           cd build
           ctest -j4 --output-on-failure -E "heavy_test"

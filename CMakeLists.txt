@@ -9,8 +9,6 @@ if(NOT DEFINED CMAKE_PREFIX_PATH)
     set(CMAKE_PREFIX_PATH "$ENV{HDF5_ROOT};$ENV{HIGHFIVE_ROOT};$ENV{KOKKOS_ROOT};$ENV{PETSC_DIR}" CACHE STRING "Default CMAKE_PREFIX_PATH")
 endif()
 
-find_package(MPI REQUIRED)
-
 # Find Kokkos (user-installed)
 find_package(Kokkos REQUIRED)
 
