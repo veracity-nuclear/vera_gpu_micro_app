@@ -72,10 +72,10 @@ class KokkosMOC : public BaseMOC {
         Kokkos::View<double**, Kokkos::HostSpace> _h_exparg;  // Exponential arguments for each segment and group
 
 	// Geometry and ray device data
-	Kokkos::View<double*> _fsr_vol;  // FSR volumes
-        Kokkos::View<double**> _xstr;  // Cross-sections for each FSR
-        Kokkos::View<KokkosLongRay*> _rays;  // Long rays for MOC
-        Kokkos::View<double*> _rsinpolang;  // Precomputed sin(polar angle) values
+        Kokkos::View<double*> _d_fsr_vol;  // FSR volumes
+        Kokkos::View<double**> _d_xstr;  // Cross-sections for each FSR
+        Kokkos::View<KokkosLongRay*> _d_rays;  // Long rays for MOC
+        Kokkos::View<double*> _d_rsinpolang;  // Precomputed sin(polar angle) values
 
 	// Solution host data
         Kokkos::View<double***, Kokkos::HostSpace> _h_segflux;  // Segment flux array
@@ -85,6 +85,6 @@ class KokkosMOC : public BaseMOC {
         Kokkos::View<double***, Kokkos::HostSpace> _h_old_angflux;  // Host copy of old angular flux for each angle
 
 	// Solution device data
-        Kokkos::View<double**> _scalar_flux;  // Scalar flux array
-        Kokkos::View<double**> _source;  // Multrigroup total source term for each FSR
+        Kokkos::View<double**> _d_scalar_flux;  // Scalar flux array
+        Kokkos::View<double**> _d_source;  // Multrigroup total source term for each FSR
 };

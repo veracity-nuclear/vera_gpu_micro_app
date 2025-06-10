@@ -36,7 +36,6 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
             _h_fsr_vol(i) = (*fsr_vol)[i];
         }
     }
-    _fsr_vol = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_fsr_vol);
     _plane_height = _file.getDataSet("/MOC_Ray_Data/Domain_00001/plane_height").read<double>();
 
     // Initialize the library
@@ -65,17 +64,13 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
 
     // Allocate scalar flux and source array
     _h_scalar_flux = Kokkos::View<double**, Kokkos::HostSpace>("scalar_flux", _nfsr, _ng);
-    auto _scalar_flux = Kokkos::create_mirror_view(Kokkos::DefaultExecutionSpace::memory_space(), _h_scalar_flux);
     _h_source = Kokkos::View<double**, Kokkos::HostSpace>("source", _nfsr, _ng);
-    auto _source = Kokkos::create_mirror_view(Kokkos::DefaultExecutionSpace::memory_space(), _h_source);
     for (size_t i = 0; i < _nfsr; ++i) {
         for (size_t j = 0; j < _ng; ++j) {
             _h_scalar_flux(i, j) = 1.0;
             _h_source(i, j) = 1.0;
         }
     }
-    Kokkos::deep_copy(_scalar_flux, _h_scalar_flux);
-    Kokkos::deep_copy(_source, _h_source);
 
     // Read ray spacings and angular flux BC dimensions
     auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
@@ -177,11 +172,9 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
 
     // Store the inverse polar angle sine
     _h_rsinpolang = Kokkos::View<double*, Kokkos::HostSpace>("rsinpolang", _npol);
-    auto _rsinpolang = Kokkos::create_mirror_view(Kokkos::DefaultExecutionSpace::memory_space(), _h_rsinpolang);
     for (int ipol = 0; ipol < _npol; ipol++) {
         _h_rsinpolang(ipol) = 1.0 / std::sin(polar_angles[ipol]);
     }
-    Kokkos::deep_copy(_rsinpolang, _h_rsinpolang);
 
     // Count maximum segments across all rays
     _max_segments = 0;
@@ -193,6 +186,16 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
     if (_device == "serial") {
         _h_segflux = Kokkos::View<double***, Kokkos::HostSpace>("segflux", 2, _max_segments + 1, _ng);
         _h_exparg = Kokkos::View<double**, Kokkos::HostSpace>("exparg", _max_segments + 1, _ng);
+    }
+
+    // Set up device views as needed
+    if (_device == "cuda") {
+        _d_fsr_vol = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_fsr_vol);
+        _d_rays = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_rays);
+        _d_rsinpolang = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_rsinpolang);
+	Kokkos::deep_copy(_d_xstr, _h_xstr);
+	Kokkos::deep_copy(_d_scalar_flux, _h_scalar_flux);
+	Kokkos::deep_copy(_d_source, _h_source);
     }
 }
 
@@ -217,7 +220,6 @@ void KokkosMOC::_read_rays() {
 
     // Set up the rays
     _h_rays = Kokkos::View<KokkosLongRay*, Kokkos::HostSpace>("rays", nrays);
-    _rays = Kokkos::create_mirror_view(Kokkos::DefaultExecutionSpace::memory_space(), _h_rays);
     nrays = 0;
     for (const auto& objName : domain.listObjectNames()) {
         if (objName.substr(0, 6) == "Angle_") {
@@ -234,7 +236,6 @@ void KokkosMOC::_read_rays() {
             }
         }
     }
-    Kokkos::deep_copy(_rays, _h_rays);
     // Print a message with the number of rays and filename
     std::cout << "Successfully set up " << nrays << " rays from file: " << _filename << std::endl;
 }
@@ -244,14 +245,12 @@ void KokkosMOC::_get_xstr(
     const int starting_xsr
 ) {
     _h_xstr = Kokkos::View<double**, Kokkos::HostSpace>("xstr", _nfsr, _library.get_num_groups());
-    auto _xstr = Kokkos::create_mirror_view(Kokkos::DefaultExecutionSpace::memory_space(), _h_xstr);
     for (auto i = 0; i < _fsr_mat_id.size(); i++) {
         auto total_xs = _library.total(_fsr_mat_id[i]);
         for (int g = 0; g < _library.get_num_groups(); g++) {
             _h_xstr(i, g) = total_xs[g];
         }
     }
-    Kokkos::deep_copy(_xstr, _h_xstr);
 }
 
 // Build the fission source term for each FSR based on the scalar flux and nu-fission cross sections
@@ -284,7 +283,7 @@ void KokkosMOC::update_source(const std::vector<double>& fissrc) {
         }
     }
     if (_device == "cuda") {
-        Kokkos::deep_copy(_source, _h_source);
+        Kokkos::deep_copy(_d_source, _h_source);
     }
 }
 
