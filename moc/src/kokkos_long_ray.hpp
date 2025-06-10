@@ -7,6 +7,7 @@
 struct KokkosLongRay
 {
     public:
+        int _nsegs;
         std::vector<int> _fsrs;
         std::vector<double> _segments;
         int _bc_face_start;
@@ -25,6 +26,7 @@ struct KokkosLongRay
           _fsrs(group.getDataSet("FSRs").read<std::vector<int>>()),
           _segments(group.getDataSet("Segments").read<std::vector<double>>())
           {
+            _nsegs = _segments.size();
             auto tmp_bc = group.getDataSet("BC_face").read<std::vector<int>>();
             _bc_face_start = tmp_bc[RAY_START] - 1;
             _bc_face_end = tmp_bc[RAY_END] - 1;

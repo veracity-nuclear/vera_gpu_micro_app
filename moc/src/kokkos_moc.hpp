@@ -67,7 +67,7 @@ class KokkosMOC : public BaseMOC {
 	Kokkos::View<double**, Kokkos::HostSpace> _h_xstr;  // Host copy of cross-sections for each FSR
 	Kokkos::View<KokkosLongRay*, Kokkos::HostSpace> _h_rays;  // Host copy of long rays for MOC
         std::vector<double> _ray_spacing;
-        std::vector<std::vector<double>> _angle_weights;  // Weights for each angle
+	Kokkos::View<double**, Kokkos::HostSpace> _h_angle_weights;  // Weights for each angle
         Kokkos::View<double*, Kokkos::HostSpace> _h_rsinpolang;  // Host copy of precomputed sin(polar angle) values
         Kokkos::View<double**, Kokkos::HostSpace> _h_exparg;  // Exponential arguments for each segment and group
 
