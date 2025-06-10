@@ -18,17 +18,16 @@ jobs:
 
       - name: Configure project
         run: |
-          export PATH=/opt/views/view/bin:$PATH
-          which mpicxx
+          source /opt/spack-environment/activate.sh
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=mpicxx
 
       - name: Build project
         run: |
-          export PATH=/opt/views/view/bin:$PATH
+          source /opt/spack-environment/activate.sh
           cmake --build build --parallel 4
 
       - name: Run tests
         run: |
-          export PATH=/opt/views/view/bin:$PATH
+          source /opt/spack-environment/activate.sh
           cd build
           ctest -j4 --output-on-failure -E "heavy_test"
