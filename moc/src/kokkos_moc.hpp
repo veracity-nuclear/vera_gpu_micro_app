@@ -81,8 +81,8 @@ class KokkosMOC : public BaseMOC {
         Kokkos::View<double***, Kokkos::HostSpace> _h_segflux;  // Segment flux array
 	Kokkos::View<double**, Kokkos::HostSpace> _h_scalar_flux;  // Host copy of scalar flux array
 	Kokkos::View<double**, Kokkos::HostSpace> _h_source;  // Host copy of multigroup total source term for each FSR
-        std::vector<AngFluxBCAngle> _angflux;  // Angular flux for each angle
-        std::vector<AngFluxBCAngle> _old_angflux;  // Angular flux for each angle
+        Kokkos::View<double***, Kokkos::HostSpace> _h_angflux;  // Host copy of angular flux for each angle
+        Kokkos::View<double***, Kokkos::HostSpace> _h_old_angflux;  // Host copy of old angular flux for each angle
 
 	// Solution device data
         Kokkos::View<double**> _scalar_flux;  // Scalar flux array

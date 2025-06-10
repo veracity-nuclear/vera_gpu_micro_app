@@ -2,17 +2,11 @@
 #include <iostream>
 #include <string>
 #include <iomanip>
+#include <cassert>
 #include <highfive/H5Easy.hpp>
 #include <highfive/highfive.hpp>
 #include "kokkos_long_ray.hpp"
 #include "c5g7_library.hpp"
-
-namespace {
-    // Reflect the angle for reflecting boundary conditions
-    inline int reflect_angle(int angle) {
-        return angle % 2 == 0 ? angle + 1 : angle - 1;
-    }
-}
 
 KokkosMOC::KokkosMOC(const ArgumentParser& args) :
     _filename(args.get_positional(0)),
@@ -91,36 +85,85 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
     _npol = polar_angles.size();
     int nazi = 0;
     std::vector<std::vector<int>> bc_sizes;
-    _ray_spacing.clear();
-    for (const auto& objName : domain.listObjectNames()) {
+    int _max_bc_size = 0;
+    int total_bc_points = 0;
+    _ray_spacing.clear();    for (const auto& objName : domain.listObjectNames()) {
         // Loop over each angle group
         if (objName.substr(0, 6) == "Angle_") {
             HighFive::Group angleGroup = domain.getGroup(objName);
             // Read ray spacing
-            _ray_spacing.push_back(angleGroup.getDataSet("spacing").read<double>());
-            // Read the BC sizes
+            _ray_spacing.push_back(angleGroup.getDataSet("spacing").read<double>());            // Read the BC sizes
             int iazi = std::stoi(objName.substr(8)) - 1;
-            bc_sizes.push_back(angleGroup.getDataSet("BC_size").read<std::vector<int>>());
-            _angflux.push_back(AngFluxBCAngle(4));
-            for (size_t iface = 0; iface < 4; iface++) {
-                _angflux[iazi]._faces[iface] = AngFluxBCFace(bc_sizes[iazi][iface] + 2, _npol, _ng);
-            }
+            std::vector<int> bc_size = angleGroup.getDataSet("BC_size").read<std::vector<int>>();
+            bc_sizes.push_back(bc_size);
+            _max_bc_size = std::max({_max_bc_size, bc_size[0], bc_size[1], bc_size[2], bc_size[3]});
+            total_bc_points += std::accumulate(bc_size.begin(), bc_size.end(), 0);
             nazi++;
         }
     }
-    for (size_t i = 0; i < _h_rays.size(); i++) {
-        auto& ray = _h_rays(i);
-        // If the start is on a vacuum boundary, set it to a dummy value that's always 0.0
-        if (ray._bc_index_frwd_start == -1) {
-            ray._bc_index_frwd_start = bc_sizes[ray._angle_index][ray._bc_face_start];
-            ray._bc_index_bkwd_start = bc_sizes[ray._angle_index][ray._bc_face_start] + 1;
-        }
-        if (ray._bc_index_frwd_end == -1) {
-            ray._bc_index_frwd_end = bc_sizes[ray._angle_index][ray._bc_face_end] + 1;
-            ray._bc_index_bkwd_end = bc_sizes[ray._angle_index][ray._bc_face_end];
+    std::vector<std::vector<std::vector<int>>> angface_to_ray(nazi);
+    for (int iazi = nazi - 1; iazi >= 0; iazi--) {
+        angface_to_ray[iazi].resize(4);
+        for (int iface = 3; iface >= 0; iface--) {
+            angface_to_ray[iazi][iface].resize(bc_sizes[iazi][iface]);
+            if (iazi == nazi - 1 && iface == 3) {
+                bc_sizes[iazi][iface] = total_bc_points - bc_sizes[iazi][iface];
+            } else if (iface == 3) {
+                bc_sizes[iazi][iface] = bc_sizes[iazi + 1][0] - bc_sizes[iazi][iface];
+            } else {
+                bc_sizes[iazi][iface] = bc_sizes[iazi][iface + 1] - bc_sizes[iazi][iface];
+            }
         }
     }
-    _old_angflux = _angflux;
+
+    // Build map from face/BC index to ray index
+    for (size_t iray = 0; iray < _h_rays.size(); iray++) {
+        auto& ray = _h_rays(iray);
+        if (ray._bc_index_frwd_start >= 0) {
+            angface_to_ray[ray.angle()][ray._bc_face_start][ray._bc_index_frwd_start] = iray;
+        }
+        if (ray._bc_index_bkwd_start >= 0) {
+            angface_to_ray[ray.angle()][ray._bc_face_end][ray._bc_index_bkwd_start] = _h_rays.size() + iray;
+        }
+    }
+
+    // Now allocate the angular flux arrays, remap the long ray indexes, and initialize the angular flux arrays
+    total_bc_points = 2 * total_bc_points + 2;  // Both directions on each ray, plus two for the vacuum rays
+    _h_angflux = Kokkos::View<double***, Kokkos::HostSpace>("angflux", total_bc_points, _npol, _ng);
+    _h_old_angflux = Kokkos::View<double***, Kokkos::HostSpace>("old_angflux", total_bc_points, _npol, _ng);
+    for (size_t i = 0; i < _h_rays.size(); i++) {
+        auto& ray = _h_rays(i);
+        int irefl = ray.angle() % 2 == 0 ? ray.angle() + 1 : ray.angle() - 1;
+        if (ray._bc_index_frwd_start == -1) {
+            ray._bc_index_frwd_start = total_bc_points - 2;
+            ray._bc_index_bkwd_end = total_bc_points - 1;
+        } else {
+            int start_index = ray._bc_index_frwd_start;
+            ray._bc_index_frwd_start = angface_to_ray[ray.angle()][ray._bc_face_start][start_index];
+            ray._bc_index_bkwd_end = angface_to_ray[irefl][ray._bc_face_start][start_index];
+            for (size_t ipol = 0; ipol < _npol; ipol++) {
+                for (size_t ig = 0; ig < _ng; ig++) {
+                    _h_angflux(ray._bc_index_frwd_start, ipol, ig) = 0.0;
+                    _h_angflux(ray._bc_index_bkwd_end, ipol, ig) = 0.0;
+                }
+            }
+        }
+        if (ray._bc_index_frwd_end == -1) {
+            ray._bc_index_frwd_end = total_bc_points - 2;
+            ray._bc_index_bkwd_start = total_bc_points - 1;
+        } else {
+            int start_index = ray._bc_index_bkwd_start;
+            ray._bc_index_frwd_end = angface_to_ray[irefl][ray._bc_face_end][start_index];
+            ray._bc_index_bkwd_start = angface_to_ray[ray.angle()][ray._bc_face_end][start_index];
+            for (size_t ipol = 0; ipol < _npol; ipol++) {
+                for (size_t ig = 0; ig < _ng; ig++) {
+                    _h_angflux(ray._bc_index_frwd_end, ipol, ig) = 0.0;
+                    _h_angflux(ray._bc_index_bkwd_start, ipol, ig) = 0.0;
+                }
+            }
+        }
+    }
+    Kokkos::deep_copy(_h_old_angflux, _h_angflux);
 
     // Build angle weights
     _angle_weights.reserve(nazi);
@@ -287,27 +330,26 @@ void KokkosMOC::_impl_sweep_openmp() {
 
         int ireg;
         double phid;
-        int refl_angle = reflect_angle(ray.angle());
 
         // Forward segment sweep
-        segflux(0) = _old_angflux[ray.angle()]._faces[ray._bc_face_start]._angflux[ray._bc_index_frwd_start][ipol][ig];
+        segflux(0) = _h_old_angflux(ray._bc_index_frwd_start, ipol, ig);
         for (int iseg = 0; iseg < ray._fsrs.size(); iseg++) {
             ireg = ray._fsrs[iseg] - 1;
             phid = (segflux(iseg) - _h_source(ireg, ig)) * exparg(iseg);
             segflux(iseg + 1) = segflux(iseg) - phid;
             Kokkos::atomic_add(&scalar_flux(ireg, ig), phid * _angle_weights[ray.angle()][ipol]);
         }
-        _angflux[refl_angle]._faces[ray._bc_face_end]._angflux[ray._bc_index_frwd_end][ipol][ig] = segflux(ray._fsrs.size());
+        _h_angflux(ray._bc_index_frwd_end, ipol, ig) = segflux(ray._fsrs.size());
 
         // Backward segment sweep
-        segflux(ray._fsrs.size()) = _old_angflux[ray.angle()]._faces[ray._bc_face_end]._angflux[ray._bc_index_bkwd_end][ipol][ig];
+        segflux(ray._fsrs.size()) = _h_old_angflux(ray._bc_index_bkwd_start, ipol, ig);
         for (int iseg = ray._fsrs.size(); iseg > 0; iseg--) {
             ireg = ray._fsrs[iseg - 1] - 1;
             phid = (segflux(iseg) - _h_source(ireg, ig)) * exparg(iseg - 1);
             segflux(iseg - 1) = segflux(iseg) - phid;
             Kokkos::atomic_add(&scalar_flux(ireg, ig), phid * _angle_weights[ray.angle()][ipol]);
         }
-        _angflux[refl_angle]._faces[ray._bc_face_start]._angflux[ray._bc_index_bkwd_start][ipol][ig] = segflux(0);
+        _h_angflux(ray._bc_index_bkwd_end, ipol, ig) = segflux(0);
     });
 
     // Scale the flux with source, volume, and transport XS
@@ -357,8 +399,8 @@ void KokkosMOC::_impl_sweep_serial() {
             }
 
             // Initialize the ray flux with the angular flux BCs
-            segflux(RAY_START, 0, ig) = _old_angflux[ray.angle()]._faces[ray._bc_face_start]._angflux[ray._bc_index_frwd_start][ipol][ig];
-            segflux(RAY_END, ray._fsrs.size(), ig) = _old_angflux[ray.angle()]._faces[ray._bc_face_end]._angflux[ray._bc_index_bkwd_end][ipol][ig];
+            segflux(RAY_START, 0, ig) = _h_old_angflux(ray._bc_index_frwd_start, ipol, ig);
+            segflux(RAY_END, ray._fsrs.size(), ig) = _h_old_angflux(ray._bc_index_bkwd_start, ipol, ig);
 
             // Sweep the segments bi-directionally
             int iseg2 = ray._fsrs.size();
@@ -382,12 +424,9 @@ void KokkosMOC::_impl_sweep_serial() {
             }
 
             // Store the final segments' angular flux into the BCs
-            int refl_angle = reflect_angle(ray.angle());
             for (size_t ig = 0; ig < ng; ig++) {
-                _angflux[refl_angle]._faces[ray._bc_face_end]._angflux[ray._bc_index_frwd_end][ipol][ig] =
-                    segflux(RAY_START, ray._fsrs.size(), ig);
-                _angflux[refl_angle]._faces[ray._bc_face_start]._angflux[ray._bc_index_bkwd_start][ipol][ig] =
-                    segflux(RAY_END, 0, ig);
+                _h_angflux(ray._bc_index_frwd_end, ipol, ig) = segflux(RAY_START, ray._fsrs.size(), ig);
+                _h_angflux(ray._bc_index_bkwd_end, ipol, ig) = segflux(RAY_END, 0, ig);
             }
     });
 
@@ -409,5 +448,5 @@ void KokkosMOC::sweep() {
         _impl_sweep_serial();
     }
 
-    _old_angflux = _angflux;
+    Kokkos::deep_copy(_h_old_angflux, _h_angflux);
 }

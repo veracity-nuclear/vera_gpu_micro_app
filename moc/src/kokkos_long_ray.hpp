@@ -31,8 +31,8 @@ struct KokkosLongRay
             tmp_bc = group.getDataSet("BC_index").read<std::vector<int>>();
             _bc_index_frwd_start = tmp_bc[RAY_START] - 1;
             _bc_index_frwd_end = tmp_bc[RAY_END] - 1;
-            _bc_index_bkwd_start = _bc_index_frwd_start;
-            _bc_index_bkwd_end = _bc_index_frwd_end;
+            _bc_index_bkwd_start = _bc_index_frwd_end;
+            _bc_index_bkwd_end = _bc_index_frwd_start;
         };
         int angle() const { return _angle_index; };
 };

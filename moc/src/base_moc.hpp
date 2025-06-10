@@ -4,10 +4,6 @@
 
 const int RAY_START = 0; // Index for the start of the ray
 const int RAY_END = 1;   // Index for the end of the ray
-const int WEST = 0;    // Index for the west face
-const int NORTH = 1;   // Index for the north face
-const int EAST = 2;    // Index for the east face
-const int SOUTH = 3;   // Index for the south face
 
 // Defines the angular flux boundary condition for a single face and a single angle
 class AngFluxBCFace

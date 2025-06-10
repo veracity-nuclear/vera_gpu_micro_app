@@ -342,7 +342,8 @@ void SerialMOC::sweep() {
     // Scale the flux with source, volume, and transport XS
     for (size_t i = 0; i < _nfsr; ++i) {
         for (size_t g = 0; g < _ng; ++g) {
-            // std::cout << i << " " << g << " scale " << _scalar_flux[i][g] << " " << _xstr[i][g] << " " << _fsr_vol[i] << " " << _plane_height << " " << source[i][g] << " " << 4.0 * M_PI << std::endl;
+            // printf("Scaling scalar flux for FSR %d, group %d: %f %f %f %f %f\n",
+            //     i, g, _scalar_flux[i][g], _xstr[i][g], _fsr_vol[i], _plane_height, _source[i][g]);
             _scalar_flux[i][g] = _scalar_flux[i][g] / (_xstr[i][g] * _fsr_vol[i] / _plane_height) + _source[i][g] * 4.0 * M_PI;
         }
     }
