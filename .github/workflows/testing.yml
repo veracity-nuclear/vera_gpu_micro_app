@@ -16,10 +16,15 @@ jobs:
         with:
           lfs: true
 
-      - name: Build and test
+      - name: Configure project
         run: |
-          . /opt/spack-environment/activate.sh
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=mpicxx
+
+      - name: Build project
+        run: |
           cmake --build build --parallel 4
+
+      - name: Run tests
+        run: |
           cd build
           ctest -j4 --output-on-failure -E "heavy_test"
