@@ -17,16 +17,19 @@ jobs:
           lfs: true
 
       - name: Configure project
+        shell: bash
         run: |
           source /opt/spack-environment/activate.sh
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=mpicxx
 
       - name: Build project
+        shell: bash
         run: |
           source /opt/spack-environment/activate.sh
           cmake --build build --parallel 4
 
       - name: Run tests
+        shell: bash
         run: |
           source /opt/spack-environment/activate.sh
           cd build
