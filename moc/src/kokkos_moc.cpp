@@ -149,8 +149,8 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
             }
         }
         if (ray._bc_index_frwd_end == -1) {
-            ray._bc_index_frwd_end = total_bc_points - 2;
-            ray._bc_index_bkwd_start = total_bc_points - 1;
+            ray._bc_index_bkwd_start = total_bc_points - 2;
+            ray._bc_index_frwd_end = total_bc_points - 1;
         } else {
             int start_index = ray._bc_index_bkwd_start;
             ray._bc_index_frwd_end = angface_to_ray[irefl][ray._bc_face_end][start_index];
