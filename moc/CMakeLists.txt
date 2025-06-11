@@ -30,6 +30,10 @@ set(TEST_EXECUTABLES
     test_serial_moc_pin
     test_serial_moc_7x7
     heavy_test_serial_moc_mini-core
+    test_kokkos_moc_pin_serial
+    test_kokkos_moc_7x7_serial
+    test_kokkos_moc_pin_omp4
+    test_kokkos_moc_7x7_omp4
 )
 foreach(test ${TEST_EXECUTABLES})
     add_executable(${test} ${CMAKE_CURRENT_SOURCE_DIR}/tests/${test}.cpp)
