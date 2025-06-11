@@ -343,11 +343,15 @@ void KokkosMOC::_impl_sweep_openmp() {
     auto& angflux = _h_angflux;
     auto& old_angflux = _h_old_angflux;
 
-    // Initialize the scalar flux to 0.0
+    // Initialize the scalar flux to 0.0; use thread-local flux to prevent need for atomic_add that
+    // kills OpenMP performance
+    int nthreads = Kokkos::OpenMP::concurrency();
+    Kokkos::View<double***, Kokkos::HostSpace> thread_scalar_flux("thread scalar flux", nthreads, nfsr, ng);
     Kokkos::parallel_for("InitializeScalarFlux",
-        Kokkos::MDRangePolicy<ExecSpace, Kokkos::Rank<2>>({0, 0}, {nfsr, ng}),
-        KOKKOS_LAMBDA(int i, int j) {
+        Kokkos::MDRangePolicy<ExecSpace, Kokkos::Rank<3>>({0, 0, 0}, {nfsr, ng, nthreads}),
+        KOKKOS_LAMBDA(int i, int j, int k) {
             scalar_flux(i, j) = 0.0;
+	    thread_scalar_flux(k, i, j) = 0.0;
     });
 
     // Prepare scratch space
@@ -361,6 +365,7 @@ void KokkosMOC::_impl_sweep_openmp() {
 
     // Sweep all the long rays
     Kokkos::parallel_for("Sweep Rays", policy, KOKKOS_LAMBDA(const team_member& teamMember) {
+        int thread = omp_get_thread_num(); // Not portable, but works if we're using OpenMP
         int iray = teamMember.league_rank() / (npol * ng);
         int ipol = (teamMember.league_rank() % (npol * ng)) / ng;
         int ig = teamMember.league_rank() % ng;
@@ -384,18 +389,26 @@ void KokkosMOC::_impl_sweep_openmp() {
             ireg1 = ray_fsrs(ray_nsegs(iray) + iseg1);
             phid = (segflux(RAY_START, iseg1) - source(ireg1, ig)) * exparg(iseg1);
             segflux(RAY_START, iseg1 + 1) = segflux(RAY_START, iseg1) - phid;
-            Kokkos::atomic_add(&scalar_flux(ireg1, ig), phid * angle_weights(ray_angle_index(iray), ipol));
+	    thread_scalar_flux(thread, ireg1, ig) += phid * angle_weights(ray_angle_index(iray), ipol);
 
             // Backward segment sweep
             ireg2 = ray_fsrs(ray_nsegs(iray) + iseg2 - 1);
             phid = (segflux(RAY_END, iseg2) - source(ireg2, ig)) * exparg(iseg2 - 1);
             segflux(RAY_END, iseg2 - 1) = segflux(RAY_END, iseg2) - phid;
-            Kokkos::atomic_add(&scalar_flux(ireg2, ig), phid * angle_weights(ray_angle_index(iray), ipol));
+	    thread_scalar_flux(thread, ireg2, ig) += phid * angle_weights(ray_angle_index(iray), ipol);
             iseg2--;
         }
         angflux(ray_bc_index_frwd_end(iray), ipol, ig) = segflux(RAY_START, nsegs);
         angflux(ray_bc_index_bkwd_end(iray), ipol, ig) = segflux(RAY_END, 0);
     });
+
+    for (int k = 0; k < nthreads; k++) {
+	for (int i = 0; i < nfsr; i++) {
+            for (int j = 0; j < ng; j++) {
+		scalar_flux(i, j) += thread_scalar_flux(k, i, j);
+	    }
+	}
+    }
 
     // Scale the flux with source, volume, and transport XS
     const double fourpi = 4.0 * M_PI;
