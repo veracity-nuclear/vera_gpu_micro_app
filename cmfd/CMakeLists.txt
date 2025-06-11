@@ -21,7 +21,7 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/data DESTINATION ${CMAKE_CURRENT_BINARY_DI
 enable_testing()
 
 # Define the test environment implementation once
-set(TEST_ENV_IMPL ${CMAKE_CURRENT_SOURCE_DIR}/tests/PetscKokkosTestEnvironemnt.cpp)
+set(TEST_ENV_IMPL ${CMAKE_CURRENT_SOURCE_DIR}/tests/PetscKokkosTestEnvironment.cpp)
 
 set(CMFD_TEST_SUITE_FILES
     test_CMFDData
