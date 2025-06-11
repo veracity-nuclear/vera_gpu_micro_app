@@ -32,5 +32,20 @@ jobs:
         shell: bash
         run: |
           source /opt/spack-environment/activate.sh
+          echo "--- Debugging Information ---"
+          echo "Current directory: $(pwd)"
+          echo "LD_LIBRARY_PATH is: $LD_LIBRARY_PATH"
+          echo ""
+          echo "Searching for libcuda.so.1 in Spack directories:"
+          find /opt/views -name libcuda.so.1 -ls
+          find /opt/software -name libcuda.so.1 -ls
+          echo ""
+          echo "Checking /usr/local/cuda-12.4/compat/ (from base image):"
+          ls -l /usr/local/cuda-12.4/compat/libcuda.so.1
+          echo ""
+          echo "ldd output for the failing test executable:"
+          # Adjust the path if your build directory or executable name is different
+          ldd /__w/vera_gpu_micro_app/vera_gpu_micro_app/build/cmfd/CMFD-test_PETSc_ex3k.kokkos
+          echo "--- End Debugging Information ---"
           cd build
           ctest -j4 --output-on-failure -E "heavy_test"
