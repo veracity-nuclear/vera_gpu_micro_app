@@ -19,16 +19,25 @@ find_package(PETSc REQUIRED)
 find_package(HighFive REQUIRED)
 
 # GTest via FetchContent (if not system-installed)
-include(FetchContent)
-FetchContent_Declare(
-  googletest
-  URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
-)
-# Prevent overriding the parent project's compiler/linker settings
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
+find_package(googletest)
+IF (${googletest_FOUND})
+    MESSAGE(STATUS "googletest installation found: ${GTEST_LIBRARY}")
+ELSE()
+    MESSAGE(STATUS "googletest not found; defaulting to FetchContent")
+    include(FetchContent)
+    FetchContent_Declare(
+      googletest
+      URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
+    )
+    # Prevent overriding the parent project's compiler/linker settings
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
+ENDIF()
 
 enable_testing()
+
+# Add utils before other micro-apps
+add_subdirectory(utils)
 
 # Add micro-apps
 add_subdirectory(cmfd)

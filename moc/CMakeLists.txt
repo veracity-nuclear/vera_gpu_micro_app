@@ -1,5 +1,6 @@
 add_library(moc_lib
     src/main.cpp
+    src/eigen_solver.cpp
     src/serial_moc.cpp
     src/c5g7_library.cpp
     src/exp_table.cpp
@@ -8,6 +9,7 @@ add_library(moc_lib
 target_link_libraries(moc_lib
     HighFive::HighFive
     Kokkos::kokkos
+    utils
 )
 
 add_executable(micro_moc
@@ -35,7 +37,6 @@ foreach(test ${TEST_EXECUTABLES})
         HighFive::HighFive
         Kokkos::kokkos
         GTest::gtest
-        GTest::gtest_main
     )
     target_include_directories(${test} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME ${test} COMMAND ${test})
