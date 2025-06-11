@@ -19,8 +19,7 @@ jobs:
       - name: Configure project
         shell: bash
         run: |
-          source /opt/spack-environment/activate.sh # Spack will prepend its paths
-          echo "LD_LIBRARY_PATH after Spack activate: $LD_LIBRARY_PATH"
+          source /opt/spack-environment/activate.sh
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=mpicxx
 
       - name: Build project

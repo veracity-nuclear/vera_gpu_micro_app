@@ -1,3 +1,5 @@
+# this file was made by Micah by doesn't work with MPI Kokkos
+
 # docker build -t your-dockerhub-username/vera-gpu:tag -f vera_gpu.dockerfile .
 # docker push your-dockerhub-username/vera-gpu:tag
 # docker tag your-dockerhub-username/vera-gpu:tag your-dockerhub-username/vera-gpu:latest
