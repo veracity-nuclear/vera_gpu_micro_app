@@ -112,10 +112,10 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
 
     // Build map from face/BC index to ray index
     for (size_t iray = 0; iray < _n_rays; iray++) {
-        if (_h_ray_bc_index_frwd_start[iray] >= 0) {
+        if (_h_ray_bc_index_frwd_start(iray) >= 0) {
             angface_to_ray[_h_ray_angle_index(iray)][_h_ray_bc_face_start(iray)][_h_ray_bc_index_frwd_start(iray)] = iray;
         }
-        if (_h_ray_bc_index_bkwd_start[iray] >= 0) {
+        if (_h_ray_bc_index_bkwd_start(iray) >= 0) {
             angface_to_ray[_h_ray_angle_index(iray)][_h_ray_bc_face_end(iray)][_h_ray_bc_index_bkwd_start(iray)] = _n_rays + iray;
         }
     }
@@ -369,8 +369,8 @@ void KokkosMOC::_impl_sweep_openmp() {
         Kokkos::View<double*, typename team_member::scratch_memory_space> segflux(teamMember.team_scratch(0), nsegs + 1);
 
         // Allocate and initialize exparg with dimensions [ray._nsegs][ng]
-        for (int j = 0; j < nsegs; j++) {
-            exparg(j) = 1.0 - exp(-xstr(ray_fsrs(j) - 1, ig) * ray_segments(j) * rsinpolang(ipol));
+        for (int j = ray_nsegs(iray); j < ray_nsegs(iray + 1); j++) {
+            exparg(j - ray_nsegs(iray)) = 1.0 - exp(-xstr(ray_fsrs(j), ig) * ray_segments(j) * rsinpolang(ipol));
         }
 
         int ireg;
@@ -379,17 +379,17 @@ void KokkosMOC::_impl_sweep_openmp() {
         // Forward segment sweep
         segflux(0) = old_angflux(ray_bc_index_frwd_start(iray), ipol, ig);
         for (int iseg = 0; iseg < nsegs; iseg++) {
-            ireg = ray_fsrs(iseg) - 1;
+            ireg = ray_fsrs(ray_nsegs(iray) + iseg);
             phid = (segflux(iseg) - source(ireg, ig)) * exparg(iseg);
             segflux(iseg + 1) = segflux(iseg) - phid;
             Kokkos::atomic_add(&scalar_flux(ireg, ig), phid * angle_weights(ray_angle_index(iray), ipol));
         }
-        angflux(ray_bc_index_frwd_end(iray), ipol, ig) = segflux(nsegs + 1);
+        angflux(ray_bc_index_frwd_end(iray), ipol, ig) = segflux(nsegs);
 
         // Backward segment sweep
-        segflux(nsegs + 1) = old_angflux(ray_bc_index_bkwd_start(iray), ipol, ig);
-        for (int iseg = nsegs + 1; iseg > 0; iseg--) {
-            ireg = ray_fsrs(iseg - 1) - 1;
+        segflux(nsegs) = old_angflux(ray_bc_index_bkwd_start(iray), ipol, ig);
+        for (int iseg = nsegs; iseg > 0; iseg--) {
+            ireg = ray_fsrs(ray_nsegs(iray) + iseg - 1);
             phid = (segflux(iseg) - source(ireg, ig)) * exparg(iseg - 1);
             segflux(iseg - 1) = segflux(iseg) - phid;
             Kokkos::atomic_add(&scalar_flux(ireg, ig), phid * angle_weights(ray_angle_index(iray), ipol));
@@ -448,8 +448,8 @@ void KokkosMOC::_impl_sweep_serial() {
 
             // Store the exponential arguments for this ray
             int nsegs = ray_nsegs(iray + 1) - ray_nsegs(iray);
-            for (size_t i = 0; i < nsegs; i++) {
-                exparg(i, ig) = 1.0 - exp(-xstr(ray_fsrs(ray_nsegs(iray) + i), ig) * ray_segments(ray_nsegs(iray) + i) * rsinpolang(ipol));
+            for (size_t i = ray_nsegs(iray); i < ray_nsegs(iray + 1); i++) {
+                exparg(i - ray_nsegs(iray), ig) = 1.0 - exp(-xstr(ray_fsrs(i), ig) * ray_segments(i) * rsinpolang(ipol));
             }
 
             // Initialize the ray flux with the angular flux BCs
@@ -459,8 +459,8 @@ void KokkosMOC::_impl_sweep_serial() {
             // Sweep the segments bi-directionally
             int iseg2 = nsegs;
             for (int iseg1 = 0; iseg1 < nsegs; iseg1++) {
-                int ireg1 = ray_fsrs(iseg1);
-                int ireg2 = ray_fsrs(iseg2 - 1);
+                int ireg1 = ray_fsrs(ray_nsegs(iray) + iseg1);
+                int ireg2 = ray_fsrs(ray_nsegs(iray) + iseg2 - 1);
 
                 // Forward segment sweep
                 double phid = segflux(RAY_START, iseg1, ig) - source(ireg1, ig);
