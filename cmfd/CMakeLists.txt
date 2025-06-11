@@ -19,11 +19,15 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/data DESTINATION ${CMAKE_CURRENT_BINARY_DI
 
 # --- Tests ---
 enable_testing()
+
+# Define the test environment implementation once
+set(TEST_ENV_IMPL ${CMAKE_CURRENT_SOURCE_DIR}/tests/PetscKokkosTestEnvironemnt.cpp)
+
 set(CMFD_TEST_SUITE_FILES
-    test_PETSc_ex3k.kokkos
-    test_preliminary
-    test_PetscMatrixAssembler
     test_CMFDData
+    test_PETSc_ex3k.kokkos
+    test_PetscMatrixAssembler
+    test_preliminary
 )
 
 set(COMMON_TEST_MAIN_SRC ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_main.cpp)
@@ -33,8 +37,9 @@ foreach(test_suite_basename ${CMFD_TEST_SUITE_FILES})
     set(test_suite_src ${CMAKE_CURRENT_SOURCE_DIR}/tests/${test_suite_basename}.cpp)
 
     add_executable(${test_exe_name}
-        ${COMMON_TEST_MAIN_SRC}  # Common main for all tests
-        ${test_suite_src}        # The specific test suite file
+        ${COMMON_TEST_MAIN_SRC}       # Common main for all tests
+        ${TEST_ENV_IMPL}              # Add the implementation file
+        ${test_suite_src}             # The specific test suite file
     )
 
     target_link_libraries(${test_exe_name}

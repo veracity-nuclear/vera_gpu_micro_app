@@ -20,29 +20,33 @@ struct PetscMatrixAssembler
 
     CMFDDataType cmfdData;
 
+    PetscMatrixAssembler() = default;
     PetscMatrixAssembler(const HighFive::Group &CMFDCoarseMesh) : cmfdData(CMFDCoarseMesh) {};
 
     virtual Mat assemble() const = 0;
 
 };
 
-// Uses Mat/VecSetValue(s) to assemble a matrix in PETSc.
+// Uses Mat/VecSetValue(s) to naively assemble a matrix in PETSc. The focus is on accuracy over performance.
 struct SimpleMatrixAssembler : public PetscMatrixAssembler<Kokkos::HostSpace>
 {
-    SimpleMatrixAssembler(const HighFive::Group& CMFDCoarseMesh) : PetscMatrixAssembler(CMFDCoarseMesh) {}
+    using AssemblyMemorySpace = Kokkos::HostSpace;
+    using PetscMatrixAssembler<AssemblyMemorySpace>::PetscMatrixAssembler; // Inherit constructor
     Mat assemble() const override;
 };
 
 // Uses Mat/VecSetValueCOO to assemble a matrix in PETSc.
 struct COOMatrixAssembler : public PetscMatrixAssembler<Kokkos::HostSpace>
 {
-    COOMatrixAssembler(const HighFive::Group& CMFDCoarseMesh) : PetscMatrixAssembler(CMFDCoarseMesh) {}
+    using AssemblyMemorySpace = Kokkos::HostSpace;
+    using PetscMatrixAssembler<AssemblyMemorySpace>::PetscMatrixAssembler;
     Mat assemble() const override;
 };
 
 // Uses Kokkos views to assemble a matrix in PETSc (CSR Format)
 struct KokkosMatrixAssembler : public PetscMatrixAssembler<>
 {
-    KokkosMatrixAssembler(const HighFive::Group& CMFDCoarseMesh) : PetscMatrixAssembler(CMFDCoarseMesh) {}
+    using AssemblyMemorySpace = Kokkos::DefaultExecutionSpace::memory_space;
+    using PetscMatrixAssembler<>::PetscMatrixAssembler;
     Mat assemble() const override;
 };

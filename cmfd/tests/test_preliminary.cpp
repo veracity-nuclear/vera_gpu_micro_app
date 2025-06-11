@@ -4,73 +4,6 @@
 */
 #include "PetscKokkosTestEnvironment.hpp"
 
-// Convert a HighFive group (data sets are rows) to a 2D vector
-std::vector<std::vector<PetscScalar>> readMatrixFromHDF5(const HighFive::Group &AMatH5)
-{
-  const std::vector<std::string> rowNames = AMatH5.listObjectNames();
-  const size_t n = rowNames.size(); // Square matrix dimension
-
-  std::vector<std::vector<PetscScalar>> AMatLocal(n, std::vector<PetscScalar>(n));
-
-  for (size_t i = 0; i < n; ++i)
-  {
-    HighFive::DataSet rowDataset = AMatH5.getDataSet(rowNames[i]);
-    rowDataset.read(AMatLocal[i]);
-  }
-
-  return AMatLocal;
-}
-
-// Create a PETSc vector (passed by ref) from a std::vector<PetscScalar>
-PetscErrorCode createPetscVec(const std::vector<PetscScalar> &vec, Vec &vecPetsc)
-{
-  PetscInt n = vec.size();
-
-  PetscFunctionBeginUser;
-
-  PetscCall(VecCreate(PETSC_COMM_WORLD, &vecPetsc));
-  PetscCall(VecSetSizes(vecPetsc, PETSC_DECIDE, n));
-  PetscCall(VecSetFromOptions(vecPetsc));
-
-  std::vector<PetscInt> indices(n);
-  std::iota(indices.begin(), indices.end(), 0); // Fill indices with 0, 1, ..., size-1
-
-  PetscCall(VecSetValues(vecPetsc, n, indices.data(), vec.data(), INSERT_VALUES));
-  PetscCall(VecAssemblyBegin(vecPetsc));
-  PetscCall(VecAssemblyEnd(vecPetsc));
-
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
-// Create a PETSc matrix (passed by ref) from a std::vector<std::vector<PetscScalar>>
-PetscErrorCode createPetscMat(const std::vector<std::vector<PetscScalar>> &vecOfVec, Mat &matPetsc)
-{
-  PetscInt nRows = vecOfVec.size();
-  PetscInt nCols = nRows; // Assuming square matrix for simplicity
-
-  PetscFunctionBeginUser;
-
-  PetscCall(MatCreate(PETSC_COMM_WORLD, &matPetsc));
-  PetscCall(MatSetSizes(matPetsc, PETSC_DECIDE, PETSC_DECIDE, nRows, nCols));
-  PetscCall(MatSetFromOptions(matPetsc));
-
-  for (PetscInt i = 0; i < nRows; ++i)
-  {
-    for (PetscInt j = 0; j < nCols; ++j)
-    {
-      if (vecOfVec[i][j] != 0.0)
-      {
-        PetscCall(MatSetValue(matPetsc, i, j, vecOfVec[i][j], INSERT_VALUES));
-      }
-    }
-  }
-
-  PetscCall(MatAssemblyBegin(matPetsc, MAT_FINAL_ASSEMBLY));
-  PetscCall(MatAssemblyEnd(matPetsc, MAT_FINAL_ASSEMBLY));
-
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
 // Create a PETSc vector (passed by ref) of type VECKOKKOS
 PetscErrorCode createPetscVecKokkos(const std::vector<PetscScalar> &vec, Vec &vecPetsc)
 {
@@ -180,7 +113,7 @@ PetscErrorCode createPetscMatKokkos(const std::vector<std::vector<PetscScalar>> 
 // Generates dummy data for a Kokkos view using parallel_for, which can't be used in the body of a TEST
 void generateDummyKokkosView(Kokkos::View<PetscScalar *> &vecKokkos, const int vecSize = 5)
 {
-  const PetscScalar number = 6.28;
+  const PetscScalar number = 2 * M_PI;
   Kokkos::parallel_for("Initialize bVec", vecSize, KOKKOS_LAMBDA(const int i) {
     vecKokkos(i) = Kokkos::sin(static_cast<PetscScalar>(i) / number); // Example data generation
   });

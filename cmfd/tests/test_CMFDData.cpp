@@ -35,7 +35,7 @@ TEST(readData, initialize)
     // Get data the standard way
     size_t firstCell, lastCell, nEnergyGroups;
     std::vector<PetscScalar> volume;
-    std::vector<std::vector<PetscScalar>> chi, Dhat, Dtilde, nuFissionXs, pastFlux, removalXs;
+    std::vector<std::vector<PetscScalar>> chi, Dhat, Dtilde, nuFissionXs, pastFlux, removalXs, transportXs;
     std::vector<std::vector<PetscInt>> surf2Cell;
     std::vector<std::vector<std::vector<PetscScalar>>> scatteringXs;
 
@@ -49,6 +49,7 @@ TEST(readData, initialize)
     CMFDCoarseMesh.getDataSet("nu-fission XS").read(nuFissionXs);
     CMFDCoarseMesh.getDataSet("flux").read(pastFlux);
     CMFDCoarseMesh.getDataSet("removal XS").read(removalXs);
+    CMFDCoarseMesh.getDataSet("transport XS").read(transportXs);
     CMFDCoarseMesh.getDataSet("scattering XS").read(scatteringXs);
     CMFDCoarseMesh.getDataSet("surf2cell").read(surf2Cell);
 
@@ -68,6 +69,7 @@ TEST(readData, initialize)
     compare2DViewAndVector(h_data.nuFissionXS, nuFissionXs, "Nu Fission XS data mismatch");
     compare2DViewAndVector(h_data.pastFlux, pastFlux, "Past Flux data mismatch");
     compare2DViewAndVector(h_data.removalXS, removalXs, "Removal XS data mismatch");
+    compare2DViewAndVector(h_data.transportXS, transportXs, "Transport XS data mismatch");
 
     auto h_volume = h_data.volume;
     for (size_t i = 0; i < nCells; ++i) {
@@ -99,6 +101,7 @@ TEST(readData, initialize)
     compare2DHostAndDevice(h_data.nuFissionXS, d_data.nuFissionXS, "Nu Fission XS data mismatch on device");
     compare2DHostAndDevice(h_data.pastFlux, d_data.pastFlux, "Past Flux data mismatch on device");
     compare2DHostAndDevice(h_data.removalXS, d_data.removalXS, "Removal XS data mismatch on device");
+    compare2DHostAndDevice(h_data.transportXS, d_data.transportXS, "Transport XS data mismatch on device");
 
     auto h_volumeCheck = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_data.volume);
     for (size_t i = 0; i < nCells; ++i) {

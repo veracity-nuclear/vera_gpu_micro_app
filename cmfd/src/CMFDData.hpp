@@ -63,6 +63,7 @@ struct CMFDData {
     View2D nuFissionXS;
     View2D pastFlux;
     View2D removalXS;
+    View2D transportXS;
     ViewSurf2Cell surf2Cell;
     View3D scatteringXS;
 
@@ -76,6 +77,7 @@ struct CMFDData {
         nuFissionXS = HDF5ToKokkosView<View2D>(CMFDCoarseMesh.getDataSet("nu-fission XS"), "nuFissionXS");
         pastFlux = HDF5ToKokkosView<View2D>(CMFDCoarseMesh.getDataSet("flux"), "pastFlux");
         removalXS = HDF5ToKokkosView<View2D>(CMFDCoarseMesh.getDataSet("removal XS"), "removalXS");
+        transportXS = HDF5ToKokkosView<View2D>(CMFDCoarseMesh.getDataSet("transport XS"), "transportXS");
         surf2Cell = HDF5ToKokkosView<ViewSurf2Cell>(CMFDCoarseMesh.getDataSet("surf2cell"), "surf2Cell");
         scatteringXS = HDF5ToKokkosView<View3D>(CMFDCoarseMesh.getDataSet("scattering XS"), "scatteringXS");
 

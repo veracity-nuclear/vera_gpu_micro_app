@@ -42,39 +42,21 @@ protected:
   }
 };
 
-inline void compare2DViewAndVector(
+void compare2DViewAndVector(
     const Kokkos::View<PetscScalar **, Kokkos::HostSpace> &view,
     const std::vector<std::vector<PetscScalar>> &vec,
-    const std::string &message = "")
-{
-  ASSERT_EQ(view.extent(0), vec.size()) << message;
-  ASSERT_EQ(view.extent(1), vec[0].size()) << message;
+    const std::string &message = "");
 
-  for (size_t i = 0; i < view.extent(0); ++i)
-  {
-    for (size_t j = 0; j < view.extent(1); ++j)
-    {
-      ASSERT_EQ(view(i, j), vec[i][j]) << message;
-    }
-  }
-}
-
-inline void compare2DHostAndDevice(
+void compare2DHostAndDevice(
     const Kokkos::View<PetscScalar **, Kokkos::HostSpace> &h_view,
     const Kokkos::View<PetscScalar **, Kokkos::DefaultExecutionSpace> &d_view,
-    const std::string &message = "")
-{
-  ASSERT_EQ(h_view.extent(0), d_view.extent(0)) << message;
-  ASSERT_EQ(h_view.extent(1), d_view.extent(1)) << message;
+    const std::string &message = "");
 
-  Kokkos::View<PetscScalar **>::HostMirror h_viewCheck = Kokkos::create_mirror_view(d_view);
-  Kokkos::deep_copy(h_viewCheck, d_view);
+// Convert a HighFive group (data sets are rows) to a 2D vector
+std::vector<std::vector<PetscScalar>> readMatrixFromHDF5(const HighFive::Group &AMatH5);
 
-  for (size_t i = 0; i < h_view.extent(0); ++i)
-  {
-    for (size_t j = 0; j < h_view.extent(1); ++j)
-    {
-      ASSERT_DOUBLE_EQ(h_view(i, j), h_viewCheck(i, j)) << message;
-    }
-  }
-}
+// Create a PETSc vector (passed by ref) from a std::vector<PetscScalar>
+PetscErrorCode createPetscVec(const std::vector<PetscScalar> &vec, Vec &vecPetsc);
+
+// Create a PETSc matrix (passed by ref) from a std::vector<std::vector<PetscScalar>>
+PetscErrorCode createPetscMat(const std::vector<std::vector<PetscScalar>> &vecOfVec, Mat &matPetsc);
