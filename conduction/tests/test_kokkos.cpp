@@ -26,7 +26,3 @@ namespace {
 TEST(KokkosTest, BasicTest) {
     run_kokkos_test();
 }
-
-TEST(KokkosTest, BasicTest) {
-    run_kokkos_test();
-}
