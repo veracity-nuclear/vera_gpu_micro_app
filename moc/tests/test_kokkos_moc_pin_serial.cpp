@@ -10,7 +10,7 @@ TEST(BasicTest, pin_7g_16a_3p_serial) {
     const char* raw_args[] = {"exe", "data/pin_7g_16a_3p_serial.h5", "data/c5g7.xsl", "--sweeper", "kokkos", "--device", "--serial"};
     char** args = const_cast<char**>(raw_args);
     auto parser = ArgumentParser::vera_gpu_moc_parser(raw_args[0]);
-    parser.parse(3, args);
+    parser.parse(7, args);
     BaseMOC* sweeper = new SerialMOC(parser);
     EigenSolver solver(parser.get_args("test_serial_moc_pin.exe"), sweeper);
     solver.solve();
