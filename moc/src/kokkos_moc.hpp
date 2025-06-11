@@ -4,7 +4,6 @@
 #include <highfive/highfive.hpp>
 #include <Kokkos_Core.hpp>
 #include "c5g7_library.hpp"
-#include "kokkos_long_ray.hpp"
 #include "base_moc.hpp"
 #include "argument_parser.hpp"
 
@@ -76,7 +75,6 @@ class KokkosMOC : public BaseMOC {
         Kokkos::View<double*> _d_rsinpolang;  // Precomputed sin(polar angle) values
 
         // Ray host data
-        Kokkos::View<KokkosLongRay*, Kokkos::HostSpace> _h_rays;  // Host copy of rays
         int _n_rays;  // Number of rays
         int _max_segments;  // Maximum number of segments in any ray
         Kokkos::View<int*, Kokkos::HostSpace> _h_ray_nsegs;
