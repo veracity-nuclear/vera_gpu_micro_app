@@ -123,6 +123,9 @@ int main(int argc, char* argv[]) {
   eigen_solver.solve();
   std::cout << "Final keff: " << eigen_solver.keff() << std::endl;
 
+  // Cleanup
+  sweeper.reset();
+
   // Finalize
   Kokkos::finalize();
   return 0;
