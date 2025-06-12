@@ -8,7 +8,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: bradenpecora/vera-gpu:latest
+      image: bradenpecora/vera-gpu:0.0.1no-cuda
 
     steps:
       - name: Checkout repository
