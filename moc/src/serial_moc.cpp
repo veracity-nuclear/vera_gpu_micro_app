@@ -226,7 +226,7 @@ void SerialMOC::update_source(const std::vector<double>& fissrc) {
 // Main function to run the serial MOC sweep
 void SerialMOC::sweep() {
     // Initialize old values and a few scratch values
-    int iseg1, iseg2, ireg1, ireg2, refl_angle;
+    int iseg, ireg, refl_angle;
     double phid1, phid2;
 
     // Initialize the scalar flux to 0.0
@@ -265,60 +265,25 @@ void SerialMOC::sweep() {
                     : _old_angflux[ray.angle()].faces[ray._bc_face[1]]._angflux[ray._bc_index[1]][ipol][ig];
             }
 
-            // Sweep the segments bi-directionally
-            iseg2 = ray._fsrs.size();
-            for (iseg1 = 0; iseg1 < ray._fsrs.size(); iseg1++) {
-                ireg1 = ray._fsrs[iseg1] - 1;
-                ireg2 = ray._fsrs[iseg2 - 1] - 1;
-
-                // Sweep the groups on the 2 segments
+            // Forward sweep
+            for (iseg = 0; iseg < ray._fsrs.size(); iseg++) {
+                ireg = ray._fsrs[iseg] - 1;
                 for (size_t ig = 0; ig < _ng; ig++) {
-                    // Forward segment sweep
-                    phid1 = _segflux[RAY_START][iseg1][ig] - _source[ireg1][ig];
-                    // if (ray.angle() == debug_angle) {
-                    //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " " << _segflux[RAY_START][iseg1][ig] << " " << source[ireg1][ig] << " " << phid1 << std::endl;
-                    // }
-                    phid1 *= _exparg[iseg1][ig];
-                    // if (ray.angle() == debug_angle) {
-                    //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
-                    //         << 1.0 - std::exp(-_xstr[ireg1][ig] * ray._segments[iseg1] * _rsinpolang[ipol]) << " : " << phid1 << std::endl;
-                    // }
-                    _segflux[RAY_START][iseg1 + 1][ig] = _segflux[RAY_START][iseg1][ig] - phid1;
-                    // if (ray.angle() == debug_angle) {
-                    //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
-                    //         << _segflux[RAY_START][iseg1 + 1][ig] << " " << _segflux[RAY_START][iseg1][ig] << " " << phid1
-                    //         << std::endl;
-                    // }
-                    _scalar_flux[ireg1][ig] += phid1 * _angle_weights[ray.angle()][ipol];
-                    // if (ray.angle() == debug_angle) {
-                    //     std::cout << ray.angle() << " " << ipol << " " << iseg1 << " " << ig << " "
-                    //         << _scalar_flux[ireg1][ig] << " " << phid1 << " " << _angle_weights[ray.angle()][ipol] << std::endl;
-                    // }
-
-                    // Backward segment sweep
-                    phid2 = _segflux[RAY_END][iseg2][ig] - _source[ireg2][ig];
-                    // if (ray.angle() == debug_angle) {
-                    //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " " << _segflux[RAY_END][iseg2][ig] << " " << source[ireg2][ig] << " " << phid2 << std::endl;
-                    // }
-                    phid2 *= _exparg[iseg2 - 1][ig];
-                    // if (ray.angle() == debug_angle) {
-                    //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " "
-                    //     << 1.0 - std::exp(-_xstr[ireg2][ig] * ray._segments[iseg2 - 1] * _rsinpolang[ipol]) << " "
-                    //     << " : " << phid2 << std::endl;
-                    // }
-                    _segflux[RAY_END][iseg2 - 1][ig] = _segflux[RAY_END][iseg2][ig] - phid2;
-                    // if (ray.angle() == debug_angle) {
-                    //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " "
-                    //         << _segflux[RAY_END][iseg2 - 1][ig] << " " << _segflux[RAY_END][iseg2][ig] << " " << phid2 << std::endl;
-                    // }
-                    _scalar_flux[ireg2][ig] += phid2 * _angle_weights[ray.angle()][ipol];
-                    // if (ray.angle() == debug_angle) {
-                    //     std::cout << ray.angle() << " " << ipol << " " << iseg2 << " " << ig << " "
-                    //         << _scalar_flux[ireg2][ig] << " " << phid2 << " " << _angle_weights[ray.angle()][ipol] << std::endl;
-                    // }
+                    phid1 = _segflux[RAY_START][iseg][ig] - _source[ireg][ig];
+                    phid1 *= _exparg[iseg][ig];
+                    _segflux[RAY_START][iseg + 1][ig] = _segflux[RAY_START][iseg][ig] - phid1;
+                    _scalar_flux[ireg][ig] += phid1 * _angle_weights[ray.angle()][ipol];
                 }
-                // throw std::runtime_error("end of first segment");
-                iseg2--;
+            }
+            // Backward sweep
+            for (iseg = ray._fsrs.size(); iseg > 0; iseg--) {
+                ireg = ray._fsrs[iseg - 1] - 1;
+                for (size_t ig = 0; ig < _ng; ig++) {
+                    phid2 = _segflux[RAY_END][iseg][ig] - _source[ireg][ig];
+                    phid2 *= _exparg[iseg - 1][ig];
+                    _segflux[RAY_END][iseg - 1][ig] = _segflux[RAY_END][iseg][ig] - phid2;
+                    _scalar_flux[ireg][ig] += phid2 * _angle_weights[ray.angle()][ipol];
+                }
             }
 
             // Store the final segments' angular flux into the BCs
@@ -326,7 +291,7 @@ void SerialMOC::sweep() {
                 refl_angle = reflect_angle(ray.angle());
                 if (ray._bc_index[RAY_START] != -1) {
                     _angflux[refl_angle].faces[ray._bc_face[RAY_END]]._angflux[ray._bc_index[RAY_END]][ipol][ig] =
-                        _segflux[RAY_START][iseg1][ig];
+                        _segflux[RAY_START][ray._fsrs.size()][ig];
                 }
                 refl_angle = reflect_angle(ray.angle());
                 if (ray._bc_index[RAY_END] != -1) {
