@@ -102,7 +102,7 @@ SerialMOC::SerialMOC(const ArgumentParser& args) :
             auto bc_sizes = angleGroup.getDataSet("BC_size").read<std::vector<int>>();
             _angflux.push_back(AngFluxBCAngle(4));
             for (size_t iface = 0; iface < 4; iface++) {
-                _angflux[iazi]._faces[iface] = AngFluxBCFace(bc_sizes[iface], _npol, _ng);
+                _angflux[iazi].faces[iface] = AngFluxBCFace(bc_sizes[iface], _npol, _ng);
             }
             nazi++;
         }
@@ -258,11 +258,11 @@ void SerialMOC::sweep() {
                 _segflux[0][0][ig] =
                     ray._bc_index[0] == -1
                     ? 0.0
-                    : _old_angflux[ray.angle()]._faces[ray._bc_face[0]]._angflux[ray._bc_index[0]][ipol][ig];
+                    : _old_angflux[ray.angle()].faces[ray._bc_face[0]]._angflux[ray._bc_index[0]][ipol][ig];
                 _segflux[1][ray._fsrs.size()][ig] =
                     ray._bc_index[1] == -1
                     ? 0.0
-                    : _old_angflux[ray.angle()]._faces[ray._bc_face[1]]._angflux[ray._bc_index[1]][ipol][ig];
+                    : _old_angflux[ray.angle()].faces[ray._bc_face[1]]._angflux[ray._bc_index[1]][ipol][ig];
             }
 
             // Sweep the segments bi-directionally
@@ -325,12 +325,12 @@ void SerialMOC::sweep() {
             for (size_t ig = 0; ig < _ng; ig++) {
                 refl_angle = reflect_angle(ray.angle());
                 if (ray._bc_index[RAY_START] != -1) {
-                    _angflux[refl_angle]._faces[ray._bc_face[RAY_END]]._angflux[ray._bc_index[RAY_END]][ipol][ig] =
+                    _angflux[refl_angle].faces[ray._bc_face[RAY_END]]._angflux[ray._bc_index[RAY_END]][ipol][ig] =
                         _segflux[RAY_START][iseg1][ig];
                 }
                 refl_angle = reflect_angle(ray.angle());
                 if (ray._bc_index[RAY_END] != -1) {
-                    _angflux[refl_angle]._faces[ray._bc_face[RAY_START]]._angflux[ray._bc_index[RAY_START]][ipol][ig] =
+                    _angflux[refl_angle].faces[ray._bc_face[RAY_START]]._angflux[ray._bc_index[RAY_START]][ipol][ig] =
                         _segflux[RAY_END][0][ig];
                 }
             }

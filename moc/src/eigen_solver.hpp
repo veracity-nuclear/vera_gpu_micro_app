@@ -23,5 +23,5 @@ class EigenSolver {
         std::vector<std::vector<double>> _old_scalar_flux; // Previous scalar flux for convergence checks
         std::vector<double> _fissrc; // Fission source vector
         std::vector<double> _old_fissrc; // Previous fission source for convergence checks
-        BaseMOC* _sweeper; // MOC sweeper object
+	BaseMOC* _sweeper; // MOC sweeper object
 };

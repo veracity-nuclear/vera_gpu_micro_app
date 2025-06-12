@@ -2,8 +2,8 @@
 #include <string>
 #include <vector>
 
-const int RAY_START = 0; // Index for the start of the ray
-const int RAY_END = 1;   // Index for the end of the ray
+constexpr int RAY_START = 0; // Index for the start of the ray
+constexpr int RAY_END = 1;   // Index for the end of the ray
 
 // Defines the angular flux boundary condition for a single face and a single angle
 class AngFluxBCFace
@@ -29,17 +29,17 @@ class AngFluxBCFace
         };
 };
 
-// Defines the angular flux boundary condition for a single angle
+// Defines the angular flux boundary condition for a single azimuthal angle
 class AngFluxBCAngle
 {
     public:
         // A vector of faces, each containing the angular flux for that face
-        std::vector<AngFluxBCFace> _faces;
+        std::vector<AngFluxBCFace> faces;
         // Default constructor
         AngFluxBCAngle() = default;
         // Constructor that initializes the faces vector with a specified number of faces
         AngFluxBCAngle(int nfaces) {
-           _faces.resize(nfaces);
+           faces.resize(nfaces);
         };
 };
 

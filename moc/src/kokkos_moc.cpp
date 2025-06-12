@@ -64,12 +64,8 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
     // Allocate scalar flux and source array
     _h_scalar_flux = Kokkos::View<double**, Kokkos::HostSpace>("scalar_flux", _nfsr, _ng);
     _h_source = Kokkos::View<double**, Kokkos::HostSpace>("source", _nfsr, _ng);
-    for (size_t i = 0; i < _nfsr; ++i) {
-        for (size_t j = 0; j < _ng; ++j) {
-            _h_scalar_flux(i, j) = 1.0;
-            _h_source(i, j) = 1.0;
-        }
-    }
+    Kokkos::deep_copy(_h_scalar_flux, 1.0);
+    Kokkos::deep_copy(_h_source, 1.0);
 
     // Read ray spacings and angular flux BC dimensions
     auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
@@ -81,7 +77,8 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
     std::vector<std::vector<int>> bc_sizes;
     int _max_bc_size = 0;
     int total_bc_points = 0;
-    _ray_spacing.clear();    for (const auto& objName : domain.listObjectNames()) {
+    _ray_spacing.clear();
+    for (const auto& objName : domain.listObjectNames()) {
         // Loop over each angle group
         if (objName.substr(0, 6) == "Angle_") {
             HighFive::Group angleGroup = domain.getGroup(objName);
@@ -347,12 +344,8 @@ void KokkosMOC::_impl_sweep_openmp() {
     // kills OpenMP performance
     int nthreads = Kokkos::OpenMP::concurrency();
     Kokkos::View<double***, Kokkos::HostSpace> thread_scalar_flux("thread scalar flux", nthreads, nfsr, ng);
-    Kokkos::parallel_for("InitializeScalarFlux",
-        Kokkos::MDRangePolicy<ExecSpace, Kokkos::Rank<3>>({0, 0, 0}, {nfsr, ng, nthreads}),
-        KOKKOS_LAMBDA(int i, int j, int k) {
-            scalar_flux(i, j) = 0.0;
-	    thread_scalar_flux(k, i, j) = 0.0;
-    });
+    Kokkos::deep_copy(scalar_flux, 0.0);
+    Kokkos::deep_copy(thread_scalar_flux, 0.0);
 
     // Prepare scratch space
     typedef Kokkos::TeamPolicy<ExecSpace> team_policy;
@@ -389,13 +382,13 @@ void KokkosMOC::_impl_sweep_openmp() {
             ireg1 = ray_fsrs(ray_nsegs(iray) + iseg1);
             phid = (segflux(RAY_START, iseg1) - source(ireg1, ig)) * exparg(iseg1);
             segflux(RAY_START, iseg1 + 1) = segflux(RAY_START, iseg1) - phid;
-	    thread_scalar_flux(thread, ireg1, ig) += phid * angle_weights(ray_angle_index(iray), ipol);
+            thread_scalar_flux(thread, ireg1, ig) += phid * angle_weights(ray_angle_index(iray), ipol);
 
             // Backward segment sweep
             ireg2 = ray_fsrs(ray_nsegs(iray) + iseg2 - 1);
             phid = (segflux(RAY_END, iseg2) - source(ireg2, ig)) * exparg(iseg2 - 1);
             segflux(RAY_END, iseg2 - 1) = segflux(RAY_END, iseg2) - phid;
-	    thread_scalar_flux(thread, ireg2, ig) += phid * angle_weights(ray_angle_index(iray), ipol);
+            thread_scalar_flux(thread, ireg2, ig) += phid * angle_weights(ray_angle_index(iray), ipol);
             iseg2--;
         }
         angflux(ray_bc_index_frwd_end(iray), ipol, ig) = segflux(RAY_START, nsegs);

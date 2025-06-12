@@ -109,22 +109,19 @@ int main(int argc, char* argv[]) {
   std::vector<std::string> solver_args = parser.get_args(argv[0]);
 
   // Set up the sweeper
-  BaseMOC* sweeper;
+  std::unique_ptr<BaseMOC> sweeper;
   if (sweeper_type == "kokkos") {
-    sweeper = new KokkosMOC(parser);
+    sweeper = std::make_unique<KokkosMOC>(parser);
   } else if (sweeper_type == "serial") {
-    sweeper = new SerialMOC(parser);
+    sweeper = std::make_unique<SerialMOC>(parser);
   }
 
   // Pass by reference to EigenSolver
-  EigenSolver eigen_solver(solver_args, sweeper);
+  EigenSolver eigen_solver(solver_args, sweeper.get());
 
   // Use the eigen_solver
   eigen_solver.solve();
   std::cout << "Final keff: " << eigen_solver.keff() << std::endl;
-
-  // Clean up
-  delete sweeper;
 
   // Finalize
   Kokkos::finalize();
