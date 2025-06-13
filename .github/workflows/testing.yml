@@ -8,7 +8,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: micahbest/vera-gpu:v1.0.1
+      image: bradenpecora/vera-gpu:0.0.1no-cuda
 
     steps:
       - name: Checkout repository
@@ -17,14 +17,19 @@ jobs:
           lfs: true
 
       - name: Configure project
+        shell: bash
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          source /opt/spack-environment/activate.sh
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=mpicxx
 
       - name: Build project
+        shell: bash
         run: |
+          source /opt/spack-environment/activate.sh
           cmake --build build --parallel 4
 
       - name: Run tests
+        shell: bash
         run: |
           cd build
           ctest -j4 --output-on-failure -E "heavy_test"

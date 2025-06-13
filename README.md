@@ -246,7 +246,7 @@ These datasets are inside `/CMFD_CoarseMesh` in the HDF5 file.
 | `transport XS` | `float` | (n_groups, n_cells) | The transport cross section in each coarse mesh cell for each energy group. |
 | `removal XS` | `float` | (n_groups, n_cells) | The removal cross section in each coarse mesh cell for each energy group. |
 | `nu-fission XS` | `float` | (n_groups, n_cells) | The nu-fission cross section in each coarse mesh cell for each energy group. |
-| `scattering XS` | `float` | (n_groups, n_cells, n_groups) | The scattering cross section in each coarse mesh cell for each energy group. |
+| `scattering XS` | `float` | (to_n_groups, from_n_groups, n_cells) | The scattering cross section in each coarse mesh cell for each energy group. |
 | `chi` | `float` | (n_groups, n_cells) | The chi in each coarse mesh cell for each energy group. |
 | `surf2cell` | `int` | (n_surf, 2) | The surface to cell mapping for each coarse mesh cell; the first column is the cell index on the positive side (north, east, up) and the second column is the cell index on the negative side (south, west, down). |
 | `Dtilde` | `float` | (n_groups, n_surf) | The $`\tilde{D}`$ value multiplied by surface area for each surface in each energy group. |
