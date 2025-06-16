@@ -1,18 +1,9 @@
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
+#include "PetscKokkosTestEnvironment.hpp"
 
-TEST(BasicTest, AssertTrue) {
-    EXPECT_TRUE(true);
-}
-
-TEST(BasicTest, AssertFalse) {
-    EXPECT_FALSE(false);
-}
-
-TEST(BasicTest, AssertEqual) {
-    EXPECT_EQ(1, 1);
-}
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+int main(int argc, char **argv)
+{
+  ::testing::InitGoogleTest(&argc, argv);
+  ::testing::AddGlobalTestEnvironment(new PetscKokkosTestEnvironment(argc, argv));
+  return RUN_ALL_TESTS();
 }
