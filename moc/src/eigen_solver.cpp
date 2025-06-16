@@ -1,20 +1,22 @@
 #include "eigen_solver.hpp"
+#include <memory>
 #include <iostream>
 #include <iomanip>
 #include <vector>
 #include <string>
-#include "serial_moc.hpp"
+#include <cmath>
+#include "base_moc.hpp"
 
-EigenSolver::EigenSolver(const std::vector<std::string>& args)
-  : _sweeper(SerialMOC(args[1], args[2])),
-    _scalar_flux(_sweeper.scalar_flux())
+EigenSolver::EigenSolver(const std::vector<std::string> args, std::shared_ptr<BaseMOC> sweeper)
+  : _sweeper(sweeper),
+    _fsr_vol(sweeper->fsr_vol())
   {
-  _fsr_vol = _sweeper.fsr_vol();
+  _scalar_flux = _sweeper->scalar_flux();
   _old_scalar_flux = _scalar_flux;
 
   _keff = 1.0;
   _old_keff = 1.0;
-  _fissrc = _sweeper.fission_source(_keff);
+  _fissrc = _sweeper->fission_source(_keff);
   _old_fissrc = _fissrc;
 }
 
@@ -24,13 +26,14 @@ void EigenSolver::solve() {
   std::cout << "Iteration         keff       knorm      fnorm" << std::endl;
   for (int iteration = 0; iteration < _max_iters; iteration++) {
       // Build source and zero the fluxes
-      _sweeper.update_source(_fissrc);
+      _sweeper->update_source(_fissrc);
 
       // Execute the MOC sweep
-      _sweeper.sweep();
+      _sweeper->sweep();
 
       // Update fission source and keff
-      _fissrc = _sweeper.fission_source(_keff);
+      _scalar_flux = _sweeper->scalar_flux();
+      _fissrc = _sweeper->fission_source(_keff);
       double numerator = 0.0;
       double denominator = 0.0;
       for (size_t i = 0; i < _fissrc.size(); ++i) {
@@ -70,7 +73,7 @@ void EigenSolver::solve() {
           }
       }
       _old_keff = _keff;
-      _fissrc = _sweeper.fission_source(_keff);
+      _fissrc = _sweeper->fission_source(_keff);
       _old_fissrc = _fissrc;
   }
 }
