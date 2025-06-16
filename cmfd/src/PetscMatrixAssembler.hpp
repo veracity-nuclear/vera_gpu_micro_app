@@ -10,9 +10,10 @@
 
 // Parent class for all PETSc matrix assemblers.
 // Templating allows avoiding allocating views on the host space if it is not needed.
-template <typename AssemblyMemorySpace = Kokkos::DefaultExecutionSpace::memory_space>
+template <typename AssemblySpace = Kokkos::DefaultExecutionSpace>
 struct PetscMatrixAssembler
 {
+    using AssemblyMemorySpace = typename AssemblySpace::memory_space;
     static_assert(Kokkos::is_memory_space<AssemblyMemorySpace>::value,
                   "AssemblyMemorySpace must be a Kokkos memory space");
 
@@ -28,24 +29,27 @@ struct PetscMatrixAssembler
 };
 
 // Uses Mat/VecSetValue(s) to naively assemble a matrix in PETSc. The focus is on accuracy over performance.
-struct SimpleMatrixAssembler : public PetscMatrixAssembler<Kokkos::HostSpace>
+struct SimpleMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExecutionSpace>
 {
+    using AssemblySpace = Kokkos::DefaultHostExecutionSpace;
     using AssemblyMemorySpace = Kokkos::HostSpace;
-    using PetscMatrixAssembler<AssemblyMemorySpace>::PetscMatrixAssembler; // Inherit constructor
+    using PetscMatrixAssembler<AssemblySpace>::PetscMatrixAssembler; // Inherit constructor
     Mat assemble() const override;
 };
 
 // Uses Mat/VecSetValueCOO to assemble a matrix in PETSc.
-struct COOMatrixAssembler : public PetscMatrixAssembler<Kokkos::HostSpace>
+struct COOMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExecutionSpace>
 {
+    using AssemblySpace = Kokkos::DefaultHostExecutionSpace;
     using AssemblyMemorySpace = Kokkos::HostSpace;
-    using PetscMatrixAssembler<AssemblyMemorySpace>::PetscMatrixAssembler;
+    using PetscMatrixAssembler<AssemblySpace>::PetscMatrixAssembler;
     Mat assemble() const override;
 };
 
 // Uses Kokkos views to assemble a matrix in PETSc (CSR Format)
 struct KokkosMatrixAssembler : public PetscMatrixAssembler<>
 {
+    using AssemblySpace = Kokkos::DefaultExecutionSpace;
     using AssemblyMemorySpace = Kokkos::DefaultExecutionSpace::memory_space;
     using PetscMatrixAssembler<>::PetscMatrixAssembler;
     Mat assemble() const override;

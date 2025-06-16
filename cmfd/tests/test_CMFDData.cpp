@@ -53,6 +53,12 @@ TEST(readData, initialize)
     CMFDCoarseMesh.getDataSet("scattering XS").read(scatteringXs);
     CMFDCoarseMesh.getDataSet("surf2cell").read(surf2Cell);
 
+    // convert surf2Cell from 1-based to 0-based indexing
+    for (size_t i = 0; i < surf2Cell.size(); ++i) {
+        surf2Cell[i][0] -= 1;
+        surf2Cell[i][1] -= 1;
+    }
+
     size_t nCells = lastCell - firstCell + 1;
     size_t nSurfaces = surf2Cell.size();
 
@@ -121,6 +127,77 @@ TEST(readData, initialize)
                 ASSERT_DOUBLE_EQ(h_scatteringXsCheck(eg1, eg2, i), scatteringXs[eg1][eg2][i])
                     << "Scattering XS data mismatch on device at (" << eg1 << ", " << eg2 << ", " << i << ")";
             }
+        }
+    }
+}
+
+TEST(surf2CellToCell2Surf, test)
+{
+    /*
+    cell -1 is outside the mesh
+    Positive surfaces are up or to the right
+
+    +-----21----+-----22----+-----23----+
+    |           |           |           |
+    |     6     |     7     |     8     |
+  17|         18|         19|           | 20
+    |           |           |           |
+    +-----14----+-----15----+-----16----+
+    |           |           |           |
+    |     3     |     4     |     5     |
+  10|         11|         12|           | 13
+    |           |           |           |
+    +------7----+------8----+------9----+
+    |           |           |           |
+    |     0     |     1     |     2     |
+   3|          4|          5|           | 6
+    |           |           |           |
+    +------0----+------1----+------2----+
+    */
+
+    size_t nCells = 9;
+    size_t nSurfaces = 24;
+
+    // index is surface number (0 based)
+    std::vector<std::array<PetscInt, 2>> surf2Cell = {
+        {0,-1}, {1,-1}, {2,-1}, // Surf0: +cell0 -cell-1, Surf1: +cell1 -cell-1, Surf2: +cell2 -cell-1
+        {0,-1}, {1,0}, {2,1}, {-1,2},
+        {3,0}, {4,1}, {5,2}, // Surf7: +cell3 -cell0
+        {3,-1}, {4,3}, {5,4}, {-1,5},
+        {6,3}, {7,4}, {8,5},
+        {6,-1}, {7,6}, {8,7}, {-1,8},
+        {-1,6}, {-1,7}, {-1,8}
+    };
+
+    // index is cell number (0 based)
+    std::vector<std::array<PetscInt, 3>> expectedCellToPosSurf = {
+        {0, 3, -1}, // Cell 0: Surf0 and Surf3 (and -1 since 2D)
+        {1, 4, -1}, // Cell 1: Surf1 and Surf4
+        {2, 5, -1}, // Cell 2
+        {7, 10, -1},
+        {8, 11, -1},
+        {9, 12, -1},
+        {14, 17, -1},
+        {15, 18, -1},
+        {16, 19, -1},
+    };
+
+    CMFDData<>::ViewSurfToCell d_surf2CellView("surf2Cell", nSurfaces, 2);
+    auto h_surf2CellView = Kokkos::create_mirror_view(d_surf2CellView);
+    for (size_t i = 0; i < nSurfaces; ++i) {
+        h_surf2CellView(i, 0) = surf2Cell[i][0];
+        h_surf2CellView(i, 1) = surf2Cell[i][1];
+    }
+    Kokkos::deep_copy(d_surf2CellView, h_surf2CellView);
+
+    CMFDData<>::ViewCellToPosSurf d_cell2PosSurf = CMFDData<>::buildCellToPosSurfMapping(d_surf2CellView, nCells);
+    auto h_cell2PosSurf = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_cell2PosSurf);
+
+    for (size_t i = 0; i < nCells; ++i) {
+        for (size_t j = 0; j < 3; ++j) {
+            EXPECT_EQ(h_cell2PosSurf(i, j), expectedCellToPosSurf[i][j])
+                << "Mismatch at cell " << i << ", position " << j;
+            // printf("Cell %zu, Position %zu: %d (Expected: %d)\n", i + 1, j + 1, h_cell2PosSurf(i, j), expectedCellToPosSurf[i][j]);
         }
     }
 
