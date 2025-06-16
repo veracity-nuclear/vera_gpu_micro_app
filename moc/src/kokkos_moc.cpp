@@ -73,7 +73,7 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
     auto polar_weights = _file.getDataSet("/MOC_Ray_Data/Polar_Weights").read<std::vector<double>>();
     auto azi_weights = _file.getDataSet("/MOC_Ray_Data/Azimuthal_Weights").read<std::vector<double>>();
     _npol = polar_angles.size();
-    int nazi = 0;
+    int nazi = azi_weights.size();
     std::vector<std::vector<int>> bc_sizes;
     int _max_bc_size = 0;
     int total_bc_points = 0;
@@ -89,7 +89,6 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
             bc_sizes.push_back(bc_size);
             _max_bc_size = std::max({_max_bc_size, bc_size[0], bc_size[1], bc_size[2], bc_size[3]});
             total_bc_points += std::accumulate(bc_size.begin(), bc_size.end(), 0);
-            nazi++;
         }
     }
     std::vector<std::vector<std::vector<int>>> angface_to_ray(nazi);
