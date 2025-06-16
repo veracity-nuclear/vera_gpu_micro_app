@@ -1,4 +1,5 @@
 #include "eigen_solver.hpp"
+#include <memory>
 #include <iostream>
 #include <iomanip>
 #include <vector>
@@ -6,7 +7,7 @@
 #include <cmath>
 #include "base_moc.hpp"
 
-EigenSolver::EigenSolver(const std::vector<std::string> args, BaseMOC* sweeper)
+EigenSolver::EigenSolver(const std::vector<std::string> args, std::shared_ptr<BaseMOC> sweeper)
   : _sweeper(sweeper),
     _fsr_vol(sweeper->fsr_vol())
   {

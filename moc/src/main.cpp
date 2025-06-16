@@ -1,4 +1,5 @@
 #include <Kokkos_Core.hpp>
+#include <memory>
 #include <iostream>
 #include <vector>
 #include <string>
@@ -109,22 +110,19 @@ int main(int argc, char* argv[]) {
   std::vector<std::string> solver_args = parser.get_args(argv[0]);
 
   // Set up the sweeper
-  std::unique_ptr<BaseMOC> sweeper;
+  std::shared_ptr<BaseMOC> sweeper;
   if (sweeper_type == "kokkos") {
-    sweeper = std::make_unique<KokkosMOC>(parser);
+    sweeper = std::make_shared<KokkosMOC>(parser);
   } else if (sweeper_type == "serial") {
-    sweeper = std::make_unique<SerialMOC>(parser);
+    sweeper = std::make_shared<SerialMOC>(parser);
   }
 
   // Pass by reference to EigenSolver
-  EigenSolver eigen_solver(solver_args, sweeper.get());
+  EigenSolver eigen_solver(solver_args, sweeper);
 
   // Use the eigen_solver
   eigen_solver.solve();
   std::cout << "Final keff: " << eigen_solver.keff() << std::endl;
-
-  // Cleanup
-  sweeper.reset();
 
   // Finalize
   Kokkos::finalize();
