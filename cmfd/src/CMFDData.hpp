@@ -7,6 +7,7 @@
 #include <petscsys.h>
 
 constexpr size_t MAX_POS_SURF_PER_CELL = 3;
+static constexpr const char* SURF2CELL_LABEL = "surf2Cell";
 
 // This function reads data from an HDF5 dataset and converts it to a specified Kokkos::View type.
 template <typename ViewType>
@@ -53,7 +54,7 @@ ViewType HDF5ToKokkosView(const HighFive::DataSet &dataset, const std::string &l
 
     // Only adjust for surf2Cell if the view is 2D and integer type
     if constexpr (ViewType::rank == 2 && std::is_integral_v<typename ViewType::value_type>) {
-        if (label == "surf2Cell") {
+        if (label == SURF2CELL_LABEL) {
             for (size_t i = 0; i < hdf5Extents[0]; ++i) {
                 h5View(i, 0) -= 1; // Convert from 1-based to 0-based indexing
                 h5View(i, 1) -= 1;
@@ -117,7 +118,7 @@ struct CMFDData
         scatteringXS = HDF5ToKokkosView<View3D>(CMFDCoarseMesh.getDataSet("scattering XS"), "scatteringXS");
 
         // Based on the label "surf2Cell", HDF5ToKokkosView will convert the 1-based indexing to 0-based indexing.
-        surf2Cell = HDF5ToKokkosView<ViewSurfToCell>(CMFDCoarseMesh.getDataSet("surf2cell"), "surf2Cell");
+        surf2Cell = HDF5ToKokkosView<ViewSurfToCell>(CMFDCoarseMesh.getDataSet("surf2cell"), SURF2CELL_LABEL);
         nSurfaces = surf2Cell.extent(0);
 
         size_t firstCell, lastCell;

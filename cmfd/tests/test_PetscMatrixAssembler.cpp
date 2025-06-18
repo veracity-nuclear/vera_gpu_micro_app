@@ -2,7 +2,7 @@
   This file tests if the PetscMatrixAssembler works as intended.
 
   Notes: I'm not the biggest fan of the current implementation.
-  - We redundantly create the gold matrix for each AssemblerType.alignas
+  - We redundantly create the gold matrix for each AssemblerType
   - The current test fixture "parameterizes" the assembler type, which incentives
     the test file as the variable used for comparison, but I think it would be better
     to refactor this at some point such that the parameter is the file name and the
