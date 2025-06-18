@@ -68,10 +68,11 @@ protected:
   {
     ASSERT_TRUE(isSetup) << "Test environment not set up. Call setupWithFile() before running tests.";
 
-    PetscInt nRows, nCols;
-    PetscCallG(MatGetSize(testMat, &nRows, &nCols));
-    PetscCallG(MatGetSize(goldMat, &nRows, &nCols));
-    ASSERT_EQ(nRows, nCols) << "Matrix dimensions do not match";
+    PetscInt testRows, testCols, goldRows, goldCols;
+    PetscCallG(MatGetSize(testMat, &testRows, &testCols));
+    PetscCallG(MatGetSize(goldMat, &goldRows, &goldCols));
+    ASSERT_EQ(testRows, goldRows) << "Row dimensions of testMat and goldMat do not match";
+    ASSERT_EQ(testCols, goldCols) << "Column dimensions of testMat and goldMat do not match";
 
     Mat diffMat;
     PetscCallG(MatDuplicate(testMat, MAT_COPY_VALUES, &diffMat));
@@ -79,7 +80,7 @@ protected:
     // MatAXPY computes Y = a*X + Y (but the function signature is (Y, a, X, sparsityPattern))
     // diffMat = testMat - goldMat (we filled diffMat with testMat)
     PetscCallG(MatAXPY(diffMat, -1.0, goldMat, DIFFERENT_NONZERO_PATTERN));
-    // Note, these matrices should have he same sparsity pattern, but if we use
+    // Note, these matrices should have the same sparsity pattern, but if we use
     // SAME_NONZERO_PATTERN, we will get a segfault that isn't super descriptive
     // in the case that testMat and goldMat don't have the same sparsity pattern
 

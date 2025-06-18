@@ -1,5 +1,10 @@
 #include "PetscMatrixAssembler.hpp"
 
+inline bool isNonZero(const PetscScalar& value)
+{
+    return std::abs(value) > PETSC_MACHINE_EPSILON;
+}
+
 Mat SimpleMatrixAssembler::assemble() const
 {
     Mat mat;
@@ -33,7 +38,7 @@ Mat SimpleMatrixAssembler::assemble() const
             for (PetscInt scatterToIdx = 0; scatterToIdx < cmfdData.nGroups; ++scatterToIdx)
             {
                 const PetscScalar value = -1 * scatteringMat(scatterToIdx, scatterFromIdx) * volume;
-                if (value != 0.0)
+                if (isNonZero(value))
                 {
                     MatSetValue(mat, cellIdx * cmfdData.nGroups + scatterFromIdx, cellIdx * cmfdData.nGroups + scatterToIdx, value, ADD_VALUES);
                 }
@@ -45,7 +50,11 @@ Mat SimpleMatrixAssembler::assemble() const
         for (PetscInt groupIdx = 0; groupIdx < cmfdData.nGroups; ++groupIdx)
         {
             const PetscScalar value = transportMat(groupIdx) * volume;
-            if (value != 0.0)
+            if (isNonZero(value))
+            {
+                const PetscInt diagIdx = cellIdx * cmfdData.nGroups + groupIdx;
+                MatSetValue(mat, diagIdx, diagIdx, value, ADD_VALUES);
+            }
             {
                 const PetscInt diagIdx = cellIdx * cmfdData.nGroups + groupIdx;
                 MatSetValue(mat, diagIdx, diagIdx, value, ADD_VALUES);
@@ -72,20 +81,20 @@ Mat SimpleMatrixAssembler::assemble() const
             if (posCellMatIdx >= 0)
             {
                 const PetscScalar value = -1 * dhat + dtilde;
-                if (value != 0.0) {MatSetValue(mat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {MatSetValue(mat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES);}
             }
             if (negCellMatIdx >= 0)
             {
                 const PetscScalar value = dhat + dtilde;
-                if (value != 0.0) {MatSetValue(mat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {MatSetValue(mat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES);}
             }
             if (posCellMatIdx >= 0 && negCellMatIdx >= 0)
             {
                 const PetscScalar value1 = -1 * dhat - dtilde;
-                if (value1 != 0.0) {MatSetValue(mat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES);}
+                if (isNonZero(value1)) {MatSetValue(mat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES);}
 
                 const PetscScalar value2 = dhat - dtilde;
-                if (value2 != 0.0) {MatSetValue(mat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES);}
+                if (isNonZero(value2)) {MatSetValue(mat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES);}
             }
         }
     }
@@ -97,7 +106,7 @@ Mat SimpleMatrixAssembler::assemble() const
             for (PetscInt cellIdx = 0; cellIdx < cmfdData.nCells; ++cellIdx)
             {
                 const PetscScalar value = -1 * cmfdData.scatteringXS(scatterToIdx, scatterFromIdx, cellIdx) * cmfdData.volume(cellIdx);
-                if (value != 0.0)
+                if (isNonZero(value))
                 {
                     MatSetValue(mat, cellIdx * cmfdData.nGroups + scatterFromIdx, cellIdx * cmfdData.nGroups + scatterToIdx, value, ADD_VALUES);
                 }
@@ -111,7 +120,7 @@ Mat SimpleMatrixAssembler::assemble() const
         {
             // Could do removal XS if we were inserting instead of adding
             const PetscScalar value = cmfdData.transportXS(groupIdx, cellIdx) * cmfdData.volume(cellIdx);
-            if (value != 0.0)
+            if (isNonZero(value))
             {
                 const PetscInt diagIdx = cellIdx * cmfdData.nGroups + groupIdx;
                 MatSetValue(mat, diagIdx, diagIdx, value, ADD_VALUES);
@@ -135,20 +144,20 @@ Mat SimpleMatrixAssembler::assemble() const
             if (posCellMatIdx >= 0)
             {
                 const PetscScalar value = -1 * dhat + dtilde;
-                if (value != 0.0) {MatSetValue(mat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {MatSetValue(mat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES);}
             }
             if (negCellMatIdx >= 0)
             {
                 const PetscScalar value = dhat + dtilde;
-                if (value != 0.0) {MatSetValue(mat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {MatSetValue(mat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES);}
             }
             if (posCellMatIdx >= 0 && negCellMatIdx >= 0)
             {
                 const PetscScalar value1 = -1 * dhat - dtilde;
-                if (value1 != 0.0) {MatSetValue(mat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES);}
+                if (isNonZero(value1)) {MatSetValue(mat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES);}
 
                 const PetscScalar value2 = dhat - dtilde;
-                if (value2 != 0.0) {MatSetValue(mat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES);}
+                if (isNonZero(value2)) {MatSetValue(mat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES);}
             }
         }
     }
@@ -165,12 +174,66 @@ Mat COOMatrixAssembler::assemble() const
     Mat mat;
     PetscFunctionBeginUser;
 
-    static constexpr size_t posDisplacement = 0;
+    /*
+    The shape of a two cell three group matrix is
+        X X X | X 0 0                 |
+        X X X...0 X 0            + +  |  + -
+        X X X | 0 0 X                 |
+        - : - | - : -           - - - | - - -
+        X 0 0 | X X X                 |
+        0 X 0...X X X            - +  |  - -
+        0 0 X | X X X                 |
+    where the upper left submatrix is the scattering matrix for the first cell,
+    and the lower right submatrix is the scattering matrix for the second cell.
+    With more cells, each block on the diagonal is a scattering submatrix for a cell.
+    For the leakage between any two cells, we fill the diagonal of the submatrix blocks
+    that are line up with the corresponding cells' scattering submatrices. With more cells,
+    there may be space between these submatrices.
+
+    Leakage terms are added to to the diagonal of all four submatrices. We call the submatrix
+    of the positive cell that is, the cell on the positive side of the surface) ++, the submatrix
+    for the negative cell is --, the submatrix using the row of ++ and the column of -- is +-,
+    and the submatrix using the row of -- and the column of ++ is -+. The values are
+    ++ = -dhat + dtilde,
+    -- = dhat + dtilde,
+    +- = -dhat - dtilde,
+    -+ = dhat - dtilde.
+
+    In COO, where we have three 1D vectors (rowIndices, colIndices, values), we set a displacement
+    that corresponds to the position of the leakage values in each "row" of the vector (every maxNNZInRow
+    entries in the vector corresponds to a row in the matrix). There are four entries per surface
+    (++, --, +-, -+), so entriesPerSurf = 4.
+
+    In a cartesian mesh, each cell has up to three positive surfaces (that is, surfaces where the
+    cell is positive) (north, up, right) and up to three negative surfaces (south, down, left).
+    We store the maximum number of positive surfaces per cell in MAX_POS_SURF_PER_CELL (= 3).
+
+    Therefore, the number of entries in a "row" the number of groups (scattering) + (entriesPerSurf * MAX_POS_SURF_PER_CELL).
+    Note, for the values in the -+ and -- submatrices, the values aren't in the row of the ++ submatrix, but we
+    store them in the the "row" (portion of the 1D vector) of the positive cell. The matrix assembler will take
+    care of repeated index values and add the respective values together.
+
+    Therefore, each 1D vector has the following layout:
+
+                                    |-------- Scatter --------|  |----Leakage 0----| |----Leakage 1----| |----Leakage 2----|
+    "Row"0 (Cell 0, ScatterFrom 0): [ScatterTo0, ... ScatterToN, ++0, -+0, --0, +-0, ++1, -+1, --1, +-1, ++2, -+2, --2, +-2,
+    "Row"1 (Cell 0, ScatterFrom 1): [ScatterTo0, ... ScatterToN, ++0, -+0, --0, +-0, ++1, -+1, --1, +-1, ++2, -+2, --2, +-2,
+
+    Where the leakage 0, 1, and 2 are the leakage through the first, second, and third surfaces in which the row cell is positive.
+    // TODO/NOTE to future self: Perhaps a better pattern would be to store ALL scatterterms contiguously and then ALL leakage terms.
+    // This may lead to a better data access pattern.
+
+    Lastly, we need to consider leakage out of the system. where the positive cell is the exterior cell (-1).
+    The above method did not account for this, and this leakage out of the system is only stored in the -- submatrix.
+    Therefore, we add an additional nGroup entries for each positive leakage surface to the end of our 1D values vector.
+    (That is, in total we add nGroups * nPosLeakageSurfs entries to the end of each COO vector.)
+    */
+
+    static constexpr size_t posPosDisplacement = 0;
     static constexpr size_t negPosDisplacement = 1;
     static constexpr size_t negNegDisplacement = 2;
     static constexpr size_t posNegDisplacement = 3;
-
-    static constexpr PetscInt entriesPerSurf = 4; // Leakage in and out of pos and neg cells
+    static constexpr PetscInt entriesPerSurf = 4;
     PetscInt maxNNZInRow = cmfdData.nGroups + entriesPerSurf * MAX_POS_SURF_PER_CELL;
     PetscInt matSize = cmfdData.nCells * cmfdData.nGroups;
 
@@ -203,7 +266,7 @@ Mat COOMatrixAssembler::assemble() const
                 for (PetscInt cellIdx = 0; cellIdx < cmfdData.nCells; ++cellIdx)
                 {
                     const PetscScalar value = -1 * cmfdData.scatteringXS(scatterToIdx, scatterFromIdx, cellIdx) * cmfdData.volume(cellIdx);
-                    if (value != 0.0)
+                    if (isNonZero(value))
                     {
                         rowIndices.emplace_back(cellIdx * cmfdData.nGroups + scatterFromIdx);
                         colIndices.emplace_back(cellIdx * cmfdData.nGroups + scatterToIdx);
@@ -219,7 +282,7 @@ Mat COOMatrixAssembler::assemble() const
             {
                 // Could do removal XS if we were inserting instead of adding
                 const PetscScalar value = cmfdData.transportXS(groupIdx, cellIdx) * cmfdData.volume(cellIdx);
-                if (value != 0.0)
+                if (isNonZero(value))
                 {
                     const PetscInt diagIdx = cellIdx * cmfdData.nGroups + groupIdx;
                     rowIndices.emplace_back(diagIdx);
@@ -245,7 +308,7 @@ Mat COOMatrixAssembler::assemble() const
                 if (posCellMatIdx >= 0)
                 {
                     const PetscScalar value = -1 * dhat + dtilde;
-                    if (value != 0.0) {
+                    if (isNonZero(value)) {
                         rowIndices.emplace_back(posCellMatIdx);
                         colIndices.emplace_back(posCellMatIdx);
                         values.emplace_back(value);
@@ -254,7 +317,7 @@ Mat COOMatrixAssembler::assemble() const
                 if (negCellMatIdx >= 0)
                 {
                     const PetscScalar value = dhat + dtilde;
-                    if (value != 0.0) {
+                    if (isNonZero(value)) {
                         rowIndices.emplace_back(negCellMatIdx);
                         colIndices.emplace_back(negCellMatIdx);
                         values.emplace_back(value);
@@ -263,14 +326,14 @@ Mat COOMatrixAssembler::assemble() const
                 if (posCellMatIdx >= 0 && negCellMatIdx >= 0)
                 {
                     const PetscScalar value1 = -1 * dhat - dtilde;
-                    if (value1 != 0.0) {
+                    if (isNonZero(value1)) {
                         rowIndices.emplace_back(posCellMatIdx);
                         colIndices.emplace_back(negCellMatIdx);
                         values.emplace_back(value1);
                     }
 
                     const PetscScalar value2 = dhat - dtilde;
-                    if (value2 != 0.0) {
+                    if (isNonZero(value2)) {
                         rowIndices.emplace_back(negCellMatIdx);
                         colIndices.emplace_back(posCellMatIdx);
                         values.emplace_back(value2);
@@ -287,25 +350,13 @@ Mat COOMatrixAssembler::assemble() const
     else if constexpr(method == 2) // METHOD 2:
     // Use Kokkos views somewhat naively (use teams, scratch pad, etc. to optimize)
     // Just making sure this works for now
+    // See the comment at the top of the method for a description of the layout
     {
         // Don't want to access self->cmfdData in the lambda, so copy it to a reference
         auto& _cmfdData = cmfdData;
 
         // Assume each row has maxNNZInRow non-zero entries
         PetscInt maxNNZEntries = maxNNZInRow * matSize + cmfdData.nPosLeakageSurfs * cmfdData.nGroups;
-
-        // First maxNNZInRow are for the first row, next maxNNZInRow for the second row, etc.
-        // First "row" is for the first cell first (scatter from) energy group, second "row" is for the first cell second energy group
-        // In each "row", the first nGroups are for scattering from that group, and the last twelve are for leakage surfaces
-        // There are three possible leakage positive leakage surfaces per cell and we have four entries per surface
-        // That is, the "matrix" looks like this (it is actually one long vector):
-        //
-        // Row0 (Cell 0, ScatterFrom 0): [ScatterTo0, ... ScatterToN, ++Surf0, -+Surf0, --Surf0, +-Surf0, ++Surf1, -+Surf1, --Surf1, +-Surf1, ++Surf2, -+Surf2, --Surf2, +-Surf2,
-        // Row1 (Cell 0, ScatterFrom 1): [ScatterTo0, ... ScatterToN, ++Surf0, -+Surf0, --Surf0, +-Surf0, ++Surf1, -+Surf1, --Surf1, +-Surf1, ++Surf2, -+Surf2, --Surf2, +-Surf2,
-        //
-        // The last `cmfdData.nPosLeakageSurfs * cmfdData.nGroups` entries are for leakage out of the system, which is handled separately
-        // than in leakage (see cmfdData.posLeakageSurfs). The first cmfdData.nGroups entries after `maxNNZInRow * matSize` are for the first
-        // positive leakage surface's energy groups, the next cmfdData.nGroups entries are for the second positive leakage surface's energy groups, etc.
 
         // Maybe these get assembled on the GPU, copied to the host for MatSetValuesCOO
         // Maybe this changes based on where the matrix is assembled, or does Kokkos handle that?
@@ -361,9 +412,9 @@ Mat COOMatrixAssembler::assemble() const
                     const PetscInt negCellIdx = _cmfdData.surf2Cell(posSurfIdx, 1);
                     const PetscInt negCellMatIdx = (negCellIdx) * _cmfdData.nGroups + groupIdx;
 
-                    rowIndices(locationStartIn1D + posDisplacement) = posCellMatIdx;
-                    colIndices(locationStartIn1D + posDisplacement) = posCellMatIdx;
-                    values(locationStartIn1D + posDisplacement) = -1 * dhat + dtilde;
+                    rowIndices(locationStartIn1D + posPosDisplacement) = posCellMatIdx;
+                    colIndices(locationStartIn1D + posPosDisplacement) = posCellMatIdx;
+                    values(locationStartIn1D + posPosDisplacement) = -1 * dhat + dtilde;
 
                     if (negCellIdx >= 0)
                     {

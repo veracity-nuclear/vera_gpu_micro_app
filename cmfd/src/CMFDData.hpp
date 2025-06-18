@@ -84,7 +84,7 @@ struct CMFDData
     using ViewCellToPosSurf = Kokkos::View<PetscInt *[MAX_POS_SURF_PER_CELL], MemorySpace>;
     using View3D = Kokkos::View<PetscScalar ***, MemorySpace>;
 
-    size_t nCells, nSurfaces, nGroups, nPosLeakageSurfs;
+    size_t nCells{}, nSurfaces{}, nGroups{}, nPosLeakageSurfs{};
 
     View1D volume;
     View2D chi;
@@ -163,7 +163,7 @@ struct CMFDData
                 }
                 else
                 {
-                    std::runtime_error("More than 3 positive surfaces found for a single cell, which is unexpected.");
+                    throw std::runtime_error("More than 3 positive surfaces found for a single cell, which is unexpected.");
                 }
             }
             else {
