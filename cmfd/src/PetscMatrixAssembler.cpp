@@ -288,26 +288,30 @@ Mat COOMatrixAssembler::assemble() const
     // Use Kokkos views somewhat naively (use teams, scratch pad, etc. to optimize)
     // Just making sure this works for now
     {
-        // Don't want to access cmfdData in the lambda, so copy it to a reference
+        // Don't want to access self->cmfdData in the lambda, so copy it to a reference
         auto& _cmfdData = cmfdData;
 
         // Assume each row has maxNNZInRow non-zero entries
-        PetscInt maxNNZ = maxNNZInRow * matSize;
+        PetscInt maxNNZEntries = maxNNZInRow * matSize + cmfdData.nPosLeakageSurfs * cmfdData.nGroups;
 
         // First maxNNZInRow are for the first row, next maxNNZInRow for the second row, etc.
         // First "row" is for the first cell first (scatter from) energy group, second "row" is for the first cell second energy group
         // In each "row", the first nGroups are for scattering from that group, and the last twelve are for leakage surfaces
         // There are three possible leakage positive leakage surfaces per cell and we have four entries per surface
-        // That is, the matrix looks like this:
+        // That is, the "matrix" looks like this (it is actually one long vector):
         //
         // Row0 (Cell 0, ScatterFrom 0): [ScatterTo0, ... ScatterToN, ++Surf0, -+Surf0, --Surf0, +-Surf0, ++Surf1, -+Surf1, --Surf1, +-Surf1, ++Surf2, -+Surf2, --Surf2, +-Surf2,
         // Row1 (Cell 0, ScatterFrom 1): [ScatterTo0, ... ScatterToN, ++Surf0, -+Surf0, --Surf0, +-Surf0, ++Surf1, -+Surf1, --Surf1, +-Surf1, ++Surf2, -+Surf2, --Surf2, +-Surf2,
+        //
+        // The last `cmfdData.nPosLeakageSurfs * cmfdData.nGroups` entries are for leakage out of the system, which is handled separately
+        // than in leakage (see cmfdData.posLeakageSurfs). The first cmfdData.nGroups entries after `maxNNZInRow * matSize` are for the first
+        // positive leakage surface's energy groups, the next cmfdData.nGroups entries are for the second positive leakage surface's energy groups, etc.
 
         // Maybe these get assembled on the GPU, copied to the host for MatSetValuesCOO
         // Maybe this changes based on where the matrix is assembled, or does Kokkos handle that?
-        Kokkos::View<PetscInt *, AssemblyMemorySpace> rowIndices("rowIndicesKokkos", maxNNZ);
-        Kokkos::View<PetscInt *, AssemblyMemorySpace> colIndices("colIndicesKokkos", maxNNZ);
-        Kokkos::View<PetscScalar *, AssemblyMemorySpace> values("valuesKokkos", maxNNZ);
+        Kokkos::View<PetscInt *, AssemblyMemorySpace> rowIndices("rowIndicesKokkos", maxNNZEntries);
+        Kokkos::View<PetscInt *, AssemblyMemorySpace> colIndices("colIndicesKokkos", maxNNZEntries);
+        Kokkos::View<PetscScalar *, AssemblyMemorySpace> values("valuesKokkos", maxNNZEntries);
 
         {
             Kokkos::parallel_for("COOMatrixAssembler2: ScatterXS", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<3>>({0, 0, 0}, {cmfdData.nGroups, cmfdData.nGroups, cmfdData.nCells}),
@@ -337,11 +341,14 @@ Mat COOMatrixAssembler::assemble() const
             });
 
             // TODO: This isn't tightly nested and could be optimized
-            Kokkos::parallel_for("COOMatrixAssembler2: Leakage", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<3>>({0, 0, 0}, {cmfdData.nGroups, cmfdData.nCells, MAX_POS_SURF_PER_CELL}),
+            Kokkos::parallel_for("COOMatrixAssembler2: InLeakage", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<3>>({0, 0, 0}, {cmfdData.nGroups, cmfdData.nCells, MAX_POS_SURF_PER_CELL}),
                 KOKKOS_LAMBDA(const PetscInt groupIdx, const PetscInt posCellIdx, const PetscInt posSurfPosition)
             {
-                // We are only on the diagonal so groupIdx could be from or to, but we use it to find the "row" (scatter from)
-                // posSurfPosition is 0, 1, or 2
+                // posSurfPosition is 0, 1, or 2 as we expect each cell to have three positive surfaces (MAX_POS_SURF_PER_CELL)
+
+                // We are only on the diagonal of each block matrix,
+                // so groupIdx could be from or to, but we use it to find the "row" (scatter from).
+
                 const PetscInt posSurfIdx = _cmfdData.cell2PosSurf(posCellIdx, posSurfPosition);
                 if (posSurfIdx >= 0) // -1 is invalid surface
                 {
@@ -375,9 +382,31 @@ Mat COOMatrixAssembler::assemble() const
 
                 }
             });
-        }
 
-        MatSetPreallocationCOO(mat, maxNNZ, rowIndices.data(), colIndices.data());
+            // TODO: This is also not tightly nested and could be optimized
+            Kokkos::parallel_for("COOMatrixAssembler2: OutLeakage", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<2>>({0, 0}, {cmfdData.nGroups, cmfdData.nPosLeakageSurfs}),
+            KOKKOS_LAMBDA(const PetscInt groupIdx, const PetscInt nthPosLeakageSurf)
+            {
+                const PetscInt posSurfIdx = _cmfdData.posLeakageSurfs(nthPosLeakageSurf);
+                const PetscInt negCellIdx = _cmfdData.surf2Cell(posSurfIdx, 1);
+
+                if (negCellIdx >= 0)
+                {
+                    const size_t locationIn1D = maxNNZInRow * matSize + nthPosLeakageSurf * _cmfdData.nGroups + groupIdx;
+                    const PetscInt negCellMatIdx = (negCellIdx)*_cmfdData.nGroups + groupIdx;
+                    const PetscScalar dhat = _cmfdData.dHat(groupIdx, posSurfIdx);
+                    const PetscScalar dtilde = _cmfdData.dTilde(groupIdx, posSurfIdx);
+
+                    rowIndices(locationIn1D) = negCellMatIdx;
+                    colIndices(locationIn1D) = negCellMatIdx;
+                    values(locationIn1D) = dhat + dtilde;
+                }
+
+            }
+        );
+    }
+
+        MatSetPreallocationCOO(mat, maxNNZEntries, rowIndices.data(), colIndices.data());
         MatSetValuesCOO(mat, values.data(), ADD_VALUES);
     }
     return mat;

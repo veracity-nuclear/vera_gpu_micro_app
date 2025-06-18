@@ -81,10 +81,10 @@ struct CMFDData
     using View1D = Kokkos::View<PetscScalar *, MemorySpace>;
     using View2D = Kokkos::View<PetscScalar **, MemorySpace>;
     using ViewSurfToCell = Kokkos::View<PetscInt *[2], MemorySpace>;
-    using ViewCellToPosSurf = Kokkos::View<PetscInt *[3], MemorySpace>;
+    using ViewCellToPosSurf = Kokkos::View<PetscInt *[MAX_POS_SURF_PER_CELL], MemorySpace>;
     using View3D = Kokkos::View<PetscScalar ***, MemorySpace>;
 
-    size_t nCells, nSurfaces, nGroups;
+    size_t nCells, nSurfaces, nGroups, nPosLeakageSurfs;
 
     View1D volume;
     View2D chi;
@@ -95,8 +95,11 @@ struct CMFDData
     View2D removalXS;
     View2D transportXS;
     ViewSurfToCell surf2Cell;
-    ViewCellToPosSurf cell2PosSurf;
     View3D scatteringXS;
+
+    // Calculated by buildCellToPosSurfMapping
+    ViewCellToPosSurf cell2PosSurf;
+    View1D posLeakageSurfs;
 
     CMFDData() = default;
 
@@ -130,14 +133,20 @@ struct CMFDData
     // Build a mapping from a cell to the surfaces in which the cell is positive (north, up, right).
     // Therefore the "pos" surf would be negative (south, down, left) for the cell. See test for an example.
     // -1 Means no surface. We expect up to three surfaces per cell (3D cartesian).
-    static ViewCellToPosSurf buildCellToPosSurfMapping(const ViewSurfToCell &surf2Cell, const size_t &nCells)
+    // Uses members surf2Cell and nCells.
+    void buildCellToPosSurfMapping()
     {
-        ViewCellToPosSurf d_cell2PosSurf("cell2PosSurf", nCells, MAX_POS_SURF_PER_CELL);
-        auto h_cell2PosSurf = Kokkos::create_mirror_view(d_cell2PosSurf);
+        cell2PosSurf = ViewCellToPosSurf("cell2PosSurf", nCells, MAX_POS_SURF_PER_CELL);
+        auto h_cell2PosSurf = Kokkos::create_mirror_view(cell2PosSurf);
         Kokkos::deep_copy(h_cell2PosSurf, -1);
 
         auto h_surf2Cell = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), surf2Cell);
         size_t nSurfaces = h_surf2Cell.extent(0);
+
+        // We need a separate vector to hold the surfaces where the exterior (-1) cell is positive
+        // since we don't know how many there will be. Overestimate on the reserved size.
+        std::vector<PetscInt> vecPosLeakageSurfs;
+        vecPosLeakageSurfs.reserve(nSurfaces);
 
         // Count array to track how many surfaces we've found for each cell
         std::vector<PetscInt> countPerCell(nCells, 0);
@@ -157,15 +166,22 @@ struct CMFDData
                     std::runtime_error("More than 3 positive surfaces found for a single cell, which is unexpected.");
                 }
             }
+            else {
+                vecPosLeakageSurfs.push_back(surfID);
+            }
         }
 
-        Kokkos::deep_copy(d_cell2PosSurf, h_cell2PosSurf);
-        return d_cell2PosSurf;
-    }
+        // Copy to the device view stored in the struct
+        Kokkos::deep_copy(cell2PosSurf, h_cell2PosSurf);
 
-    void buildCellToPosSurfMapping()
-    {
-        cell2PosSurf = buildCellToPosSurfMapping(surf2Cell, nCells);
+        // Create a view for the positive leakage surfaces and store in the struct
+        nPosLeakageSurfs = vecPosLeakageSurfs.size();
+        posLeakageSurfs = View1D("posLeakageSurfs", nPosLeakageSurfs);
+        auto h_posLeakageSurfs = Kokkos::create_mirror_view(posLeakageSurfs);
+        for (size_t i = 0; i < nPosLeakageSurfs; i++)
+        {
+            h_posLeakageSurfs(i) = vecPosLeakageSurfs[i];
+        }
+        Kokkos::deep_copy(posLeakageSurfs, h_posLeakageSurfs);
     }
-
 };

@@ -1,5 +1,14 @@
 /*
   This file tests if the PetscMatrixAssembler works as intended.
+
+  Notes: I'm not the biggest fan of the current implementation.
+  - We redundantly create the gold matrix for each AssemblerType.alignas
+  - The current test fixture "parameterizes" the assembler type, which incentives
+    the test file as the variable used for comparison, but I think it would be better
+    to refactor this at some point such that the parameter is the file name and the
+    test fixture creates all three assemblers. I think this approach is better for
+    comparing assembly times across methods, but it would be a little tricky to implement
+    as clean as I'd like.
 */
 #include "PetscKokkosTestEnvironment.hpp"
 #include "PetscMatrixAssembler.hpp"
@@ -8,7 +17,7 @@ template <typename AssemblerType>
 class PetscMatrixAssemblerTest : public ::testing::Test
 {
 protected:
-  // Helper function to detect if T derives from any PetscMatrixAssembler<Space>
+  // Helper functions to detect if T derives from any PetscMatrixAssembler<Space>
   template <typename T, typename = void>
   struct isPetscMatrixAssembler
   {
@@ -37,13 +46,22 @@ protected:
 
     HighFive::Group cmfdGroup = file.getGroup("CMFD_CoarseMesh");
     assembler = AssemblerType(cmfdGroup);
+
+    const std::string stageName = "Assemble:" + std::string(typeid(AssemblerType).name()) + filePath;
+
+    PetscLogStage stage;
+    PetscLogStageRegister(stageName.c_str(), &stage);
+
+    PetscLogStagePush(stage);
     testMat = assembler.assemble();
+    PetscLogStagePop();
   }
 
   void TearDown() override
   {
     PetscCallG(MatDestroy(&goldMat));
     PetscCallG(MatDestroy(&testMat));
+    ::testing::Test::TearDown();
   }
 
   void compareMatrices(PetscReal tolerance = 1.0e-10)
@@ -58,42 +76,39 @@ protected:
     Mat diffMat;
     PetscCallG(MatDuplicate(testMat, MAT_COPY_VALUES, &diffMat));
 
-    // diffMat = testMat - goldMat
+    // MatAXPY computes Y = a*X + Y (but the function signature is (Y, a, X, sparsityPattern))
+    // diffMat = testMat - goldMat (we filled diffMat with testMat)
     PetscCallG(MatAXPY(diffMat, -1.0, goldMat, DIFFERENT_NONZERO_PATTERN));
     // Note, these matrices should have he same sparsity pattern, but if we use
-    // SAME_NONZERO_PATTERN, we will get a segfault that isn't super descriptive.
+    // SAME_NONZERO_PATTERN, we will get a segfault that isn't super descriptive
+    // in the case that testMat and goldMat don't have the same sparsity pattern
 
     PetscReal norm;
     PetscCallG(MatNorm(diffMat, NORM_FROBENIUS, &norm));
 
-    // Clean up
 
     std::cout << "Matrix norm difference: " << norm << std::endl;
 
     if (norm > tolerance)
     {
 
-      PetscScalar diffValue, goldValue, testValue;
-      for (PetscInt i = 0; i < nRows; ++i)
-      {
-        for (PetscInt j = 0; j < nCols; ++j)
-        {
-          PetscCallG(MatGetValue(diffMat, i, j, &diffValue));
-          if (diffValue != 0.0)
-          {
-            PetscCallG(MatGetValue(goldMat, i, j, &goldValue));
-            PetscCallG(MatGetValue(testMat, i, j, &testValue));
-            printf("Row %d, Col %d: gold %f, test %f, diff %f\n", i, j, goldValue, testValue, diffValue);
-          }
-        }
-      }
+      // PetscScalar diffValue, goldValue, testValue;
+      // for (PetscInt i = 0; i < nRows; ++i)
+      // {
+      //   for (PetscInt j = 0; j < nCols; ++j)
+      //   {
+      //     PetscCallG(MatGetValue(diffMat, i, j, &diffValue));
+      //     if (std::fabs(diffValue) > tolerance)
+      //     {
+      //       PetscCallG(MatGetValue(goldMat, i, j, &goldValue));
+      //       PetscCallG(MatGetValue(testMat, i, j, &testValue));
+      //       printf("Row %d, Col %d: gold %f, test %f, diff %f\n", i, j, goldValue, testValue, diffValue);
+      //     }
+      //   }
+      // }
 
       PetscCallG(PetscOptionsSetValue(NULL, "-draw_size", "1920,1080")); // Set the size of the draw window
-      // TODO print matrix differences
-      // MatView(testMat, PETSC_VIEWER_STDOUT_WORLD);
-      // MatView(goldMat, PETSC_VIEWER_STDOUT_WORLD);
       MatView(diffMat, PETSC_VIEWER_DRAW_WORLD);
-      // MatView(goldMat, PETSC_VIEWER_DRAW_WORLD);
     }
 
     ASSERT_LE(norm, tolerance) << "Matrices differ by " << norm << " (tolerance: " << tolerance << ")";
@@ -115,12 +130,11 @@ TYPED_TEST(PetscMatrixAssemblerTest, AssembleAndCompare)
   const std::vector<std::string> testFiles = {
       "data/pin_7g_16a_3p_serial.h5",
       "data/7x7_7g_16a_3p_serial.h5",
-      // "data/mini-core_7g_16a_3p_serial.h5"
+      "data/mini-core_7g_16a_3p_serial.h5"
   };
 
   for (const auto &file : testFiles)
   {
-    SCOPED_TRACE("Testing with file: " + file);
     this->setupWithFile(file);
     this->compareMatrices();
   }

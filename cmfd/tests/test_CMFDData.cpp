@@ -154,9 +154,9 @@ TEST(surf2CellToCell2Surf, test)
     |           |           |           |
     +------0----+------1----+------2----+
     */
-
-    size_t nCells = 9;
-    size_t nSurfaces = 24;
+    CMFDData<> cmfdData;
+    cmfdData.nCells = 9;
+    cmfdData.nSurfaces = 24;
 
     // index is surface number (0 based)
     std::vector<std::array<PetscInt, 2>> surf2Cell = {
@@ -182,18 +182,22 @@ TEST(surf2CellToCell2Surf, test)
         {16, 19, -1},
     };
 
-    CMFDData<>::ViewSurfToCell d_surf2CellView("surf2Cell", nSurfaces, 2);
+    // Surfaces in which the exterior (-1) cell is positive
+    std::vector<PetscInt> posLeakageSurfs = {6, 13, 20, 21, 22, 23};
+
+    CMFDData<>::ViewSurfToCell d_surf2CellView("surf2Cell", cmfdData.nSurfaces, 2);
     auto h_surf2CellView = Kokkos::create_mirror_view(d_surf2CellView);
-    for (size_t i = 0; i < nSurfaces; ++i) {
+    for (size_t i = 0; i < cmfdData.nSurfaces; ++i) {
         h_surf2CellView(i, 0) = surf2Cell[i][0];
         h_surf2CellView(i, 1) = surf2Cell[i][1];
     }
     Kokkos::deep_copy(d_surf2CellView, h_surf2CellView);
 
-    CMFDData<>::ViewCellToPosSurf d_cell2PosSurf = CMFDData<>::buildCellToPosSurfMapping(d_surf2CellView, nCells);
-    auto h_cell2PosSurf = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_cell2PosSurf);
+    cmfdData.surf2Cell = d_surf2CellView;
+    cmfdData.buildCellToPosSurfMapping();
 
-    for (size_t i = 0; i < nCells; ++i) {
+    auto h_cell2PosSurf = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), cmfdData.cell2PosSurf);
+    for (size_t i = 0; i < cmfdData.nCells; ++i) {
         for (size_t j = 0; j < 3; ++j) {
             EXPECT_EQ(h_cell2PosSurf(i, j), expectedCellToPosSurf[i][j])
                 << "Mismatch at cell " << i << ", position " << j;
@@ -201,4 +205,11 @@ TEST(surf2CellToCell2Surf, test)
         }
     }
 
+    EXPECT_EQ(cmfdData.nPosLeakageSurfs, posLeakageSurfs.size()) << "Number of positive leakage surfaces mismatch";
+
+    auto h_posLeakageSurfs = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), cmfdData.posLeakageSurfs);
+    for (size_t i = 0; i < posLeakageSurfs.size(); ++i) {
+        EXPECT_EQ(h_posLeakageSurfs(i), posLeakageSurfs[i])
+            << "Mismatch at position " << i << ": " << h_posLeakageSurfs(i) << " (Expected: " << posLeakageSurfs[i] << ")";
+    }
 }
