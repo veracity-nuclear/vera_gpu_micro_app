@@ -1,10 +1,17 @@
+// Defines a class and method for reading data templated on a memory space.
+// Templates don't play well with headers AND bodies, so we just use a header.
 #pragma once
 
-#include "Kokkos_Core.hpp"
-#include "highfive/H5File.hpp"
+#include <Kokkos_Core.hpp>
+#include <highfive/H5File.hpp>
+#include <petscsys.h>
 
+constexpr size_t MAX_POS_SURF_PER_CELL = 3;
+static constexpr const char* SURF2CELL_LABEL = "surf2Cell";
+
+// This function reads data from an HDF5 dataset and converts it to a specified Kokkos::View type.
 template <typename ViewType>
-ViewType HDF5ToKokkosView(const HighFive::DataSet &dataset, const std::string& label="")
+ViewType HDF5ToKokkosView(const HighFive::DataSet &dataset, const std::string &label = "")
 {
     static_assert(Kokkos::is_view<ViewType>::value, "ViewType must be a Kokkos::View type");
 
@@ -18,23 +25,43 @@ ViewType HDF5ToKokkosView(const HighFive::DataSet &dataset, const std::string& l
     Kokkos::ViewAllocateWithoutInitializing d_alloc(label);
     Kokkos::ViewAllocateWithoutInitializing h5_alloc("H5 " + label);
 
-    if constexpr(ViewType::rank == 0) {
+    if constexpr (ViewType::rank == 0)
+    {
         h5View = H5View(h5_alloc);
         d_view = ViewType(d_alloc);
-    } else if constexpr(ViewType::rank == 1) {
+    }
+    else if constexpr (ViewType::rank == 1)
+    {
         h5View = H5View(h5_alloc, hdf5Extents[0]);
         d_view = ViewType(d_alloc, hdf5Extents[0]);
-    } else if constexpr(ViewType::rank == 2) {
+    }
+    else if constexpr (ViewType::rank == 2)
+    {
         h5View = H5View(h5_alloc, hdf5Extents[0], hdf5Extents[1]);
         d_view = ViewType(d_alloc, hdf5Extents[0], hdf5Extents[1]);
-    } else if constexpr(ViewType::rank == 3) {
+    }
+    else if constexpr (ViewType::rank == 3)
+    {
         h5View = H5View(h5_alloc, hdf5Extents[0], hdf5Extents[1], hdf5Extents[2]);
         d_view = ViewType(d_alloc, hdf5Extents[0], hdf5Extents[1], hdf5Extents[2]);
-    } else {
+    }
+    else
+    {
         static_assert(ViewType::rank <= 3, "Only up to 3D Kokkos::View is supported");
     }
 
     dataset.read(h5View.data());
+
+    // Only adjust for surf2Cell if the view is 2D and integer type
+    if constexpr (ViewType::rank == 2 && std::is_integral_v<typename ViewType::value_type>) {
+        if (label == SURF2CELL_LABEL) {
+            for (size_t i = 0; i < hdf5Extents[0]; ++i) {
+                h5View(i, 0) -= 1; // Convert from 1-based to 0-based indexing
+                h5View(i, 1) -= 1;
+            }
+        }
+    }
+
     typename ViewType::HostMirror h_view = Kokkos::create_mirror_view(d_view);
 
     // These copies are no-op if the memory spaces are the same
@@ -44,17 +71,21 @@ ViewType HDF5ToKokkosView(const HighFive::DataSet &dataset, const std::string& l
     return d_view;
 }
 
-template <typename MemorySpace = Kokkos::DefaultExecutionSpace::memory_space>
-struct CMFDData {
+// This struct is used to store the data for the CMFD coarse mesh.
+template <typename AssemblySpace = Kokkos::DefaultExecutionSpace>
+struct CMFDData
+{
+    using MemorySpace = typename AssemblySpace::memory_space;
     static_assert(Kokkos::is_memory_space<MemorySpace>::value,
-        "MemorySpace must be a Kokkos memory space");
+                  "MemorySpace must be a Kokkos memory space");
 
     using View1D = Kokkos::View<PetscScalar *, MemorySpace>;
     using View2D = Kokkos::View<PetscScalar **, MemorySpace>;
-    using ViewSurf2Cell = Kokkos::View<PetscInt *[2], MemorySpace>;
+    using ViewSurfToCell = Kokkos::View<PetscInt *[2], MemorySpace>;
+    using ViewCellToPosSurf = Kokkos::View<PetscInt *[MAX_POS_SURF_PER_CELL], MemorySpace>;
     using View3D = Kokkos::View<PetscScalar ***, MemorySpace>;
 
-    size_t nCells, nSurfaces, nGroups;
+    size_t nCells{}, nSurfaces{}, nGroups{}, nPosLeakageSurfs{};
 
     View1D volume;
     View2D chi;
@@ -64,12 +95,18 @@ struct CMFDData {
     View2D pastFlux;
     View2D removalXS;
     View2D transportXS;
-    ViewSurf2Cell surf2Cell;
+    ViewSurfToCell surf2Cell;
     View3D scatteringXS;
+
+    // Calculated by buildCellToPosSurfMapping
+    ViewCellToPosSurf cell2PosSurf;
+    View1D posLeakageSurfs;
 
     CMFDData() = default;
 
-    CMFDData(const HighFive::Group& CMFDCoarseMesh){
+    // Constructor that reads the data from the HDF5 file.
+    CMFDData(const HighFive::Group &CMFDCoarseMesh)
+    {
         volume = HDF5ToKokkosView<View1D>(CMFDCoarseMesh.getDataSet("volume"), "volume");
         chi = HDF5ToKokkosView<View2D>(CMFDCoarseMesh.getDataSet("chi"), "chi");
         dHat = HDF5ToKokkosView<View2D>(CMFDCoarseMesh.getDataSet("Dhat"), "Dhat");
@@ -78,16 +115,74 @@ struct CMFDData {
         pastFlux = HDF5ToKokkosView<View2D>(CMFDCoarseMesh.getDataSet("flux"), "pastFlux");
         removalXS = HDF5ToKokkosView<View2D>(CMFDCoarseMesh.getDataSet("removal XS"), "removalXS");
         transportXS = HDF5ToKokkosView<View2D>(CMFDCoarseMesh.getDataSet("transport XS"), "transportXS");
-        surf2Cell = HDF5ToKokkosView<ViewSurf2Cell>(CMFDCoarseMesh.getDataSet("surf2cell"), "surf2Cell");
         scatteringXS = HDF5ToKokkosView<View3D>(CMFDCoarseMesh.getDataSet("scattering XS"), "scatteringXS");
+
+        // Based on the label "surf2Cell", HDF5ToKokkosView will convert the 1-based indexing to 0-based indexing.
+        surf2Cell = HDF5ToKokkosView<ViewSurfToCell>(CMFDCoarseMesh.getDataSet("surf2cell"), SURF2CELL_LABEL);
+        nSurfaces = surf2Cell.extent(0);
 
         size_t firstCell, lastCell;
         CMFDCoarseMesh.getDataSet("first cell").read(firstCell);
         CMFDCoarseMesh.getDataSet("last cell").read(lastCell);
         nCells = lastCell - firstCell + 1;
 
-        nSurfaces = surf2Cell.extent(0);
-
         CMFDCoarseMesh.getDataSet("energy groups").read(nGroups);
+
+        buildCellToPosSurfMapping();
     };
+
+    // Build a mapping from a cell to the surfaces in which the cell is positive (north, up, right).
+    // Therefore the "pos" surf would be negative (south, down, left) for the cell. See test for an example.
+    // -1 Means no surface. We expect up to three surfaces per cell (3D cartesian).
+    // Uses members surf2Cell and nCells.
+    void buildCellToPosSurfMapping()
+    {
+        cell2PosSurf = ViewCellToPosSurf("cell2PosSurf", nCells, MAX_POS_SURF_PER_CELL);
+        auto h_cell2PosSurf = Kokkos::create_mirror_view(cell2PosSurf);
+        Kokkos::deep_copy(h_cell2PosSurf, -1);
+
+        auto h_surf2Cell = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), surf2Cell);
+        size_t nSurfaces = h_surf2Cell.extent(0);
+
+        // We need a separate vector to hold the surfaces where the exterior (-1) cell is positive
+        // since we don't know how many there will be. Overestimate on the reserved size.
+        std::vector<PetscInt> vecPosLeakageSurfs;
+        vecPosLeakageSurfs.reserve(nSurfaces);
+
+        // Count array to track how many surfaces we've found for each cell
+        std::vector<PetscInt> countPerCell(nCells, 0);
+
+        for (size_t surfID = 0; surfID < nSurfaces; surfID++)
+        {
+            const PetscInt posCell = h_surf2Cell(surfID, 0);
+            if (posCell >= 0)
+            {
+                if (countPerCell[posCell] < MAX_POS_SURF_PER_CELL)
+                {
+                    h_cell2PosSurf(posCell, countPerCell[posCell]) = surfID;
+                    countPerCell[posCell]++;
+                }
+                else
+                {
+                    throw std::runtime_error("More than 3 positive surfaces found for a single cell, which is unexpected.");
+                }
+            }
+            else {
+                vecPosLeakageSurfs.push_back(surfID);
+            }
+        }
+
+        // Copy to the device view stored in the struct
+        Kokkos::deep_copy(cell2PosSurf, h_cell2PosSurf);
+
+        // Create a view for the positive leakage surfaces and store in the struct
+        nPosLeakageSurfs = vecPosLeakageSurfs.size();
+        posLeakageSurfs = View1D("posLeakageSurfs", nPosLeakageSurfs);
+        auto h_posLeakageSurfs = Kokkos::create_mirror_view(posLeakageSurfs);
+        for (size_t i = 0; i < nPosLeakageSurfs; i++)
+        {
+            h_posLeakageSurfs(i) = vecPosLeakageSurfs[i];
+        }
+        Kokkos::deep_copy(posLeakageSurfs, h_posLeakageSurfs);
+    }
 };
