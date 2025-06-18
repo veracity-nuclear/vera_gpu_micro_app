@@ -81,7 +81,9 @@ bool ArgumentParser::parse(int argc, char* argv[]) {
     for (size_t i = 1; i < args.size(); ++i) {
         const std::string& arg = args[i];
 
-        if (arg.substr(0, 1) == "-") {
+	if (arg.substr(0, 9) == "--kokkos-") {
+	    continue;
+	} else if (arg.substr(0, 1) == "-") {
             // It's an optional argument or flag
             std::string name = arg;
             if (name.size() > 1 && name[1] == '-') {
@@ -252,4 +254,20 @@ std::vector<std::string> ArgumentParser::get_args(const std::string& program_nam
         args.push_back(arg.value);
     }
     return args;
+}
+
+ArgumentParser ArgumentParser::vera_gpu_moc_parser(const std::string& program_name) {
+    ArgumentParser parser(program_name, "VERA GPU Micro-App for eigenvalue calculations");
+
+    // Add required positional arguments
+    parser.add_argument("filename", "Input geometry file");
+    parser.add_argument("xs_file", "Cross-section data file");
+
+    // Add optional arguments
+    parser.add_option("threads", "Number of threads to use", "0");
+    parser.add_flag("verbose", "Enable verbose output");
+    parser.add_option("sweeper", "Sweeper type (serial, kokkos)", "serial", {"serial", "kokkos"});
+    parser.add_option("device", "Device to use (serial, openmp, cuda)", "serial", {"serial", "openmp", "cuda"});
+
+    return parser;
 }

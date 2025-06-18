@@ -16,13 +16,17 @@ public:
         bool is_flag;
         std::string default_value;
         std::string value;
-        std::vector<std::string> valid_values; // Added valid values list
-        bool has_validation = false;          // Flag to check if validation is needed
+        std::vector<std::string> valid_values;
+        bool has_validation = false;
     };
 
     /// Constructor for ArgumentParser
     ArgumentParser(const std::string& program_name, const std::string& description);
-    // Add a required positional argument
+
+    // Factory method for VERA GPU app
+    static ArgumentParser vera_gpu_moc_parser(const std::string& program_name);
+
+    // Add an argument
     void add_argument(const std::string& name, const std::string& help);
     // Add an optional argument with a default value
     void add_option(const std::string& name, const std::string& help,
