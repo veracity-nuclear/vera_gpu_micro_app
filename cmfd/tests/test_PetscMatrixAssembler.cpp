@@ -1,23 +1,13 @@
 /*
   This file tests if the PetscMatrixAssembler works as intended.
-
-  Notes: I'm not the biggest fan of the current implementation.
-  - We redundantly create the gold matrix for each AssemblerType
-  - The current test fixture "parameterizes" the assembler type, which incentives
-    the test file as the variable used for comparison, but I think it would be better
-    to refactor this at some point such that the parameter is the file name and the
-    test fixture creates all three assemblers. I think this approach is better for
-    comparing assembly times across methods, but it would be a little tricky to implement
-    as clean as I'd like.
 */
 #include "PetscKokkosTestEnvironment.hpp"
 #include "PetscMatrixAssembler.hpp"
 
-template <typename AssemblerType>
-class PetscMatrixAssemblerTest : public ::testing::Test
+class PetscMatrixAssemblerTest : public ::testing::TestWithParam<std::string>
 {
 protected:
-  // Helper functions to detect if T derives from any PetscMatrixAssembler<Space>
+  // Helper function to detect if T derives from any PetscMatrixAssembler<Space>
   template <typename T, typename = void>
   struct isPetscMatrixAssembler
   {
@@ -27,16 +17,15 @@ protected:
     static constexpr bool value = decltype(test(std::declval<T *>()))::value;
   };
 
-  static_assert(isPetscMatrixAssembler<AssemblerType>::value,
-                "AssemblerType must be a PetscMatrixAssembler or derived from one");
+  double pastKeff;
+  std::string filePath;
+  std::unique_ptr<HighFive::Group> coarseMeshData;
+  Mat goldMat;
+  Vec goldVec;
 
-  bool isSetup = false;
-  Mat goldMat, testMat;
-  AssemblerType assembler;
-
-  void setupWithFile(const std::string &filePath)
+  void SetUp() override
   {
-    isSetup = true;
+    filePath = GetParam();
 
     HighFive::File file(filePath, HighFive::File::ReadOnly);
 
@@ -44,30 +33,35 @@ protected:
     std::vector<std::vector<PetscScalar>> goldMatVec = readMatrixFromHDF5(AMatH5);
     PetscCallG(createPetscMat(goldMatVec, goldMat));
 
-    HighFive::Group cmfdGroup = file.getGroup("CMFD_CoarseMesh");
-    assembler = AssemblerType(cmfdGroup);
+    HighFive::DataSet bVecH5 = file.getDataSet("CMFD_Matrix/b");
+    std::vector<PetscScalar> bVecLocal;
+    bVecH5.read(bVecLocal);
+    PetscCallG(createPetscVec(bVecLocal, goldVec));
 
-    const std::string stageName = "Assemble:" + std::string(typeid(AssemblerType).name()) + filePath;
+    HighFive::Group _coarseMeshData = file.getGroup("CMFD_CoarseMesh");
+    coarseMeshData = std::make_unique<HighFive::Group>(_coarseMeshData);
 
-    PetscLogStage stage;
-    PetscLogStageRegister(stageName.c_str(), &stage);
-
-    PetscLogStagePush(stage);
-    testMat = assembler.assemble();
-    PetscLogStagePop();
+    HighFive::DataSet keffH5 = file.getDataSet("STATE_0001/keff");
+    keffH5.read(pastKeff);
   }
 
   void TearDown() override
   {
     PetscCallG(MatDestroy(&goldMat));
-    PetscCallG(MatDestroy(&testMat));
-    ::testing::Test::TearDown();
+    PetscCallG(VecDestroy(&goldVec));
+    ::testing::TestWithParam<std::string>::TearDown();
   }
 
-  void compareMatrices(PetscReal tolerance = 1.0e-10)
+  template<typename AssemblerType>
+  AssemblerType createAssembler() const
   {
-    ASSERT_TRUE(isSetup) << "Test environment not set up. Call setupWithFile() before running tests.";
+    static_assert(isPetscMatrixAssembler<AssemblerType>::value,
+      "AssemblerType must be a PetscMatrixAssembler or derived from one");
+    return AssemblerType(*coarseMeshData);
+  }
 
+  void compareMatrices(const Mat& testMat, PetscReal tolerance = 1.0e-10) const
+  {
     PetscInt testRows, testCols, goldRows, goldCols;
     PetscCallG(MatGetSize(testMat, &testRows, &testCols));
     PetscCallG(MatGetSize(goldMat, &goldRows, &goldCols));
@@ -92,22 +86,6 @@ protected:
 
     if (norm > tolerance)
     {
-
-      // PetscScalar diffValue, goldValue, testValue;
-      // for (PetscInt i = 0; i < nRows; ++i)
-      // {
-      //   for (PetscInt j = 0; j < nCols; ++j)
-      //   {
-      //     PetscCallG(MatGetValue(diffMat, i, j, &diffValue));
-      //     if (std::fabs(diffValue) > tolerance)
-      //     {
-      //       PetscCallG(MatGetValue(goldMat, i, j, &goldValue));
-      //       PetscCallG(MatGetValue(testMat, i, j, &testValue));
-      //       printf("Row %d, Col %d: gold %f, test %f, diff %f\n", i, j, goldValue, testValue, diffValue);
-      //     }
-      //   }
-      // }
-
       PetscCallG(PetscOptionsSetValue(NULL, "-draw_size", "1920,1080")); // Set the size of the draw window
       MatView(diffMat, PETSC_VIEWER_DRAW_WORLD);
     }
@@ -116,27 +94,92 @@ protected:
 
     PetscCallG(MatDestroy(&diffMat));
   }
+
+  template<typename AssemblerType>
+  void compareMatrices(PetscReal tolerance = 1.0e-10) const
+  {
+    AssemblerType assembler = createAssembler<AssemblerType>();
+
+    Mat testMat = assembler.assembleM();
+    compareMatrices(testMat, tolerance);
+    PetscCallG(MatDestroy(&testMat));
+  }
+
+  template<typename AssemblerType>
+  void compareVectors(PetscReal tolerance = 1.0e-7) const
+  {
+    using View2D = typename AssemblerType::View2D;
+    View2D pastFlux = HDF5ToKokkosView<View2D>(coarseMeshData->getDataSet("flux"), "flux");
+    AssemblerType assembler = createAssembler<AssemblerType>();
+    Vec testVec = assembler.assembleF(pastFlux);
+
+    // Divide the testVec by pastKeff to compare with the goldVec
+    VecScale(testVec, 1.0 / pastKeff);
+
+    PetscInt testSize, goldSize;
+    PetscCallG(VecGetSize(testVec, &testSize));
+    PetscCallG(VecGetSize(goldVec, &goldSize));
+    ASSERT_EQ(testSize, goldSize) << "Vector sizes do not match";
+
+    Vec diffVec;
+    PetscCallG(VecDuplicate(testVec, &diffVec));
+    PetscCallG(VecCopy(testVec, diffVec));
+    // VecAXPY computes Y = a*X + Y (but the function signature is (Y, a, X))
+    // diffVec = testVec - goldVec (we filled diffVec with testVec)
+    PetscCallG(VecAXPY(diffVec, -1.0, goldVec));
+
+    PetscReal norm;
+    PetscCallG(VecNorm(diffVec, NORM_2, &norm));
+    std::cout << "Vector norm difference: " << norm << std::endl;
+    if (norm > tolerance)
+    {
+      for (PetscInt i = 0; i < testSize; ++i)
+      {
+        PetscScalar diffValue, goldValue, testValue;
+        PetscCallG(VecGetValues(diffVec, 1, &i, &diffValue));
+        PetscCallG(VecGetValues(goldVec, 1, &i, &goldValue));
+        PetscCallG(VecGetValues(testVec, 1, &i, &testValue));
+        if (std::fabs(diffValue) > tolerance)
+        {
+          std::cerr << "Test/Gold(" << i << ") = " << testValue / goldValue << std::endl;
+        }
+        std::cerr << "The above values should be close to 1.0" << std::endl;
+      }
+      PetscCallG(PetscOptionsSetValue(NULL, "-draw_size", "1920,1080")); // Set the size of the draw window
+      VecView(diffVec, PETSC_VIEWER_DRAW_WORLD);
+    }
+    ASSERT_LE(norm, tolerance) << "Vectors differ by " << norm << " (tolerance: " << tolerance << ")";
+    PetscCallG(VecDestroy(&diffVec));
+
+  }
+
 };
 
-using AssemblerTypes = ::testing::Types<
-    SimpleMatrixAssembler
-    , COOMatrixAssembler
-    // , KokkosMatrixAssembler
-    >;
-
-TYPED_TEST_SUITE(PetscMatrixAssemblerTest, AssemblerTypes);
-
-TYPED_TEST(PetscMatrixAssemblerTest, AssembleAndCompare)
+TEST_P(PetscMatrixAssemblerTest, TestSimpleMatrixAssembler)
 {
-  const std::vector<std::string> testFiles = {
-      "data/pin_7g_16a_3p_serial.h5",
-      "data/7x7_7g_16a_3p_serial.h5",
-      "data/mini-core_7g_16a_3p_serial.h5"
-  };
-
-  for (const auto &file : testFiles)
-  {
-    this->setupWithFile(file);
-    this->compareMatrices();
-  }
+  compareMatrices<SimpleMatrixAssembler>();
 }
+
+TEST_P(PetscMatrixAssemblerTest, TestSimpleVectorAssembler)
+{
+  compareVectors<SimpleMatrixAssembler>();
+}
+
+TEST_P(PetscMatrixAssemblerTest, TestCOOMatrixAssembler)
+{
+  compareMatrices<COOMatrixAssembler>();
+}
+
+INSTANTIATE_TEST_SUITE_P(
+  TestAssemblyLight,
+  PetscMatrixAssemblerTest,
+  ::testing::Values(
+    "data/pin_7g_16a_3p_serial.h5",
+    "data/7x7_7g_16a_3p_serial.h5"));
+
+INSTANTIATE_TEST_SUITE_P(
+  TestAssemblyHeavy,
+  PetscMatrixAssemblerTest,
+  ::testing::Values(
+    "data/mini-core_7g_16a_3p_serial.h5"));
+

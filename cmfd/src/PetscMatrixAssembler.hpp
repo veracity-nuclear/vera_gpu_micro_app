@@ -18,14 +18,18 @@ struct PetscMatrixAssembler
                   "AssemblyMemorySpace must be a Kokkos memory space");
 
     using CMFDDataType = CMFDData<AssemblyMemorySpace>;
+    using View2D = typename CMFDDataType::View2D;
 
     CMFDDataType cmfdData;
 
     PetscMatrixAssembler() = default;
     PetscMatrixAssembler(const HighFive::Group &CMFDCoarseMesh) : cmfdData(CMFDCoarseMesh) {};
 
-    virtual Mat assemble() const = 0;
+    // Returns the "M" matrix that includes leakage/removal/scattering
+    virtual Mat assembleM() const = 0;
 
+    // Returns the "F" vector without flux
+    virtual Vec assembleF(const View2D& flux) const = 0;
 };
 
 // Uses Mat/VecSetValue(s) to naively assemble a matrix in PETSc. The focus is on accuracy over performance.
@@ -33,8 +37,9 @@ struct SimpleMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostEx
 {
     using AssemblySpace = Kokkos::DefaultHostExecutionSpace;
     using AssemblyMemorySpace = Kokkos::HostSpace;
-    using PetscMatrixAssembler<AssemblySpace>::PetscMatrixAssembler; // Inherit constructor
-    Mat assemble() const override;
+    using PetscMatrixAssembler<AssemblySpace>::PetscMatrixAssembler; // Inherit constructors
+    Mat assembleM() const override;
+    Vec assembleF(const View2D& flux) const override;
 };
 
 // Uses Mat/VecSetValueCOO to assemble a matrix in PETSc.
@@ -43,7 +48,8 @@ struct COOMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExecu
     using AssemblySpace = Kokkos::DefaultHostExecutionSpace;
     using AssemblyMemorySpace = Kokkos::HostSpace;
     using PetscMatrixAssembler<AssemblySpace>::PetscMatrixAssembler;
-    Mat assemble() const override;
+    Mat assembleM() const override;
+    Vec assembleF(const View2D& flux) const override;
 };
 
 // Uses Kokkos views to assemble a matrix in PETSc (CSR Format)
@@ -52,5 +58,6 @@ struct KokkosMatrixAssembler : public PetscMatrixAssembler<>
     using AssemblySpace = Kokkos::DefaultExecutionSpace;
     using AssemblyMemorySpace = Kokkos::DefaultExecutionSpace::memory_space;
     using PetscMatrixAssembler<>::PetscMatrixAssembler;
-    Mat assemble() const override;
+    Mat assembleM() const override;
+    Vec assembleF(const View2D& flux) const override;
 };

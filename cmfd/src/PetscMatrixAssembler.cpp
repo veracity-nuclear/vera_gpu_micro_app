@@ -5,7 +5,7 @@ inline bool isNonZero(const PetscScalar& value)
     return std::abs(value) > PETSC_MACHINE_EPSILON;
 }
 
-Mat SimpleMatrixAssembler::assemble() const
+Mat SimpleMatrixAssembler::assembleM() const
 {
     Mat mat;
     PetscFunctionBeginUser;
@@ -169,7 +169,60 @@ Mat SimpleMatrixAssembler::assemble() const
     return mat;
 }
 
-Mat COOMatrixAssembler::assemble() const
+Vec SimpleMatrixAssembler::assembleF(const View2D& flux) const
+{
+    Vec vec;
+    std::vector<PetscInt> vecIndices;
+    std::vector<PetscScalar> vecValues;
+    PetscFunctionBeginUser;
+
+    // Create the vector (not allocated yet)
+    VecCreate(PETSC_COMM_WORLD, &vec);
+
+    // Set the vector dimensions (just for compatibility checks))
+    // The PETSC_DECIDEs are for sub matrices split across multiple MPI ranks.
+    const PetscInt vecSize = cmfdData.nCells * cmfdData.nGroups;
+    VecSetSizes(vec, PETSC_DECIDE, vecSize);
+    vecIndices.reserve(vecSize);
+    vecValues.reserve(vecSize);
+
+    // Set the type of the vector (etc.) based on PETSc CLI options.
+    // Default is AIJ sparse matrix.
+    VecSetFromOptions(vec);
+
+    for (PetscInt cellIdx = 0; cellIdx < cmfdData.nCells; ++cellIdx)
+    {
+        PetscScalar localFissionRate = 0.0;
+        for (PetscInt fromGroupIdx = 0; fromGroupIdx < cmfdData.nGroups; ++fromGroupIdx)
+        {
+            localFissionRate += cmfdData.nuFissionXS(fromGroupIdx, cellIdx) * flux(fromGroupIdx, cellIdx);
+        }
+
+        const PetscScalar localFissionRateVolume = localFissionRate * cmfdData.volume(cellIdx);
+
+        for (PetscInt toGroupIdx = 0; toGroupIdx < cmfdData.nGroups; ++toGroupIdx)
+        {
+            const PetscScalar neutronSource = cmfdData.chi(toGroupIdx, cellIdx) * localFissionRateVolume;
+            if (isNonZero(neutronSource))
+            {
+                const PetscInt vecIdx = cellIdx * cmfdData.nGroups + toGroupIdx;
+                vecIndices.push_back(vecIdx);
+                vecValues.push_back(neutronSource);
+            }
+        }
+    }
+
+    // Actually put the values into the vector
+    VecSetValues(vec, vecIndices.size(), vecIndices.data(), vecValues.data(), INSERT_VALUES);
+    VecAssemblyBegin(vec);
+    VecAssemblyEnd(vec);
+
+    // You could probably use `createPetscVecKokkos` instead, but that is kind of against the
+    // spirit of this class, which is to avoid using Kokkos.
+    return vec;
+}
+
+Mat COOMatrixAssembler::assembleM() const
 {
     Mat mat;
     PetscFunctionBeginUser;
@@ -461,4 +514,11 @@ Mat COOMatrixAssembler::assemble() const
         MatSetValuesCOO(mat, values.data(), ADD_VALUES);
     }
     return mat;
+}
+
+Vec COOMatrixAssembler::assembleF(const View2D& flux) const
+{
+    Vec vec;
+    VecCreate(PETSC_COMM_WORLD, &vec);
+    return vec;
 }
