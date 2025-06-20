@@ -29,20 +29,16 @@ public:
 
     HighFive::File file(filePath, HighFive::File::ReadOnly);
 
-    HighFive::Group AMatH5 = file.getGroup("CMFD_Matrix/A");
-    std::vector<std::vector<PetscScalar>> goldMatVec = readMatrixFromHDF5(AMatH5);
-    PetscCallG(createPetscMat(goldMatVec, goldMat));
-
-    HighFive::DataSet bVecH5 = file.getDataSet("CMFD_Matrix/b");
-    std::vector<PetscScalar> bVecLocal;
-    bVecH5.read(bVecLocal);
-    PetscCallG(createPetscVec(bVecLocal, goldVec));
+    DummyMatrixAssembler dummyAssembler(file);
+    MatDuplicate(dummyAssembler.A, MAT_COPY_VALUES, &goldMat);
+    VecDuplicate(dummyAssembler.b, &goldVec);
+    VecCopy(dummyAssembler.b, goldVec);
+    pastKeff = dummyAssembler.kGold;
 
     HighFive::Group _coarseMeshData = file.getGroup("CMFD_CoarseMesh");
     coarseMeshData = std::make_unique<HighFive::Group>(_coarseMeshData);
 
-    HighFive::DataSet keffH5 = file.getDataSet("STATE_0001/keff");
-    keffH5.read(pastKeff);
+    ::testing::TestWithParam<std::string>::SetUp();
   }
 
   void TearDown() override

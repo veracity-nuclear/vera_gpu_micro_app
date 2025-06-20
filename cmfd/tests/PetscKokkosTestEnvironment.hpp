@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+#include "PetscMatrixAssembler.hpp"
+
 // PetscCall can't be used in the body of a TEST
 #define PetscCallG(call) ASSERT_EQ(call, PETSC_SUCCESS) << "PETSc call failed: " << #call;
 
@@ -60,3 +62,27 @@ PetscErrorCode createPetscVec(const std::vector<PetscScalar> &vec, Vec &vecPetsc
 
 // Create a PETSc matrix (passed by ref) from a std::vector<std::vector<PetscScalar>>
 PetscErrorCode createPetscMat(const std::vector<std::vector<PetscScalar>> &vecOfVec, Mat &matPetsc);
+
+// Struct for working with PetscMatrixAssembler without actually assembling a matrix
+// and instead using the matrices and vectors from an HDF5 file
+struct DummyMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExecutionSpace>
+{
+    using AssemblySpace = Kokkos::DefaultHostExecutionSpace;
+    using AssemblyMemorySpace = Kokkos::HostSpace;
+
+    Mat A;
+    Vec xGold, b;
+    double kGold;
+    PetscInt nRows;
+
+    DummyMatrixAssembler() = default;
+    DummyMatrixAssembler(const HighFive::File &file);
+    ~DummyMatrixAssembler()
+    {
+      MatDestroy(&A);
+      VecDestroy(&xGold);
+      VecDestroy(&b);
+    };
+    Mat assembleM() const override {return A;};
+    Vec assembleF(const FluxView &flux) const override { return b; };
+};

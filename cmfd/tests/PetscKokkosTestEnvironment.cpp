@@ -103,3 +103,26 @@ PetscErrorCode createPetscMat(const std::vector<std::vector<PetscScalar>> &vecOf
 
   PetscFunctionReturn(PETSC_SUCCESS);
 }
+
+DummyMatrixAssembler::DummyMatrixAssembler(const HighFive::File &file)
+{
+  HighFive::Group AMatH5 = file.getGroup("CMFD_Matrix/A");
+  std::vector<std::vector<PetscScalar>> AMatVecOfVec = readMatrixFromHDF5(AMatH5);
+  createPetscMat(AMatVecOfVec, A);
+
+  PetscInt nRows = AMatVecOfVec.size();
+
+  HighFive::DataSet xVecH5 = file.getDataSet("CMFD_Matrix/x");
+  std::vector<PetscScalar> xVecLocal;
+  xVecH5.read(xVecLocal);
+  createPetscVec(xVecLocal, xGold);
+
+  HighFive::DataSet bVecH5 = file.getDataSet("CMFD_Matrix/b");
+  std::vector<PetscScalar> bVecLocal;
+  bVecH5.read(bVecLocal);
+  createPetscVec(bVecLocal, b);
+
+  HighFive::DataSet kGoldH5 = file.getDataSet("STATE_0001/keff");
+  kGoldH5.read(&kGold);
+}
+
