@@ -18,7 +18,7 @@ struct PetscMatrixAssembler
                   "AssemblyMemorySpace must be a Kokkos memory space");
 
     using CMFDDataType = CMFDData<AssemblyMemorySpace>;
-    using View2D = typename CMFDDataType::View2D;
+    using FluxView = typename CMFDDataType::View1D;
 
     CMFDDataType cmfdData;
 
@@ -29,7 +29,7 @@ struct PetscMatrixAssembler
     virtual Mat assembleM() const = 0;
 
     // Returns the "F" vector without flux
-    virtual Vec assembleF(const View2D& flux) const = 0;
+    virtual Vec assembleF(const FluxView& flux) const = 0;
 };
 
 // Uses Mat/VecSetValue(s) to naively assemble a matrix in PETSc. The focus is on accuracy over performance.
@@ -39,7 +39,7 @@ struct SimpleMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostEx
     using AssemblyMemorySpace = Kokkos::HostSpace;
     using PetscMatrixAssembler<AssemblySpace>::PetscMatrixAssembler; // Inherit constructors
     Mat assembleM() const override;
-    Vec assembleF(const View2D& flux) const override;
+    Vec assembleF(const FluxView& flux) const override;
 };
 
 // Uses Mat/VecSetValueCOO to assemble a matrix in PETSc.
@@ -49,7 +49,7 @@ struct COOMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExecu
     using AssemblyMemorySpace = Kokkos::HostSpace;
     using PetscMatrixAssembler<AssemblySpace>::PetscMatrixAssembler;
     Mat assembleM() const override;
-    Vec assembleF(const View2D& flux) const override;
+    Vec assembleF(const FluxView& flux) const override;
 };
 
 // Uses Kokkos views to assemble a matrix in PETSc (CSR Format)
@@ -59,5 +59,5 @@ struct KokkosMatrixAssembler : public PetscMatrixAssembler<>
     using AssemblyMemorySpace = Kokkos::DefaultExecutionSpace::memory_space;
     using PetscMatrixAssembler<>::PetscMatrixAssembler;
     Mat assembleM() const override;
-    Vec assembleF(const View2D& flux) const override;
+    Vec assembleF(const FluxView& flux) const override;
 };

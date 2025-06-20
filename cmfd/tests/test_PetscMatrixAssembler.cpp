@@ -6,7 +6,7 @@
 
 class PetscMatrixAssemblerTest : public ::testing::TestWithParam<std::string>
 {
-protected:
+public:
   // Helper function to detect if T derives from any PetscMatrixAssembler<Space>
   template <typename T, typename = void>
   struct isPetscMatrixAssembler
@@ -108,9 +108,24 @@ protected:
   template<typename AssemblerType>
   void compareVectors(PetscReal tolerance = 1.0e-7) const
   {
-    using View2D = typename AssemblerType::View2D;
-    View2D pastFlux = HDF5ToKokkosView<View2D>(coarseMeshData->getDataSet("flux"), "flux");
+    using AssemblySpace = typename AssemblerType::AssemblySpace;
+    using View2D = typename AssemblerType::CMFDDataType::View2D;
+    using FluxView = typename AssemblerType::FluxView;
+
     AssemblerType assembler = createAssembler<AssemblerType>();
+
+    size_t nCells = assembler.cmfdData.nCells;
+    size_t nGroups = assembler.cmfdData.nGroups;
+
+    // Convert to 1D
+    View2D pastFlux2D = HDF5ToKokkosView<View2D>(coarseMeshData->getDataSet("flux"), "flux");
+    FluxView pastFlux("pastFlux1D", nCells * nGroups);
+    Kokkos::parallel_for("flux2Dto1D", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<2>>({0, 0}, {pastFlux2D.extent(0), pastFlux2D.extent(1)}),
+      KOKKOS_LAMBDA(const PetscInt groupIdx, const PetscInt cellIdx)
+      {
+        pastFlux(cellIdx * nGroups + groupIdx) = pastFlux2D(groupIdx, cellIdx);
+      });
+
     Vec testVec = assembler.assembleF(pastFlux);
 
     // Divide the testVec by pastKeff to compare with the goldVec

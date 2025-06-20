@@ -169,7 +169,7 @@ Mat SimpleMatrixAssembler::assembleM() const
     return mat;
 }
 
-Vec SimpleMatrixAssembler::assembleF(const View2D& flux) const
+Vec SimpleMatrixAssembler::assembleF(const FluxView& flux) const
 {
     Vec vec;
     std::vector<PetscInt> vecIndices;
@@ -195,7 +195,11 @@ Vec SimpleMatrixAssembler::assembleF(const View2D& flux) const
         PetscScalar localFissionRate = 0.0;
         for (PetscInt fromGroupIdx = 0; fromGroupIdx < cmfdData.nGroups; ++fromGroupIdx)
         {
-            localFissionRate += cmfdData.nuFissionXS(fromGroupIdx, cellIdx) * flux(fromGroupIdx, cellIdx);
+            // if FluxView is 2D
+            // localFissionRate += cmfdData.nuFissionXS(fromGroupIdx, cellIdx) * flux(fromGroupIdx, cellIdx);
+
+            // if FluxView is 1D
+            localFissionRate += cmfdData.nuFissionXS(fromGroupIdx, cellIdx) * flux(cellIdx * cmfdData.nGroups + fromGroupIdx);
         }
 
         const PetscScalar localFissionRateVolume = localFissionRate * cmfdData.volume(cellIdx);
@@ -516,7 +520,7 @@ Mat COOMatrixAssembler::assembleM() const
     return mat;
 }
 
-Vec COOMatrixAssembler::assembleF(const View2D& flux) const
+Vec COOMatrixAssembler::assembleF(const FluxView& flux) const
 {
     Vec vec;
     VecCreate(PETSC_COMM_WORLD, &vec);
