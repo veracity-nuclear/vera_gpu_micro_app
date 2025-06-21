@@ -110,40 +110,45 @@ public:
   void compareVectors(PetscReal tolerance = 1.0e-7) const
   {
     using AssemblySpace = typename AssemblerType::AssemblySpace;
-    using View2D = typename AssemblerType::CMFDDataType::View2D;
     using FluxView = typename AssemblerType::FluxView;
 
     AssemblerType assembler = createAssembler<AssemblerType>();
-
     size_t nCells = assembler.cmfdData.nCells;
     size_t nGroups = assembler.cmfdData.nGroups;
 
-    // Convert to 1D
-    View2D pastFlux2D = HDF5ToKokkosView<View2D>(coarseMeshData->getDataSet("flux"), "flux");
-    FluxView pastFlux("pastFlux1D", nCells * nGroups);
-    Kokkos::parallel_for("flux2Dto1D", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<2>>({0, 0}, {pastFlux2D.extent(0), pastFlux2D.extent(1)}),
-      KOKKOS_LAMBDA(const PetscInt groupIdx, const PetscInt cellIdx)
+    std::vector<PetscScalar> pastFlux1D(nCells * nGroups);
+    std::vector<std::vector<PetscScalar>> pastFlux2D;
+    Vec pastFluxVec, testFissionVec, diffVec;
+
+    // Get 1D Flux Vec to use as an input to assembler.getFissionSource()
+    HighFive::DataSet pastFluxH5 = coarseMeshData->getDataSet("flux");
+    pastFluxH5.read(pastFlux2D);
+
+    for (size_t cellIdx = 0; cellIdx < nCells; ++cellIdx)
+    {
+      for (size_t groupIdx = 0; groupIdx < nGroups; ++groupIdx)
       {
-        pastFlux(cellIdx * nGroups + groupIdx) = pastFlux2D(groupIdx, cellIdx);
-      });
+        pastFlux1D[cellIdx * nGroups + groupIdx] = pastFlux2D[groupIdx][cellIdx];
+      }
+    }
 
-    // TODO: maybe rework this to use the getFissionSource method instead
-    assembler.assembleFission(pastFlux);
-    Vec testVec = assembler.fissionVec;
+    createPetscVec(pastFlux1D, pastFluxVec);
+    VecSetType(pastFluxVec, VECKOKKOS);
 
-    // Divide the testVec by pastKeff to compare with the goldVec
-    VecScale(testVec, 1.0 / pastKeff);
+    testFissionVec = assembler.getFissionSource(pastFluxVec);
+
+    // Divide the testFissionVec by pastKeff to compare with the goldVec
+    VecScale(testFissionVec, 1.0 / pastKeff);
 
     PetscInt testSize, goldSize;
-    PetscCallG(VecGetSize(testVec, &testSize));
+    PetscCallG(VecGetSize(testFissionVec, &testSize));
     PetscCallG(VecGetSize(goldVec, &goldSize));
     ASSERT_EQ(testSize, goldSize) << "Vector sizes do not match";
 
-    Vec diffVec;
-    PetscCallG(VecDuplicate(testVec, &diffVec));
-    PetscCallG(VecCopy(testVec, diffVec));
+    PetscCallG(VecDuplicate(testFissionVec, &diffVec));
+    PetscCallG(VecCopy(testFissionVec, diffVec));
     // VecAXPY computes Y = a*X + Y (but the function signature is (Y, a, X))
-    // diffVec = testVec - goldVec (we filled diffVec with testVec)
+    // diffVec = testFissionVec - goldVec (we filled diffVec with testFissionVec)
     PetscCallG(VecAXPY(diffVec, -1.0, goldVec));
 
     PetscReal norm;
@@ -156,7 +161,7 @@ public:
         PetscScalar diffValue, goldValue, testValue;
         PetscCallG(VecGetValues(diffVec, 1, &i, &diffValue));
         PetscCallG(VecGetValues(goldVec, 1, &i, &goldValue));
-        PetscCallG(VecGetValues(testVec, 1, &i, &testValue));
+        PetscCallG(VecGetValues(testFissionVec, 1, &i, &testValue));
         if (std::fabs(diffValue) > tolerance)
         {
           std::cerr << "Test/Gold(" << i << ") = " << testValue / goldValue << std::endl;
