@@ -72,6 +72,7 @@ struct DummyMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExe
 
     Vec fluxGold;
     double kGold;
+    size_t nGroups, nCells;
 
     DummyMatrixAssembler() = default;
     DummyMatrixAssembler(const HighFive::File &file);

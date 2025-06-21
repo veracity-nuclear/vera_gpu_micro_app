@@ -79,7 +79,9 @@ struct PetscMatrixAssembler : public MatrixAssemblerInterface
     }
 
     // These should be private, but that can't be because you
-    // can't have host lambda functions in a private method
+    // can't have host lambda functions in a private method.
+    // These are protected when a pointer to the interface base
+    // class is used.
     virtual void _assembleM() = 0;
     virtual void _assembleFission(const FluxView& flux) = 0;
 };

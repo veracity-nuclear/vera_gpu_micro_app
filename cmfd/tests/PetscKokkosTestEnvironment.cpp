@@ -126,5 +126,15 @@ DummyMatrixAssembler::DummyMatrixAssembler(const HighFive::File &file)
 
   HighFive::DataSet kGoldH5 = file.getDataSet("STATE_0001/keff");
   kGoldH5.read(&kGold);
+
+  size_t firstCell, lastCell;
+  HighFive::DataSet firstCellH5 = file.getDataSet("CMFD_CoarseMesh/first cell");
+  firstCellH5.read(&firstCell);
+  HighFive::DataSet lastCellH5 = file.getDataSet("CMFD_CoarseMesh/last cell");
+  lastCellH5.read(&lastCell);
+  nCells = lastCell - firstCell + 1;
+
+  HighFive::DataSet nGroupsH5 = file.getDataSet("CMFD_CoarseMesh/energy groups");
+  nGroupsH5.read(&nGroups);
 }
 

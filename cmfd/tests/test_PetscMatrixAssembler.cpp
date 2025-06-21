@@ -17,8 +17,11 @@ public:
     static constexpr bool value = decltype(test(std::declval<T *>()))::value;
   };
 
+  using AssemblerPtr = std::unique_ptr<MatrixAssemblerInterface>;
+
   std::string filePath;
   std::unique_ptr<HighFive::Group> coarseMeshData;
+  size_t nCells, nGroups;
   double pastKeff;
   Mat goldMat;
   Vec goldVec;
@@ -39,6 +42,8 @@ public:
     VecCopy(dummyAssembler.fissionVec, goldVec);
 
     pastKeff = dummyAssembler.kGold;
+    nCells = dummyAssembler.nCells;
+    nGroups = dummyAssembler.nGroups;
 
     HighFive::Group _coarseMeshData = file.getGroup("CMFD_CoarseMesh");
     coarseMeshData = std::make_unique<HighFive::Group>(_coarseMeshData);
@@ -53,16 +58,11 @@ public:
     ::testing::TestWithParam<std::string>::TearDown();
   }
 
-  template<typename AssemblerType>
-  AssemblerType createAssembler() const
-  {
-    static_assert(isPetscMatrixAssembler<AssemblerType>::value,
-      "AssemblerType must be a PetscMatrixAssembler or derived from one");
-    return AssemblerType(*coarseMeshData);
-  }
 
-  void compareMatrices(const Mat& testMat, PetscReal tolerance = 1.0e-10) const
+  void compareMatrices(const AssemblerPtr& assemblerPtr, PetscReal tolerance = 1.0e-10) const
   {
+    Mat testMat = assemblerPtr->getM();
+
     PetscInt testRows, testCols, goldRows, goldCols;
     PetscCallG(MatGetSize(testMat, &testRows, &testCols));
     PetscCallG(MatGetSize(goldMat, &goldRows, &goldCols));
@@ -96,26 +96,8 @@ public:
     PetscCallG(MatDestroy(&diffMat));
   }
 
-  template<typename AssemblerType>
-  void compareMatrices(PetscReal tolerance = 1.0e-10) const
+  void compareVectors(AssemblerPtr& assemblerPtr, PetscReal tolerance = 1.0e-7) const
   {
-    AssemblerType assembler = createAssembler<AssemblerType>();
-
-    Mat testMat = assembler.getM();
-    compareMatrices(testMat, tolerance);
-    PetscCallG(MatDestroy(&testMat));
-  }
-
-  template<typename AssemblerType>
-  void compareVectors(PetscReal tolerance = 1.0e-7) const
-  {
-    using AssemblySpace = typename AssemblerType::AssemblySpace;
-    using FluxView = typename AssemblerType::FluxView;
-
-    AssemblerType assembler = createAssembler<AssemblerType>();
-    size_t nCells = assembler.cmfdData.nCells;
-    size_t nGroups = assembler.cmfdData.nGroups;
-
     std::vector<PetscScalar> pastFlux1D(nCells * nGroups);
     std::vector<std::vector<PetscScalar>> pastFlux2D;
     Vec pastFluxVec, testFissionVec, diffVec;
@@ -135,7 +117,7 @@ public:
     createPetscVec(pastFlux1D, pastFluxVec);
     VecSetType(pastFluxVec, VECKOKKOS);
 
-    testFissionVec = assembler.getFissionSource(pastFluxVec);
+    testFissionVec = assemblerPtr->getFissionSource(pastFluxVec);
 
     // Divide the testFissionVec by pastKeff to compare with the goldVec
     VecScale(testFissionVec, 1.0 / pastKeff);
@@ -176,10 +158,36 @@ public:
 
   }
 
+  // I could have templated the above methods instead, but using a unique pointer
+  // to the interface is how these classes are designed to work.
+  // The interface only exposes the methods I want, so it acts almost like protected inheritance.
+  template<typename AssemblerType>
+  AssemblerPtr createAssemblerPtr() const
+  {
+    static_assert(isPetscMatrixAssembler<AssemblerType>::value,
+      "AssemblerType must be a PetscMatrixAssembler or derived from one");
+    return std::make_unique<AssemblerType>(*coarseMeshData);
+  }
+
+  template<typename AssemblerType>
+  void compareMatrices(PetscReal tolerance = 1.0e-10) const
+  {
+    AssemblerPtr assembler = createAssemblerPtr<AssemblerType>();
+    compareMatrices(assembler, tolerance);
+  }
+
+  template<typename AssemblerType>
+  void compareVectors(PetscReal tolerance = 1.0e-7) const
+  {
+    AssemblerPtr assembler = createAssemblerPtr<AssemblerType>();
+    compareVectors(assembler, tolerance);
+  }
+
 };
 
 TEST_P(PetscMatrixAssemblerTest, TestSimpleMatrixAssembler)
 {
+
   compareMatrices<SimpleMatrixAssembler>();
 }
 
