@@ -354,6 +354,7 @@ TEST(s02_petsc, solve)
 
   PetscCallG(createPetscMat(AMatLocal, AMatPetsc));
   PetscCallG(createPetscVec(bVecLocal, bVecPetsc));
+  PetscCallG(VecSetType(bVecPetsc, VECKOKKOS));
 
   /*
     This doesn't actually duplicate the values from bVecPetsc,

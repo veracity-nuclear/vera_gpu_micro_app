@@ -17,9 +17,9 @@ public:
     static constexpr bool value = decltype(test(std::declval<T *>()))::value;
   };
 
-  double pastKeff;
   std::string filePath;
   std::unique_ptr<HighFive::Group> coarseMeshData;
+  double pastKeff;
   Mat goldMat;
   Vec goldVec;
 
@@ -30,9 +30,14 @@ public:
     HighFive::File file(filePath, HighFive::File::ReadOnly);
 
     DummyMatrixAssembler dummyAssembler(file);
-    MatDuplicate(dummyAssembler.A, MAT_COPY_VALUES, &goldMat);
-    VecDuplicate(dummyAssembler.b, &goldVec);
-    VecCopy(dummyAssembler.b, goldVec);
+
+    // I'm not super happy about copying values but this is for performant code.
+    MatDuplicate(dummyAssembler.MMat, MAT_COPY_VALUES, &goldMat);
+
+    // You can't duplicate (the type) of a vector and copy (the values) at the same time...
+    VecDuplicate(dummyAssembler.fissionVec, &goldVec);
+    VecCopy(dummyAssembler.fissionVec, goldVec);
+
     pastKeff = dummyAssembler.kGold;
 
     HighFive::Group _coarseMeshData = file.getGroup("CMFD_CoarseMesh");
@@ -96,7 +101,7 @@ public:
   {
     AssemblerType assembler = createAssembler<AssemblerType>();
 
-    Mat testMat = assembler.assembleM();
+    Mat testMat = assembler.getM();
     compareMatrices(testMat, tolerance);
     PetscCallG(MatDestroy(&testMat));
   }
@@ -122,7 +127,9 @@ public:
         pastFlux(cellIdx * nGroups + groupIdx) = pastFlux2D(groupIdx, cellIdx);
       });
 
-    Vec testVec = assembler.assembleF(pastFlux);
+    // TODO: maybe rework this to use the getFissionSource method instead
+    assembler.assembleFission(pastFlux);
+    Vec testVec = assembler.fissionVec;
 
     // Divide the testVec by pastKeff to compare with the goldVec
     VecScale(testVec, 1.0 / pastKeff);

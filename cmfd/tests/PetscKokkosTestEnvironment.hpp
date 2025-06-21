@@ -70,19 +70,23 @@ struct DummyMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExe
     using AssemblySpace = Kokkos::DefaultHostExecutionSpace;
     using AssemblyMemorySpace = Kokkos::HostSpace;
 
-    Mat A;
-    Vec xGold, b;
+    Vec fluxGold;
     double kGold;
-    PetscInt nRows;
 
     DummyMatrixAssembler() = default;
     DummyMatrixAssembler(const HighFive::File &file);
     ~DummyMatrixAssembler()
     {
-      MatDestroy(&A);
-      VecDestroy(&xGold);
-      VecDestroy(&b);
+      VecDestroy(&fluxGold);
+      PetscMatrixAssembler<AssemblySpace>::~PetscMatrixAssembler();
     };
-    Mat assembleM() const override {return A;};
-    Vec assembleF(const FluxView &flux) const override { return b; };
+
+    void assembleM() override
+    {
+      // No-op, MMat is already initialized in the constructor
+    }
+    void assembleFission(const FluxView &flux) override
+    {
+      // No-op, we don't need to assemble fission in this dummy assembler
+    }
 };
