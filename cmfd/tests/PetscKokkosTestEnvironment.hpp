@@ -81,11 +81,11 @@ struct DummyMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExe
       PetscMatrixAssembler<AssemblySpace>::~PetscMatrixAssembler();
     };
 
-    void assembleM() override
+    void _assembleM() override
     {
       // No-op, MMat is already initialized in the constructor
     }
-    void assembleFission(const FluxView &flux) override
+    void _assembleFission(const FluxView &flux) override
     {
       // No-op, we don't need to assemble fission in this dummy assembler
     }

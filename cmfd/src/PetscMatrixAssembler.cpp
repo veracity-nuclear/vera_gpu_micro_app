@@ -5,7 +5,7 @@ inline bool isNonZero(const PetscScalar& value)
     return std::abs(value) > PETSC_MACHINE_EPSILON;
 }
 
-void SimpleMatrixAssembler::assembleM()
+void SimpleMatrixAssembler::_assembleM()
 {
     PetscFunctionBeginUser;
 
@@ -167,7 +167,7 @@ void SimpleMatrixAssembler::assembleM()
     MatAssemblyEnd(MMat, MAT_FINAL_ASSEMBLY);
 }
 
-void SimpleMatrixAssembler::assembleFission(const FluxView& flux)
+void SimpleMatrixAssembler::_assembleFission(const FluxView& flux)
 {
     std::vector<PetscInt> vecIndices;
     std::vector<PetscScalar> vecValues;
@@ -208,7 +208,7 @@ void SimpleMatrixAssembler::assembleFission(const FluxView& flux)
     VecAssemblyEnd(fissionVec);
 }
 
-void COOMatrixAssembler::assembleM()
+void COOMatrixAssembler::_assembleM()
 {
     /*
     The shape of a two cell three group matrix is
@@ -500,6 +500,6 @@ void COOMatrixAssembler::assembleM()
     }
 }
 
-void COOMatrixAssembler::assembleFission(const FluxView& flux)
+void COOMatrixAssembler::_assembleFission(const FluxView& flux)
 {
 }

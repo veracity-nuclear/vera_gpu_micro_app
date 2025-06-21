@@ -57,7 +57,7 @@ struct PetscMatrixAssembler : public MatrixAssemblerInterface
         nRows = cmfdData.nCells * cmfdData.nGroups;
         VecSetSizes(fissionVec, PETSC_DECIDE, nRows);
 
-        // We defer Mat creation to assembleM() which is called by the derived class constructor
+        // We defer Mat creation to _assembleM() which is called by the derived class constructor
     }
 
     ~PetscMatrixAssembler()
@@ -65,10 +65,6 @@ struct PetscMatrixAssembler : public MatrixAssemblerInterface
         VecDestroy(&fissionVec);
         MatDestroy(&MMat);
     }
-
-    virtual void assembleM() = 0;
-
-    virtual void assembleFission(const FluxView& flux) = 0;
 
     Mat getM() const final override
     {
@@ -78,9 +74,14 @@ struct PetscMatrixAssembler : public MatrixAssemblerInterface
     Vec getFissionSource(const Vec& fluxPetsc) final override
     {
         VecGetKokkosView(fluxPetsc, &flux);
-        assembleFission(flux);
+        _assembleFission(flux);
         return fissionVec;
     }
+
+    // These should be private, but that can't be because you
+    // can't have host lambda functions in a private method
+    virtual void _assembleM() = 0;
+    virtual void _assembleFission(const FluxView& flux) = 0;
 };
 
 // Uses Mat/VecSetValue(s) to naively assemble a matrix in PETSc. The focus is on accuracy over performance.
@@ -92,11 +93,11 @@ struct SimpleMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostEx
     SimpleMatrixAssembler() = default;
     SimpleMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
         : PetscMatrixAssembler<AssemblySpace>(CMFDCoarseMesh) {
-            assembleM();
+            _assembleM();
         }
 
-    void assembleM() override;
-    void assembleFission(const FluxView& flux) override;
+    void _assembleM() override;
+    void _assembleFission(const FluxView& flux) override;
 };
 
 // Uses Mat/VecSetValueCOO to assemble a matrix in PETSc.
@@ -108,11 +109,11 @@ struct COOMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExecu
     COOMatrixAssembler() = default;
     COOMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
         : PetscMatrixAssembler<AssemblySpace>(CMFDCoarseMesh) {
-            assembleM();
+            _assembleM();
         }
 
-    void assembleM() override;
-    void assembleFission(const FluxView& flux) override;
+    void _assembleM() override;
+    void _assembleFission(const FluxView& flux) override;
 };
 
 // Uses Kokkos views to assemble a matrix in PETSc (CSR Format)
@@ -124,9 +125,9 @@ struct KokkosMatrixAssembler : public PetscMatrixAssembler<>
     KokkosMatrixAssembler() = default;
     KokkosMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
         : PetscMatrixAssembler<AssemblySpace>(CMFDCoarseMesh) {
-            assembleM();
+            _assembleM();
         }
 
-    void assembleM() override;
-    void assembleFission(const FluxView& flux) override;
+    void _assembleM() override;
+    void _assembleFission(const FluxView& flux) override;
 };
