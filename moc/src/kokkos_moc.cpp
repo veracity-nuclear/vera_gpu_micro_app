@@ -62,8 +62,8 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
     _get_xstr(starting_xsr);
 
     // Allocate scalar flux and source array
-    _h_scalar_flux = Kokkos::View<double**, Kokkos::HostSpace>("scalar_flux", _nfsr, _ng);
-    _h_source = Kokkos::View<double**, Kokkos::HostSpace>("source", _nfsr, _ng);
+    _h_scalar_flux = Kokkos::View<double**, layout, Kokkos::HostSpace>("scalar_flux", _nfsr, _ng);
+    _h_source = Kokkos::View<double**, layout, Kokkos::HostSpace>("source", _nfsr, _ng);
     Kokkos::deep_copy(_h_scalar_flux, 1.0);
     Kokkos::deep_copy(_h_source, 1.0);
 
@@ -118,8 +118,8 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
 
     // Now allocate the angular flux arrays, remap the long ray indexes, and initialize the angular flux arrays
     total_bc_points = 2 * total_bc_points + 2;  // Both directions on each ray, plus two for the vacuum rays
-    _h_angflux = Kokkos::View<double***, Kokkos::HostSpace>("angflux", total_bc_points, _npol, _ng);
-    _h_old_angflux = Kokkos::View<double***, Kokkos::HostSpace>("old_angflux", total_bc_points, _npol, _ng);
+    _h_angflux = Kokkos::View<double***, layout, Kokkos::HostSpace>("angflux", total_bc_points, _npol, _ng);
+    _h_old_angflux = Kokkos::View<double***, layout, Kokkos::HostSpace>("old_angflux", total_bc_points, _npol, _ng);
     for (size_t i = 0; i < _n_rays; i++) {
         int irefl = _h_ray_angle_index(i) % 2 == 0 ? _h_ray_angle_index(i) + 1 : _h_ray_angle_index(i) - 1;
         if (_h_ray_bc_index_frwd_start(i) == -1) {
@@ -184,9 +184,28 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
     if (_device == "cuda") {
         _d_fsr_vol = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_fsr_vol);
         _d_rsinpolang = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_rsinpolang);
+	_d_xstr = Kokkos::create_mirror(Kokkos::DefaultExecutionSpace(), _h_xstr);
         Kokkos::deep_copy(_d_xstr, _h_xstr);
+	_d_scalar_flux = Kokkos::create_mirror(Kokkos::DefaultExecutionSpace(), _h_scalar_flux);
         Kokkos::deep_copy(_d_scalar_flux, _h_scalar_flux);
+	_d_source = Kokkos::create_mirror(Kokkos::DefaultExecutionSpace(), _h_source);
         Kokkos::deep_copy(_d_source, _h_source);
+	_d_ray_nsegs = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_ray_nsegs);
+	_d_ray_bc_face_start = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_ray_bc_face_start);
+	_d_ray_bc_face_end = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_ray_bc_face_end);
+	_d_ray_bc_index_frwd_start = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_ray_bc_index_frwd_start);
+	_d_ray_bc_index_frwd_end = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_ray_bc_index_frwd_end);
+	_d_ray_bc_index_bkwd_start = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_ray_bc_index_bkwd_start);
+	_d_ray_bc_index_bkwd_end = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_ray_bc_index_bkwd_end);
+	_d_ray_angle_index = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_ray_angle_index);
+	_d_ray_fsrs = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_ray_fsrs);
+	_d_ray_segments = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_ray_segments);
+	_d_segflux = Kokkos::create_mirror_view(Kokkos::DefaultExecutionSpace(), _h_segflux);
+	Kokkos::deep_copy(_d_segflux, _h_segflux);
+	_d_angflux = Kokkos::create_mirror(Kokkos::DefaultExecutionSpace(), _h_angflux);
+	Kokkos::deep_copy(_d_angflux, _h_angflux);
+	_d_old_angflux = Kokkos::create_mirror(Kokkos::DefaultExecutionSpace(), _h_old_angflux);
+	Kokkos::deep_copy(_d_old_angflux, _h_old_angflux);
     }
 }
 
@@ -269,7 +288,7 @@ void KokkosMOC::_read_rays() {
 void KokkosMOC::_get_xstr(
     const int starting_xsr
 ) {
-    _h_xstr = Kokkos::View<double**, Kokkos::HostSpace>("xstr", _nfsr, _library.get_num_groups());
+    _h_xstr = Kokkos::View<double**, layout, Kokkos::HostSpace>("xstr", _nfsr, _library.get_num_groups());
     for (auto i = 0; i < _fsr_mat_id.size(); i++) {
         auto total_xs = _library.total(_fsr_mat_id[i]);
         for (int g = 0; g < _library.get_num_groups(); g++) {
@@ -310,6 +329,92 @@ void KokkosMOC::update_source(const std::vector<double>& fissrc) {
     if (_device == "cuda") {
         Kokkos::deep_copy(_d_source, _h_source);
     }
+}
+
+void KokkosMOC::_impl_sweep_cuda() {
+    using MemSpace = Kokkos::Cuda;
+    using ExecSpace = MemSpace::execution_space;
+
+    auto& scalar_flux = _h_scalar_flux;
+    auto& ray_nsegs = _h_ray_nsegs;
+    auto& ray_fsrs = _h_ray_fsrs;
+    auto& ray_segments = _h_ray_segments;
+    auto& ray_bc_index_frwd_start = _h_ray_bc_index_frwd_start;
+    auto& ray_bc_index_frwd_end = _h_ray_bc_index_frwd_end;
+    auto& ray_bc_index_bkwd_start = _h_ray_bc_index_bkwd_start;
+    auto& ray_bc_index_bkwd_end = _h_ray_bc_index_bkwd_end;
+    auto& ray_angle_index = _h_ray_angle_index;
+    auto& n_rays = _n_rays;
+    auto& npol = _npol;
+    auto& nfsr = _nfsr;
+    auto& ng = _ng;
+    auto& max_segments = _max_segments;
+    auto& xstr = _h_xstr;
+    auto& source = _h_source;
+    auto& fsr_vol = _h_fsr_vol;
+    auto& dz = _plane_height;
+    auto& rsinpolang = _h_rsinpolang;
+    auto& angle_weights = _h_angle_weights;
+    auto& angflux = _h_angflux;
+    auto& old_angflux = _h_old_angflux;
+
+    // Initialize the scalar flux to 0.0
+    Kokkos::deep_copy(scalar_flux, 0.0);
+
+    // Prepare scratch space
+    typedef Kokkos::TeamPolicy<ExecSpace> team_policy;
+    typedef typename team_policy::member_type team_member;
+    team_policy policy(static_cast<long int>(n_rays) * npol * ng, Kokkos::AUTO, Kokkos::AUTO);
+    const size_t bytes_needed_per_team =
+        Kokkos::View<double*, typename team_member::scratch_memory_space>::shmem_size(max_segments + 1) // exparg
+        + 2 * Kokkos::View<double*, typename team_member::scratch_memory_space>::shmem_size(max_segments + 1); // segflux
+    policy.set_scratch_size(0, Kokkos::PerTeam(bytes_needed_per_team));
+
+    // Sweep all the long rays
+    Kokkos::parallel_for("Cuda Sweep Rays", policy, KOKKOS_LAMBDA(const team_member& teamMember) {
+        int iray = teamMember.league_rank() / (npol * ng);
+        int ipol = (teamMember.league_rank() % (npol * ng)) / ng;
+        int ig = teamMember.league_rank() % ng;
+        int nsegs = ray_nsegs(iray + 1) - ray_nsegs(iray);
+        Kokkos::View<double*, typename team_member::scratch_memory_space> exparg(teamMember.team_scratch(0), nsegs);
+        Kokkos::View<double**, typename team_member::scratch_memory_space> segflux(teamMember.team_scratch(0), 2, nsegs + 1);
+
+        // Allocate and initialize exparg with dimensions [ray._nsegs][ng]
+        for (int j = ray_nsegs(iray); j < ray_nsegs(iray + 1); j++) {
+            exparg(j - ray_nsegs(iray)) = 1.0 - exp(-xstr(ray_fsrs(j), ig) * ray_segments(j) * rsinpolang(ipol));
+        }
+
+        int ireg1, ireg2;
+        int iseg2 = nsegs;
+        double phid;
+
+        segflux(RAY_START, 0) = old_angflux(ray_bc_index_frwd_start(iray), ipol, ig);
+        segflux(RAY_END, nsegs) = old_angflux(ray_bc_index_bkwd_start(iray), ipol, ig);
+        for (int iseg1 = 0; iseg1 < nsegs; iseg1++) {
+            // Forward segment sweep
+            ireg1 = ray_fsrs(ray_nsegs(iray) + iseg1);
+            phid = (segflux(RAY_START, iseg1) - source(ireg1, ig)) * exparg(iseg1);
+            segflux(RAY_START, iseg1 + 1) = segflux(RAY_START, iseg1) - phid;
+	    Kokkos::atomic_add(&scalar_flux(ireg1, ig), phid * angle_weights(ray_angle_index(iray), ipol));
+
+            // Backward segment sweep
+            ireg2 = ray_fsrs(ray_nsegs(iray) + iseg2 - 1);
+            phid = (segflux(RAY_END, iseg2) - source(ireg2, ig)) * exparg(iseg2 - 1);
+            segflux(RAY_END, iseg2 - 1) = segflux(RAY_END, iseg2) - phid;
+	    Kokkos::atomic_add(&scalar_flux(ireg2, ig), phid * angle_weights(ray_angle_index(iray), ipol));
+            iseg2--;
+        }
+        angflux(ray_bc_index_frwd_end(iray), ipol, ig) = segflux(RAY_START, nsegs);
+        angflux(ray_bc_index_bkwd_end(iray), ipol, ig) = segflux(RAY_END, 0);
+    });
+
+    // Scale the flux with source, volume, and transport XS
+    const double fourpi = 4.0 * M_PI;
+    Kokkos::parallel_for("ScaleScalarFlux",
+        Kokkos::MDRangePolicy<ExecSpace, Kokkos::Rank<2>>({0, 0}, {nfsr, ng}),
+        KOKKOS_LAMBDA(int i, int g) {
+            scalar_flux(i, g) = scalar_flux(i, g) * dz / (xstr(i, g) * fsr_vol(i)) + source(i, g) * fourpi;
+    });
 }
 
 void KokkosMOC::_impl_sweep_openmp() {
@@ -356,7 +461,7 @@ void KokkosMOC::_impl_sweep_openmp() {
     policy.set_scratch_size(0, Kokkos::PerTeam(bytes_needed_per_team));
 
     // Sweep all the long rays
-    Kokkos::parallel_for("Sweep Rays", policy, KOKKOS_LAMBDA(const team_member& teamMember) {
+    Kokkos::parallel_for("OpenMP Sweep Rays", policy, KOKKOS_LAMBDA(const team_member& teamMember) {
         int thread = omp_get_thread_num(); // Not portable, but works if we're using OpenMP
         int iray = teamMember.league_rank() / (npol * ng);
         int ipol = (teamMember.league_rank() % (npol * ng)) / ng;
@@ -415,29 +520,29 @@ void KokkosMOC::_impl_sweep_serial() {
     using MemSpace = Kokkos::Serial;
     using ExecSpace = MemSpace::execution_space;
 
-    auto& scalar_flux = _h_scalar_flux;
-    auto& ray_nsegs = _h_ray_nsegs;
-    auto& ray_fsrs = _h_ray_fsrs;
-    auto& ray_segments = _h_ray_segments;
-    auto& ray_bc_index_frwd_start = _h_ray_bc_index_frwd_start;
-    auto& ray_bc_index_frwd_end = _h_ray_bc_index_frwd_end;
-    auto& ray_bc_index_bkwd_start = _h_ray_bc_index_bkwd_start;
-    auto& ray_bc_index_bkwd_end = _h_ray_bc_index_bkwd_end;
-    auto& ray_angle_index = _h_ray_angle_index;
+    auto& scalar_flux = _d_scalar_flux;
+    auto& ray_nsegs = _d_ray_nsegs;
+    auto& ray_fsrs = _d_ray_fsrs;
+    auto& ray_segments = _d_ray_segments;
+    auto& ray_bc_index_frwd_start = _d_ray_bc_index_frwd_start;
+    auto& ray_bc_index_frwd_end = _d_ray_bc_index_frwd_end;
+    auto& ray_bc_index_bkwd_start = _d_ray_bc_index_bkwd_start;
+    auto& ray_bc_index_bkwd_end = _d_ray_bc_index_bkwd_end;
+    auto& ray_angle_index = _d_ray_angle_index;
     auto& n_rays = _n_rays;
     auto& npol = _npol;
     auto& nfsr = _nfsr;
     auto& ng = _ng;
-    auto& xstr = _h_xstr;
-    auto& source = _h_source;
-    auto& fsr_vol = _h_fsr_vol;
+    auto& xstr = _d_xstr;
+    auto& source = _d_source;
+    auto& fsr_vol = _d_fsr_vol;
     auto& dz = _plane_height;
-    auto& exparg = _h_exparg;
-    auto& segflux = _h_segflux;
-    auto& rsinpolang = _h_rsinpolang;
-    auto& angle_weights = _h_angle_weights;
-    auto& angflux = _h_angflux;
-    auto& old_angflux = _h_old_angflux;
+    auto& exparg = _d_exparg;
+    auto& segflux = _d_segflux;
+    auto& rsinpolang = _d_rsinpolang;
+    auto& angle_weights = _d_angle_weights;
+    auto& angflux = _d_angflux;
+    auto& old_angflux = _d_old_angflux;
 
     // Initialize the scalar flux to 0.0
     Kokkos::parallel_for("InitializeScalarFlux",
@@ -447,7 +552,7 @@ void KokkosMOC::_impl_sweep_serial() {
     });
 
     // Sweep all the long rays
-    Kokkos::parallel_for("SweepRays",
+    Kokkos::parallel_for("Serial Sweep Rays",
         Kokkos::MDRangePolicy<ExecSpace, Kokkos::Rank<3>>({0, 0, 0}, {static_cast<long int>(n_rays), npol, ng}),
         KOKKOS_LAMBDA(int iray, int ipol, int ig) {
 
@@ -505,6 +610,9 @@ void KokkosMOC::sweep() {
     } else if (_device == "serial") {
         // Run the MOC sweep using serial execution
         _impl_sweep_serial();
+    } else if (_device == "gpu") {
+        // Run the MOC sweeper using GPU
+        _impl_sweep_cuda();
     }
 
     Kokkos::deep_copy(_h_old_angflux, _h_angflux);

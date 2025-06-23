@@ -8,6 +8,7 @@
 #include "argument_parser.hpp"
 
 class KokkosMOC : public BaseMOC {
+    using layout = Kokkos::LayoutRight;
     public:
         // Constructor
         KokkosMOC(const ArgumentParser& args);
@@ -16,6 +17,7 @@ class KokkosMOC : public BaseMOC {
         void sweep() override;
         void _impl_sweep_openmp();  // Implementation of the MOC sweep using OpenMP
         void _impl_sweep_serial();  // Implementation of the MOC sweep using serial
+        void _impl_sweep_cuda();  // implementation of the MOC sweep using Cuda
 
         // Get the FSR volumes
         std::vector<double> fsr_vol() const override {
@@ -61,43 +63,59 @@ class KokkosMOC : public BaseMOC {
 
 	// Geometry host data
         double _plane_height;  // Height of the plane
-	Kokkos::View<double*, Kokkos::HostSpace> _h_fsr_vol;  // Host copy of FSR volumes
+        Kokkos::View<double*, layout, Kokkos::HostSpace> _h_fsr_vol;  // Host copy of FSR volumes
         std::vector<int> _fsr_mat_id;  // FSR material IDs
-	Kokkos::View<double**, Kokkos::HostSpace> _h_xstr;  // Host copy of cross-sections for each FSR
+        Kokkos::View<double**, layout, Kokkos::HostSpace> _h_xstr;  // Host copy of cross-sections for each FSR
         std::vector<double> _ray_spacing;
-	Kokkos::View<double**, Kokkos::HostSpace> _h_angle_weights;  // Weights for each angle
-        Kokkos::View<double*, Kokkos::HostSpace> _h_rsinpolang;  // Host copy of precomputed sin(polar angle) values
-        Kokkos::View<double**, Kokkos::HostSpace> _h_exparg;  // Exponential arguments for each segment and group
+        Kokkos::View<double**, layout, Kokkos::HostSpace> _h_angle_weights;  // Weights for each angle
+        Kokkos::View<double*, layout, Kokkos::HostSpace> _h_rsinpolang;  // Host copy of precomputed sin(polar angle) values
+        Kokkos::View<double**, layout, Kokkos::HostSpace> _h_exparg;  // Exponential arguments for each segment and group
 
 	// Geometry device data
-        Kokkos::View<double*> _d_fsr_vol;  // FSR volumes
-        Kokkos::View<double**> _d_xstr;  // Cross-sections for each FSR
-        Kokkos::View<double*> _d_rsinpolang;  // Precomputed sin(polar angle) values
+        Kokkos::View<double*, Kokkos::DefaultExecutionSpace> _d_fsr_vol;  // FSR volumes
+        Kokkos::View<double**, layout, Kokkos::DefaultExecutionSpace> _d_xstr;  // Cross-sections for each FSR
+        Kokkos::View<double**, layout, Kokkos::DefaultExecutionSpace> _d_angle_weights;  // Weights for each angle
+        Kokkos::View<double*, Kokkos::DefaultExecutionSpace> _d_rsinpolang;  // Precomputed sin(polar angle) values
+        Kokkos::View<double**, layout, Kokkos::DefaultExecutionSpace> _d_exparg;  // Exponential arguments for each segment and group
 
         // Ray host data
         int _n_rays;  // Number of rays
         int _max_segments;  // Maximum number of segments in any ray
-        Kokkos::View<int*, Kokkos::HostSpace> _h_ray_nsegs;
-        Kokkos::View<int*, Kokkos::HostSpace> _h_ray_bc_face_start;
-        Kokkos::View<int*, Kokkos::HostSpace> _h_ray_bc_face_end;
-        Kokkos::View<int*, Kokkos::HostSpace> _h_ray_bc_index_frwd_start;
-        Kokkos::View<int*, Kokkos::HostSpace> _h_ray_bc_index_frwd_end;
-        Kokkos::View<int*, Kokkos::HostSpace> _h_ray_bc_index_bkwd_start;
-        Kokkos::View<int*, Kokkos::HostSpace> _h_ray_bc_index_bkwd_end;
-        Kokkos::View<int*, Kokkos::HostSpace> _h_ray_angle_index;  // Angle index for each ray
-        Kokkos::View<int*, Kokkos::HostSpace> _h_ray_fsrs;
-        Kokkos::View<double*, Kokkos::HostSpace> _h_ray_segments;
+        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_nsegs;
+        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_bc_face_start;
+        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_bc_face_end;
+        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_bc_index_frwd_start;
+        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_bc_index_frwd_end;
+        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_bc_index_bkwd_start;
+        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_bc_index_bkwd_end;
+        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_angle_index;  // Angle index for each ray
+        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_fsrs;
+        Kokkos::View<double*, layout, Kokkos::HostSpace> _h_ray_segments;
 
         // Ray device data
+        Kokkos::View<int*, Kokkos::DefaultExecutionSpace> _d_ray_nsegs;
+        Kokkos::View<int*, Kokkos::DefaultExecutionSpace> _d_ray_bc_face_start;
+        Kokkos::View<int*, Kokkos::DefaultExecutionSpace> _d_ray_bc_face_end;
+        Kokkos::View<int*, Kokkos::DefaultExecutionSpace> _d_ray_bc_index_frwd_start;
+        Kokkos::View<int*, Kokkos::DefaultExecutionSpace> _d_ray_bc_index_frwd_end;
+        Kokkos::View<int*, Kokkos::DefaultExecutionSpace> _d_ray_bc_index_bkwd_start;
+        Kokkos::View<int*, Kokkos::DefaultExecutionSpace> _d_ray_bc_index_bkwd_end;
+        Kokkos::View<int*, Kokkos::DefaultExecutionSpace> _d_ray_angle_index;  // Angle index for each ray
+        Kokkos::View<int*, Kokkos::DefaultExecutionSpace> _d_ray_fsrs;
+        Kokkos::View<double*, Kokkos::DefaultExecutionSpace> _d_ray_segments;
+
 
 	// Solution host data
-        Kokkos::View<double***, Kokkos::HostSpace> _h_segflux;  // Segment flux array
-	Kokkos::View<double**, Kokkos::HostSpace> _h_scalar_flux;  // Host copy of scalar flux array
-	Kokkos::View<double**, Kokkos::HostSpace> _h_source;  // Host copy of multigroup total source term for each FSR
-        Kokkos::View<double***, Kokkos::HostSpace> _h_angflux;  // Host copy of angular flux for each angle
-        Kokkos::View<double***, Kokkos::HostSpace> _h_old_angflux;  // Host copy of old angular flux for each angle
+        Kokkos::View<double***, layout, Kokkos::HostSpace> _h_segflux;  // Segment flux array
+        Kokkos::View<double**, layout, Kokkos::HostSpace> _h_scalar_flux;  // Host copy of scalar flux array
+        Kokkos::View<double**, layout, Kokkos::HostSpace> _h_source;  // Host copy of multigroup total source term for each FSR
+        Kokkos::View<double***, layout, Kokkos::HostSpace> _h_angflux;  // Host copy of angular flux for each angle
+        Kokkos::View<double***, layout, Kokkos::HostSpace> _h_old_angflux;  // Host copy of old angular flux for each angle
 
 	// Solution device data
-        Kokkos::View<double**> _d_scalar_flux;  // Scalar flux array
-        Kokkos::View<double**> _d_source;  // Multrigroup total source term for each FSR
+        Kokkos::View<double***, layout, Kokkos::DefaultExecutionSpace> _d_segflux;  // Segment flux array
+        Kokkos::View<double**, layout, Kokkos::DefaultExecutionSpace> _d_scalar_flux;  // Scalar flux array
+        Kokkos::View<double**, layout, Kokkos::DefaultExecutionSpace> _d_source;  // Multrigroup total source term for each FSR
+        Kokkos::View<double***, layout, Kokkos::DefaultExecutionSpace> _d_angflux;  // Host copy of angular flux for each angle
+        Kokkos::View<double***, layout, Kokkos::DefaultExecutionSpace> _d_old_angflux;  // Host copy of old angular flux for each angle
 };
