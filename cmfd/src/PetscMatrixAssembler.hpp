@@ -9,14 +9,21 @@
 
 #include "CMFDData.hpp"
 
-// Parent type for interfacing without the template type.
+// Parent type for interfacing with the Mat and Vec without
+// knowledge of the template type. Also hides methods that
+// should be private.
 struct MatrixAssemblerInterface
 {
+    PetscInt nRows = 0;
+
     // Returns the "M" matrix that includes leakage/removal/scattering
     virtual Mat getM() const = 0;
 
     // Returns the "f" vector that includes the fission source term.
     virtual Vec getFissionSource(const Vec& fluxPetsc) = 0;
+
+    // Create a vector with the same type and size as fissionVec
+    virtual void instantiateVec(Vec &vec) const = 0;
 };
 
 // Parent class for all PETSc matrix assemblers.
@@ -32,8 +39,9 @@ struct PetscMatrixAssembler : public MatrixAssemblerInterface
     using FluxView = typename CMFDDataType::View1D;
 
     CMFDDataType cmfdData;
-    FluxView flux;
-    PetscInt nRows = 0;
+    FluxView flux; // Kokkos view for the flux Vec
+
+    // Returned data
     Vec fissionVec;
     Mat MMat;
 
@@ -76,6 +84,11 @@ struct PetscMatrixAssembler : public MatrixAssemblerInterface
         VecGetKokkosView(fluxPetsc, &flux);
         _assembleFission(flux);
         return fissionVec;
+    }
+
+    void instantiateVec(Vec &vec) const final override
+    {
+        VecDuplicate(fissionVec, &vec);
     }
 
     // These should be private, but that can't be because you
