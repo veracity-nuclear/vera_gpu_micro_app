@@ -182,6 +182,8 @@ KokkosMOC::KokkosMOC(const ArgumentParser& args) :
 
     // Set up device views as needed
     if (_device == "cuda") {
+	_d_angle_weights = Kokkos::create_mirror(Kokkos::DefaultExecutionSpace(), _h_angle_weights);
+	Kokkos::deep_copy(_d_angle_weights, _h_angle_weights);
         _d_fsr_vol = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_fsr_vol);
         _d_rsinpolang = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace::memory_space(), _h_rsinpolang);
 	_d_xstr = Kokkos::create_mirror(Kokkos::DefaultExecutionSpace(), _h_xstr);
@@ -335,28 +337,45 @@ void KokkosMOC::_impl_sweep_cuda() {
     using MemSpace = Kokkos::Cuda;
     using ExecSpace = MemSpace::execution_space;
 
-    auto& scalar_flux = _h_scalar_flux;
-    auto& ray_nsegs = _h_ray_nsegs;
-    auto& ray_fsrs = _h_ray_fsrs;
-    auto& ray_segments = _h_ray_segments;
-    auto& ray_bc_index_frwd_start = _h_ray_bc_index_frwd_start;
-    auto& ray_bc_index_frwd_end = _h_ray_bc_index_frwd_end;
-    auto& ray_bc_index_bkwd_start = _h_ray_bc_index_bkwd_start;
-    auto& ray_bc_index_bkwd_end = _h_ray_bc_index_bkwd_end;
-    auto& ray_angle_index = _h_ray_angle_index;
+    Kokkos::deep_copy(_d_scalar_flux, _h_scalar_flux);
+    Kokkos::deep_copy(_d_ray_nsegs, _h_ray_nsegs);
+    Kokkos::deep_copy(_d_ray_fsrs, _h_ray_fsrs);
+    Kokkos::deep_copy(_d_ray_segments, _h_ray_segments);
+    Kokkos::deep_copy(_d_ray_bc_index_frwd_start, _h_ray_bc_index_frwd_start);
+    Kokkos::deep_copy(_d_ray_bc_index_frwd_end, _h_ray_bc_index_frwd_end);
+    Kokkos::deep_copy(_d_ray_bc_index_bkwd_start, _h_ray_bc_index_bkwd_start);
+    Kokkos::deep_copy(_d_ray_bc_index_bkwd_end, _h_ray_bc_index_bkwd_end);
+    Kokkos::deep_copy(_d_ray_angle_index, _h_ray_angle_index);
+    Kokkos::deep_copy(_d_xstr, _h_xstr);
+    Kokkos::deep_copy(_d_source, _h_source);
+    Kokkos::deep_copy(_d_fsr_vol, _h_fsr_vol);
+    Kokkos::deep_copy(_d_rsinpolang, _h_rsinpolang);
+    Kokkos::deep_copy(_d_angle_weights, _h_angle_weights);
+    Kokkos::deep_copy(_d_angflux, _h_angflux);
+    Kokkos::deep_copy(_d_old_angflux, _h_old_angflux);
+
+    auto& scalar_flux = _d_scalar_flux;
+    auto& ray_nsegs = _d_ray_nsegs;
+    auto& ray_fsrs = _d_ray_fsrs;
+    auto& ray_segments = _d_ray_segments;
+    auto& ray_bc_index_frwd_start = _d_ray_bc_index_frwd_start;
+    auto& ray_bc_index_frwd_end = _d_ray_bc_index_frwd_end;
+    auto& ray_bc_index_bkwd_start = _d_ray_bc_index_bkwd_start;
+    auto& ray_bc_index_bkwd_end = _d_ray_bc_index_bkwd_end;
+    auto& ray_angle_index = _d_ray_angle_index;
     auto& n_rays = _n_rays;
     auto& npol = _npol;
     auto& nfsr = _nfsr;
     auto& ng = _ng;
     auto& max_segments = _max_segments;
-    auto& xstr = _h_xstr;
-    auto& source = _h_source;
-    auto& fsr_vol = _h_fsr_vol;
+    auto& xstr = _d_xstr;
+    auto& source = _d_source;
+    auto& fsr_vol = _d_fsr_vol;
     auto& dz = _plane_height;
-    auto& rsinpolang = _h_rsinpolang;
-    auto& angle_weights = _h_angle_weights;
-    auto& angflux = _h_angflux;
-    auto& old_angflux = _h_old_angflux;
+    auto& rsinpolang = _d_rsinpolang;
+    auto& angle_weights = _d_angle_weights;
+    auto& angflux = _d_angflux;
+    auto& old_angflux = _d_old_angflux;
 
     // Initialize the scalar flux to 0.0
     Kokkos::deep_copy(scalar_flux, 0.0);
@@ -364,7 +383,8 @@ void KokkosMOC::_impl_sweep_cuda() {
     // Prepare scratch space
     typedef Kokkos::TeamPolicy<ExecSpace> team_policy;
     typedef typename team_policy::member_type team_member;
-    team_policy policy(static_cast<long int>(n_rays) * npol * ng, Kokkos::AUTO, Kokkos::AUTO);
+    const int n_teams = static_cast<long int>(n_rays) * npol * ng;
+    team_policy policy(n_teams, 1, 1);
     const size_t bytes_needed_per_team =
         Kokkos::View<double*, typename team_member::scratch_memory_space>::shmem_size(max_segments + 1) // exparg
         + 2 * Kokkos::View<double*, typename team_member::scratch_memory_space>::shmem_size(max_segments + 1); // segflux
@@ -372,12 +392,13 @@ void KokkosMOC::_impl_sweep_cuda() {
 
     // Sweep all the long rays
     Kokkos::parallel_for("Cuda Sweep Rays", policy, KOKKOS_LAMBDA(const team_member& teamMember) {
+        int i = teamMember.league_rank();
         int iray = teamMember.league_rank() / (npol * ng);
-        int ipol = (teamMember.league_rank() % (npol * ng)) / ng;
+        int ipol = (teamMember.league_rank() / ng) % npol;
         int ig = teamMember.league_rank() % ng;
         int nsegs = ray_nsegs(iray + 1) - ray_nsegs(iray);
         Kokkos::View<double*, typename team_member::scratch_memory_space> exparg(teamMember.team_scratch(0), nsegs);
-        Kokkos::View<double**, typename team_member::scratch_memory_space> segflux(teamMember.team_scratch(0), 2, nsegs + 1);
+        Kokkos::View<double**, layout, typename team_member::scratch_memory_space> segflux(teamMember.team_scratch(0), 2, nsegs + 1);
 
         // Allocate and initialize exparg with dimensions [ray._nsegs][ng]
         for (int j = ray_nsegs(iray); j < ray_nsegs(iray + 1); j++) {
@@ -401,7 +422,7 @@ void KokkosMOC::_impl_sweep_cuda() {
             ireg2 = ray_fsrs(ray_nsegs(iray) + iseg2 - 1);
             phid = (segflux(RAY_END, iseg2) - source(ireg2, ig)) * exparg(iseg2 - 1);
             segflux(RAY_END, iseg2 - 1) = segflux(RAY_END, iseg2) - phid;
-	    Kokkos::atomic_add(&scalar_flux(ireg2, ig), phid * angle_weights(ray_angle_index(iray), ipol));
+            Kokkos::atomic_add(&scalar_flux(ireg2, ig), phid * angle_weights(ray_angle_index(iray), ipol));
             iseg2--;
         }
         angflux(ray_bc_index_frwd_end(iray), ipol, ig) = segflux(RAY_START, nsegs);
@@ -415,6 +436,8 @@ void KokkosMOC::_impl_sweep_cuda() {
         KOKKOS_LAMBDA(int i, int g) {
             scalar_flux(i, g) = scalar_flux(i, g) * dz / (xstr(i, g) * fsr_vol(i)) + source(i, g) * fourpi;
     });
+    Kokkos::deep_copy(_h_scalar_flux, _d_scalar_flux);
+    Kokkos::deep_copy(_h_angflux, _d_angflux);
 }
 
 void KokkosMOC::_impl_sweep_openmp() {
@@ -610,7 +633,7 @@ void KokkosMOC::sweep() {
     } else if (_device == "serial") {
         // Run the MOC sweep using serial execution
         _impl_sweep_serial();
-    } else if (_device == "gpu") {
+    } else if (_device == "cuda") {
         // Run the MOC sweeper using GPU
         _impl_sweep_cuda();
     }
