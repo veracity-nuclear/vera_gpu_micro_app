@@ -367,15 +367,15 @@ void KokkosMOC::_impl_sweep_cuda() {
     // Prepare scratch space
     typedef Kokkos::TeamPolicy<ExecSpace> team_policy;
     typedef typename team_policy::member_type team_member;
-    const int n_teams = static_cast<long int>(n_rays) * npol * ng;
-    team_policy policy(n_teams, 1, 1);
+    const int n_teams = static_cast<long int>(n_rays);
+    const int team_size = npol * ng;
+    team_policy policy(n_teams, team_size, 1);
 
     // Sweep all the long rays
     Kokkos::parallel_for("Cuda Sweep Rays", policy, KOKKOS_LAMBDA(const team_member& teamMember) {
-        int i = teamMember.league_rank();
-        int iray = teamMember.league_rank() / (npol * ng);
-        int ipol = (teamMember.league_rank() / ng) % npol;
-        int ig = teamMember.league_rank() % ng;
+        int iray = teamMember.league_rank();
+        int ig = teamMember.team_rank() / npol;
+        int ipol = teamMember.team_rank() % npol;
         int nsegs = ray_nsegs(iray + 1) - ray_nsegs(iray);
 
         int global_seg, ireg1, ireg2;
