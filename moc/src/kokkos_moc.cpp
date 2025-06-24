@@ -337,21 +337,6 @@ void KokkosMOC::_impl_sweep_cuda() {
     using MemSpace = Kokkos::Cuda;
     using ExecSpace = MemSpace::execution_space;
 
-    Kokkos::deep_copy(_d_scalar_flux, _h_scalar_flux);
-    Kokkos::deep_copy(_d_ray_nsegs, _h_ray_nsegs);
-    Kokkos::deep_copy(_d_ray_fsrs, _h_ray_fsrs);
-    Kokkos::deep_copy(_d_ray_segments, _h_ray_segments);
-    Kokkos::deep_copy(_d_ray_bc_index_frwd_start, _h_ray_bc_index_frwd_start);
-    Kokkos::deep_copy(_d_ray_bc_index_frwd_end, _h_ray_bc_index_frwd_end);
-    Kokkos::deep_copy(_d_ray_bc_index_bkwd_start, _h_ray_bc_index_bkwd_start);
-    Kokkos::deep_copy(_d_ray_bc_index_bkwd_end, _h_ray_bc_index_bkwd_end);
-    Kokkos::deep_copy(_d_ray_angle_index, _h_ray_angle_index);
-    Kokkos::deep_copy(_d_xstr, _h_xstr);
-    Kokkos::deep_copy(_d_source, _h_source);
-    Kokkos::deep_copy(_d_fsr_vol, _h_fsr_vol);
-    Kokkos::deep_copy(_d_rsinpolang, _h_rsinpolang);
-    Kokkos::deep_copy(_d_angle_weights, _h_angle_weights);
-    Kokkos::deep_copy(_d_angflux, _h_angflux);
     Kokkos::deep_copy(_d_old_angflux, _h_old_angflux);
 
     auto& scalar_flux = _d_scalar_flux;
