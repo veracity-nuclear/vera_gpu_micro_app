@@ -352,7 +352,6 @@ void KokkosMOC::_impl_sweep_cuda() {
     auto& npol = _npol;
     auto& nfsr = _nfsr;
     auto& ng = _ng;
-    auto& max_segments = _max_segments;
     auto& xstr = _d_xstr;
     auto& source = _d_source;
     auto& fsr_vol = _d_fsr_vol;
@@ -370,10 +369,6 @@ void KokkosMOC::_impl_sweep_cuda() {
     typedef typename team_policy::member_type team_member;
     const int n_teams = static_cast<long int>(n_rays) * npol * ng;
     team_policy policy(n_teams, 1, 1);
-    const size_t bytes_needed_per_team =
-        Kokkos::View<double*, typename team_member::scratch_memory_space>::shmem_size(max_segments + 1) // exparg
-        + 2 * Kokkos::View<double*, typename team_member::scratch_memory_space>::shmem_size(max_segments + 1); // segflux
-    policy.set_scratch_size(0, Kokkos::PerTeam(bytes_needed_per_team));
 
     // Sweep all the long rays
     Kokkos::parallel_for("Cuda Sweep Rays", policy, KOKKOS_LAMBDA(const team_member& teamMember) {
@@ -382,40 +377,35 @@ void KokkosMOC::_impl_sweep_cuda() {
         int ipol = (teamMember.league_rank() / ng) % npol;
         int ig = teamMember.league_rank() % ng;
         int nsegs = ray_nsegs(iray + 1) - ray_nsegs(iray);
-        Kokkos::View<double*, typename team_member::scratch_memory_space> exparg(teamMember.team_scratch(0), nsegs);
-        Kokkos::View<double**, layout, typename team_member::scratch_memory_space> segflux(teamMember.team_scratch(0), 2, nsegs + 1);
 
-        // Allocate and initialize exparg with dimensions [ray._nsegs][ng]
-        for (int j = ray_nsegs(iray); j < ray_nsegs(iray + 1); j++) {
-            exparg(j - ray_nsegs(iray)) = 1.0 - exp(-xstr(ray_fsrs(j), ig) * ray_segments(j) * rsinpolang(ipol));
-        }
-
-        int ireg1, ireg2;
+        int global_seg, ireg1, ireg2;
         int iseg2 = nsegs;
         double phid;
 
-        segflux(RAY_START, 0) = old_angflux(ray_bc_index_frwd_start(iray), ipol, ig);
-        segflux(RAY_END, nsegs) = old_angflux(ray_bc_index_bkwd_start(iray), ipol, ig);
+        double fsegflux = old_angflux(ray_bc_index_frwd_start(iray), ipol, ig);
+        double bsegflux = old_angflux(ray_bc_index_bkwd_start(iray), ipol, ig);
         for (int iseg1 = 0; iseg1 < nsegs; iseg1++) {
             // Forward segment sweep
-            ireg1 = ray_fsrs(ray_nsegs(iray) + iseg1);
-            phid = (segflux(RAY_START, iseg1) - source(ireg1, ig)) * exparg(iseg1);
-            segflux(RAY_START, iseg1 + 1) = segflux(RAY_START, iseg1) - phid;
+            global_seg = ray_nsegs(iray) + iseg1;
+            ireg1 = ray_fsrs(global_seg);
+            phid = (fsegflux - source(ireg1, ig)) * (1.0 - exp(-xstr(ireg1, ig) * ray_segments(global_seg) * rsinpolang(ipol)));
+            fsegflux -= phid;
 	    Kokkos::atomic_add(&scalar_flux(ireg1, ig), phid * angle_weights(ray_angle_index(iray), ipol));
 
             // Backward segment sweep
-            ireg2 = ray_fsrs(ray_nsegs(iray) + iseg2 - 1);
-            phid = (segflux(RAY_END, iseg2) - source(ireg2, ig)) * exparg(iseg2 - 1);
-            segflux(RAY_END, iseg2 - 1) = segflux(RAY_END, iseg2) - phid;
+            global_seg = ray_nsegs(iray) + iseg2 - 1;
+            ireg2 = ray_fsrs(global_seg);
+            phid = (bsegflux - source(ireg2, ig)) * (1.0 - exp(-xstr(ireg2, ig) * ray_segments(global_seg) * rsinpolang(ipol)));
+            bsegflux -= phid;
             Kokkos::atomic_add(&scalar_flux(ireg2, ig), phid * angle_weights(ray_angle_index(iray), ipol));
             iseg2--;
         }
-        angflux(ray_bc_index_frwd_end(iray), ipol, ig) = segflux(RAY_START, nsegs);
-        angflux(ray_bc_index_bkwd_end(iray), ipol, ig) = segflux(RAY_END, 0);
+        angflux(ray_bc_index_frwd_end(iray), ipol, ig) = fsegflux;
+        angflux(ray_bc_index_bkwd_end(iray), ipol, ig) = bsegflux;
     });
 
     // Scale the flux with source, volume, and transport XS
-    const double fourpi = 4.0 * M_PI;
+    constexpr double fourpi = 4.0 * M_PI;
     Kokkos::parallel_for("ScaleScalarFlux",
         Kokkos::MDRangePolicy<ExecSpace, Kokkos::Rank<2>>({0, 0}, {nfsr, ng}),
         KOKKOS_LAMBDA(int i, int g) {
