@@ -63,6 +63,16 @@ PetscErrorCode createPetscVec(const std::vector<PetscScalar> &vec, Vec &vecPetsc
 // Create a PETSc matrix (passed by ref) from a std::vector<std::vector<PetscScalar>>
 PetscErrorCode createPetscMat(const std::vector<std::vector<PetscScalar>> &vecOfVec, Mat &matPetsc);
 
+// Helper function to detect if T derives from any PetscMatrixAssembler<Space>
+template <typename T, typename = void>
+struct isPetscMatrixAssembler
+{
+  template <typename AnySpace>
+  static std::true_type test(const PetscMatrixAssembler<AnySpace> *);
+  static std::false_type test(...);
+  static constexpr bool value = decltype(test(std::declval<T *>()))::value;
+};
+
 // Struct for working with PetscMatrixAssembler without actually assembling a matrix
 // and instead using the matrices and vectors from an HDF5 file
 struct DummyMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExecutionSpace>
@@ -70,7 +80,7 @@ struct DummyMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExe
     using AssemblySpace = Kokkos::DefaultHostExecutionSpace;
     using AssemblyMemorySpace = Kokkos::HostSpace;
 
-    Vec fluxGold;
+    Vec fluxGold = nullptr;
     double kGold;
     size_t nGroups, nCells;
 
@@ -78,7 +88,7 @@ struct DummyMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExe
     DummyMatrixAssembler(const HighFive::File &file);
     ~DummyMatrixAssembler()
     {
-      VecDestroy(&fluxGold);
+      PetscCallCXXAbort(PETSC_COMM_SELF, VecDestroy(&fluxGold));
       PetscMatrixAssembler<AssemblySpace>::~PetscMatrixAssembler();
     };
 

@@ -7,16 +7,6 @@
 class PetscMatrixAssemblerTest : public ::testing::TestWithParam<std::string>
 {
 public:
-  // Helper function to detect if T derives from any PetscMatrixAssembler<Space>
-  template <typename T, typename = void>
-  struct isPetscMatrixAssembler
-  {
-    template <typename AnySpace>
-    static std::true_type test(const PetscMatrixAssembler<AnySpace> *);
-    static std::false_type test(...);
-    static constexpr bool value = decltype(test(std::declval<T *>()))::value;
-  };
-
   using AssemblerPtr = std::unique_ptr<MatrixAssemblerInterface>;
 
   std::string filePath;

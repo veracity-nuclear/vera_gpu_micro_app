@@ -25,10 +25,11 @@ enable_testing()
 set(TEST_ENV_IMPL ${CMAKE_CURRENT_SOURCE_DIR}/tests/PetscKokkosTestEnvironment.cpp)
 
 set(CMFD_TEST_SUITE_FILES
-    test_CMFDData
     test_PETSc_ex3k.kokkos
-    test_PetscMatrixAssembler
     test_preliminary
+    test_CMFDData
+    test_PetscMatrixAssembler
+    test_PetscEigenSolver
 )
 
 set(COMMON_TEST_MAIN_SRC ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_main.cpp)

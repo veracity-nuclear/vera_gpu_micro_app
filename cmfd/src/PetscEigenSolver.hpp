@@ -13,10 +13,10 @@ struct PetscEigenSolver
     KSP ksp; // Linear solver context
     PC pc;   // Preconditioner context
     const double tol = 1.e-7;
-    double keff = 1.0;
+    double keff;
     std::vector<double> keffHistory;
 
-    Vec pastFission, currentFission, currentFlux;
+    Vec pastFission = nullptr, currentFlux = nullptr;
 
     AssemblerPtr assemblerPtr;
 

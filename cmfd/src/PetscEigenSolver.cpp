@@ -12,17 +12,17 @@ PetscEigenSolver::PetscEigenSolver(AssemblerPtr&& _assemblerPtr, PCType pcType)
     KSPGetPC(ksp, &pc);
     PCSetType(pc, pcType);
 
-    assemblerPtr->instantiateVec(pastFission);
-    assemblerPtr->instantiateVec(currentFlux);
+    PetscCallCXXAbort(PETSC_COMM_SELF, assemblerPtr->instantiateVec(pastFission));
+    PetscCallCXXAbort(PETSC_COMM_SELF, assemblerPtr->instantiateVec(currentFlux));
     VecSet(currentFlux, 1.0); // Initialize flux vector to zero
 }
 
 PetscEigenSolver::~PetscEigenSolver() {
     if (ksp) {
-        KSPDestroy(&ksp);
+        PetscCallCXXAbort(PETSC_COMM_SELF, KSPDestroy(&ksp));
     }
-    VecDestroy(&pastFission);
-    VecDestroy(&currentFlux);
+    PetscCallCXXAbort(PETSC_COMM_SELF, VecDestroy(&pastFission));
+    PetscCallCXXAbort(PETSC_COMM_SELF, VecDestroy(&currentFlux));
     // Do not destroy currentFission since it is managed by assemblerPtr
 
 }
@@ -30,19 +30,31 @@ PetscEigenSolver::~PetscEigenSolver() {
 PetscErrorCode PetscEigenSolver::solve(size_t maxIterations) {
     PetscFunctionBeginUser;
     PetscScalar currentCurrentFissionDot, pastCurrentFissionDot;
+    keff = 1.0; // Initial guess for keff
+    keffHistory.clear();
+    keffHistory.reserve(maxIterations);
 
-    currentFission = assemblerPtr->getFissionSource(currentFlux);
+    // typename Vec is a pointer. The assembler retains ownership and data are not copied.
+    Vec currentFission = assemblerPtr->getFissionSource(currentFlux);
 
+    for (size_t iter = 0; iter < maxIterations; ++iter)
     {
+        if constexpr(true)
+        {
+            // Print iteration information
+            PetscPrintf(PETSC_COMM_WORLD, "Iteration %zu: keff = %g\n", iter, keff);
+        }
+
         // Update pastFission with the current fission source (pastFission = currentFission)
         PetscCall(VecCopy(currentFission, pastFission));
+        keffHistory.push_back(keff);
 
         PetscCall(VecScale(currentFission, 1/keff));
 
         // Solves Ax=b with KSPSolve(ksp, b, x) where A is set in the constructor.
         // Updates currentFlux with the solution x.
         // TODO: We could actually store currentFlux in currentFission to save memory,
-        // but currentFlux is likely used later.
+        // but currentFlux is likely used later, so we need to be careful.
         PetscCall(KSPSolve(ksp, currentFission, currentFlux));
 
         // This updates currentFission since it is a pointer.
@@ -53,7 +65,14 @@ PetscErrorCode PetscEigenSolver::solve(size_t maxIterations) {
         PetscCall(VecDot(pastFission, currentFission, &pastCurrentFissionDot));
 
         keff *= currentCurrentFissionDot / pastCurrentFissionDot;
+
+        if (iter > 0 && std::abs(keff - keffHistory[iter-1]) < tol) {
+            // Convergence achieved
+            return PETSC_SUCCESS;
+        }
     }
 
+    std::cerr << "Warning: Maximum iterations reached without convergence." << std::endl;
     return PETSC_SUCCESS;
+    // return PETSC_ERR_CONV_FAILED;
 }

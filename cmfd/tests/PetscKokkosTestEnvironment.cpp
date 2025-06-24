@@ -108,21 +108,21 @@ DummyMatrixAssembler::DummyMatrixAssembler(const HighFive::File &file)
 {
   HighFive::Group AMatH5 = file.getGroup("CMFD_Matrix/A");
   std::vector<std::vector<PetscScalar>> AMatVecOfVec = readMatrixFromHDF5(AMatH5);
-  createPetscMat(AMatVecOfVec, MMat);
+  PetscCallCXXAbort(PETSC_COMM_SELF, createPetscMat(AMatVecOfVec, MMat));
 
   PetscInt nRows = AMatVecOfVec.size();
 
   HighFive::DataSet xVecH5 = file.getDataSet("CMFD_Matrix/x");
   std::vector<PetscScalar> xVecLocal;
   xVecH5.read(xVecLocal);
-  createPetscVec(xVecLocal, fluxGold);
-  VecSetType(fluxGold, VECKOKKOS);
+  PetscCallCXXAbort(PETSC_COMM_SELF, createPetscVec(xVecLocal, fluxGold));
+  PetscCallCXXAbort(PETSC_COMM_SELF, VecSetType(fluxGold, VECKOKKOS));
 
   HighFive::DataSet bVecH5 = file.getDataSet("CMFD_Matrix/b");
   std::vector<PetscScalar> bVecLocal;
   bVecH5.read(bVecLocal);
-  createPetscVec(bVecLocal, fissionVec);
-  VecSetType(fissionVec, VECKOKKOS);
+  PetscCallCXXAbort(PETSC_COMM_SELF, createPetscVec(bVecLocal, fissionVec));
+  PetscCallCXXAbort(PETSC_COMM_SELF, VecSetType(fissionVec, VECKOKKOS));
 
   HighFive::DataSet kGoldH5 = file.getDataSet("STATE_0001/keff");
   kGoldH5.read(&kGold);

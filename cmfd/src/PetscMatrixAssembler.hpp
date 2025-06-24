@@ -23,7 +23,7 @@ struct MatrixAssemblerInterface
     virtual Vec getFissionSource(const Vec& fluxPetsc) = 0;
 
     // Create a vector with the same type and size as fissionVec
-    virtual void instantiateVec(Vec &vec) const = 0;
+    virtual PetscErrorCode instantiateVec(Vec &vec) const = 0;
 };
 
 // Parent class for all PETSc matrix assemblers.
@@ -42,36 +42,36 @@ struct PetscMatrixAssembler : public MatrixAssemblerInterface
     FluxView flux; // Kokkos view for the flux Vec
 
     // Returned data
-    Vec fissionVec;
-    Mat MMat;
+    Vec fissionVec = nullptr;
+    Mat MMat = nullptr;
 
     PetscMatrixAssembler() = default;
     PetscMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
         : cmfdData(CMFDCoarseMesh)
     {
         // Create the vector (not allocated yet)
-        VecCreate(PETSC_COMM_WORLD, &fissionVec);
+        PetscCallCXXAbort(PETSC_COMM_SELF, VecCreate(PETSC_COMM_WORLD, &fissionVec));
 
         // Set the type of the vector (etc.) based on PETSc CLI options.
         // Default is AIJ sparse matrix.
-        VecSetFromOptions(fissionVec);
+        PetscCallCXXAbort(PETSC_COMM_SELF, VecSetFromOptions(fissionVec));
 
         // We are always using the Kokkos Vec type so data are
         // are accessible as views.
-        VecSetType(fissionVec, VECKOKKOS);
+        PetscCallCXXAbort(PETSC_COMM_SELF, VecSetType(fissionVec, VECKOKKOS));
 
         // Set the vector dimensions (just for compatibility checks))
         // The PETSC_DECIDEs are for sub matrices split across multiple MPI ranks.
         nRows = cmfdData.nCells * cmfdData.nGroups;
-        VecSetSizes(fissionVec, PETSC_DECIDE, nRows);
+        PetscCallCXXAbort(PETSC_COMM_SELF, VecSetSizes(fissionVec, PETSC_DECIDE, nRows));
 
         // We defer Mat creation to _assembleM() which is called by the derived class constructor
     }
 
     ~PetscMatrixAssembler()
     {
-        VecDestroy(&fissionVec);
-        MatDestroy(&MMat);
+        PetscCallCXXAbort(PETSC_COMM_SELF, VecDestroy(&fissionVec));
+        PetscCallCXXAbort(PETSC_COMM_SELF, MatDestroy(&MMat));
     }
 
     Mat getM() const final override
@@ -86,9 +86,10 @@ struct PetscMatrixAssembler : public MatrixAssemblerInterface
         return fissionVec;
     }
 
-    void instantiateVec(Vec &vec) const final override
+    PetscErrorCode instantiateVec(Vec &vec) const final override
     {
-        VecDuplicate(fissionVec, &vec);
+        PetscCall(VecDuplicate(fissionVec, &vec));
+        return PETSC_SUCCESS;
     }
 
     // These should be private, but that can't be because you
