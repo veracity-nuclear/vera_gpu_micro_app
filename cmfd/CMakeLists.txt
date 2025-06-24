@@ -29,11 +29,22 @@ set(CMFD_TEST_SUITE_FILES
     test_PetscMatrixAssembler
     test_preliminary
 )
+set(CMFD_TEST_SUITE_LABELS
+    "BASIC\;CONTINUOUS\;HEAVY"
+    "CONTINUOUS\;HEAVY"
+    "CONTINUOUS\;HEAVY"
+    "BASIC\;CONTINUOUS\;HEAVY"
+)
 
 set(COMMON_TEST_MAIN_SRC ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_main.cpp)
 
-foreach(test_suite_basename ${CMFD_TEST_SUITE_FILES})
+list(LENGTH CMFD_TEST_SUITE_FILES list_length)
+math(EXPR last_index "${list_length} - 1")
+foreach(i RANGE 0 ${last_index})
+    list(GET CMFD_TEST_SUITE_FILES ${i} test_suite_basename)
     set(test_exe_name "CMFD-${test_suite_basename}")
+    list(GET CMFD_TEST_SUITE_LABELS ${i} labels)
+
     set(test_suite_src ${CMAKE_CURRENT_SOURCE_DIR}/tests/${test_suite_basename}.cpp)
 
     add_executable(${test_exe_name}
@@ -53,5 +64,6 @@ foreach(test_suite_basename ${CMFD_TEST_SUITE_FILES})
     )
 
     add_test(NAME ${test_exe_name} COMMAND ${test_exe_name})
-    message(STATUS "Added test: ${test_exe_name} (using common TestMain.cpp)")
+    set_tests_properties(${test_exe_name} PROPERTIES LABELS "CMFD;${labels}")
+    message(STATUS "Added test: ${test_exe_name} (using common TestMain.cpp) with labels: ${labels}")
 endforeach()
