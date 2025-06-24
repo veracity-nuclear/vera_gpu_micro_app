@@ -520,29 +520,29 @@ void KokkosMOC::_impl_sweep_serial() {
     using MemSpace = Kokkos::Serial;
     using ExecSpace = MemSpace::execution_space;
 
-    auto& scalar_flux = _d_scalar_flux;
-    auto& ray_nsegs = _d_ray_nsegs;
-    auto& ray_fsrs = _d_ray_fsrs;
-    auto& ray_segments = _d_ray_segments;
-    auto& ray_bc_index_frwd_start = _d_ray_bc_index_frwd_start;
-    auto& ray_bc_index_frwd_end = _d_ray_bc_index_frwd_end;
-    auto& ray_bc_index_bkwd_start = _d_ray_bc_index_bkwd_start;
-    auto& ray_bc_index_bkwd_end = _d_ray_bc_index_bkwd_end;
-    auto& ray_angle_index = _d_ray_angle_index;
+    auto& scalar_flux = _h_scalar_flux;
+    auto& ray_nsegs = _h_ray_nsegs;
+    auto& ray_fsrs = _h_ray_fsrs;
+    auto& ray_segments = _h_ray_segments;
+    auto& ray_bc_index_frwd_start = _h_ray_bc_index_frwd_start;
+    auto& ray_bc_index_frwd_end = _h_ray_bc_index_frwd_end;
+    auto& ray_bc_index_bkwd_start = _h_ray_bc_index_bkwd_start;
+    auto& ray_bc_index_bkwd_end = _h_ray_bc_index_bkwd_end;
+    auto& ray_angle_index = _h_ray_angle_index;
     auto& n_rays = _n_rays;
     auto& npol = _npol;
     auto& nfsr = _nfsr;
     auto& ng = _ng;
-    auto& xstr = _d_xstr;
-    auto& source = _d_source;
-    auto& fsr_vol = _d_fsr_vol;
+    auto& xstr = _h_xstr;
+    auto& source = _h_source;
+    auto& fsr_vol = _h_fsr_vol;
     auto& dz = _plane_height;
-    auto& exparg = _d_exparg;
-    auto& segflux = _d_segflux;
-    auto& rsinpolang = _d_rsinpolang;
-    auto& angle_weights = _d_angle_weights;
-    auto& angflux = _d_angflux;
-    auto& old_angflux = _d_old_angflux;
+    auto& exparg = _h_exparg;
+    auto& segflux = _h_segflux;
+    auto& rsinpolang = _h_rsinpolang;
+    auto& angle_weights = _h_angle_weights;
+    auto& angflux = _h_angflux;
+    auto& old_angflux = _h_old_angflux;
 
     // Initialize the scalar flux to 0.0
     Kokkos::parallel_for("InitializeScalarFlux",
