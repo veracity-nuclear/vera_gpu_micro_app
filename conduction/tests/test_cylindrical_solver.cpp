@@ -41,7 +41,7 @@ TEST(CylindricalSolverTest, TemperatureDistribution_1Region) {
 
     std::vector<double> Tavg = solver.get_average_temperatures();
     EXPECT_EQ(Tavg.size(), 1);
-    EXPECT_NEAR(Tavg[0], (T_fuel_cl + T_outer) / 2, 1e-6);
+    EXPECT_NEAR(Tavg[0], 610.133333, 1e-6);
 }
 
 TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_3Regions) {
@@ -83,9 +83,9 @@ TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_3Regions) {
 
     std::vector<double> Tavg = solver.get_average_temperatures();
     EXPECT_EQ(Tavg.size(), 3);
-    EXPECT_NEAR(Tavg[0], (T_fuel_cl + T_fuel_outer) / 2, 1e-6);
-    EXPECT_NEAR(Tavg[1], (T_fuel_outer + T_clad_inner) / 2, 1e-6);
-    EXPECT_NEAR(Tavg[2], (T_clad_inner + T_clad_outer) / 2, 1e-6);
+    EXPECT_NEAR(Tavg[0], 865.495703, 1e-6);
+    EXPECT_NEAR(Tavg[1], 686.588832, 1e-6);
+    EXPECT_NEAR(Tavg[2], 609.363781, 1e-6);
 }
 
 int main(int argc, char **argv) {

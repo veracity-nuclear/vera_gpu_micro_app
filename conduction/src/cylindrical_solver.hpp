@@ -13,6 +13,10 @@ public:
     std::vector<double> solve_temperatures(const std::vector<double> &qdot, const std::vector<double> &k, double T_outer);
 
 private:
+    bool is_solved = false;
+    double T_outer;
+    std::vector<double> qdot;
+    std::vector<double> k;
     std::vector<CylinderNode> nodes;
     std::vector<double> interface_temps;
 };
