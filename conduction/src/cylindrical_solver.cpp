@@ -39,7 +39,30 @@ std::vector<double> CylindricalSolver::get_average_temperatures() const {
     }
     std::vector<double> Tavg(nodes.size(), 0.0);
     for (size_t i = 0; i < nodes.size(); ++i) {
-        Tavg[i] = (interface_temps[i] + interface_temps[i + 1]) / 2.0;
+
+        // Calculate average temperature using 1-D heat conduction formula with 2 Dirichlet boundary conditions
+        double R_inner = nodes[i].get_inner_radius();
+        double R_outer = nodes[i].get_outer_radius();
+        double R_avg = (R_inner + R_outer) * 0.5;
+        double T_inner = interface_temps[i];
+        double T_outer = interface_temps[i + 1];
+
+        if (R_inner == 0.0) {
+            // Special case for the center of a cylinder (R_inner = 0)
+            Tavg[i] = T_outer + 3.0 / 16.0 * (qdot[i] / k[i]) * R_outer * R_outer;
+            continue;
+        }
+
+        // Solve for C1
+        double num = (T_outer - T_inner) + (qdot[i] / (4.0 * k[i])) * (R_outer * R_outer - R_inner * R_inner);
+        double denom = std::log(R_outer) - std::log(R_inner);
+        double C1 = num / denom;
+
+        // Solve for C2
+        double C2 = T_inner + (qdot[i] / (4.0 * k[i])) * R_inner * R_inner - C1 * std::log(R_inner);
+
+        // Evaluate T at average radius
+        Tavg[i] = -(qdot[i] / (4.0 * k[i])) * R_avg * R_avg + C1 * std::log(R_avg) + C2;
     }
     return Tavg;
 }
@@ -64,6 +87,11 @@ std::vector<double> CylindricalSolver::solve_temperatures(
         R_total += nodes[i].calculate_thermal_resistance(k[i]);
         interface_temps[i] = T_outer + qtotal * R_total;
     }
+
+    this->is_solved = true;
+    this->qdot = qdot; // Store the heat generation rates
+    this->k = k; // Store the thermal conductivities
+    this->T_outer = T_outer; // Store the outer temperature
 
     return interface_temps;
 }
