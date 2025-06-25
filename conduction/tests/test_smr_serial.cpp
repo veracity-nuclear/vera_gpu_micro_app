@@ -49,12 +49,19 @@ TEST(SMR_Serial, ConductionSolve) {
     EXPECT_EQ(N, 18473 * state_groups.size());
 
     std::vector<std::vector<double>> qdot(N, std::vector<double>(nodes.size(), 0.0));
+    auto start = std::chrono::high_resolution_clock::now();
     for (size_t i = 0; i < N; ++i) {
         double T_outer = all_clad_surf_temps[i];
         qdot[i][0] = all_pin_powers[i] / nodes[0].get_volume(); // only node with fuel has heat gen
         solver.solve_temperatures(qdot[i], k, T_outer);
         std::vector<double> Tavg = solver.get_average_temperatures();
+        EXPECT_GT(std::accumulate(Tavg.begin(), Tavg.end(), 0.0), 0.0); // use result to prevent compiler optimization
+        EXPECT_EQ(Tavg.size(), nodes.size());
     }
+    auto end = std::chrono::high_resolution_clock::now();
+    std::cout << "Elapsed: "
+          << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+          << " ms" << std::endl;
 }
 
 int main(int argc, char **argv) {
