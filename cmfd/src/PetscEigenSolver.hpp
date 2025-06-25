@@ -12,11 +12,13 @@ struct PetscEigenSolver
 
     KSP ksp; // Linear solver context
     PC pc;   // Preconditioner context
-    const double tol = 1.e-7;
+
+    // tol is both the tol of the KSP (linear) solver and the convergence tolerance for the eigenvalue problem.
+    static constexpr double tol = 1.e-7;
     double keff;
     std::vector<double> keffHistory;
 
-    Vec pastFission = nullptr, currentFlux = nullptr;
+    Vec pastFission, currentFlux;
 
     AssemblerPtr assemblerPtr;
 

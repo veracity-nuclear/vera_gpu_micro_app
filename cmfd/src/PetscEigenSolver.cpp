@@ -49,6 +49,7 @@ PetscErrorCode PetscEigenSolver::solve(size_t maxIterations) {
         PetscCall(VecCopy(currentFission, pastFission));
         keffHistory.push_back(keff);
 
+        // Fission vector becomes the RHS b vector when we divide by keff.
         PetscCall(VecScale(currentFission, 1/keff));
 
         // Solves Ax=b with KSPSolve(ksp, b, x) where A is set in the constructor.

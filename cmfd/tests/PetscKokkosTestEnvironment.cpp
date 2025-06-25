@@ -64,6 +64,7 @@ PetscErrorCode createPetscVec(const std::vector<PetscScalar> &vec, Vec &vecPetsc
   PetscCall(VecCreate(PETSC_COMM_WORLD, &vecPetsc));
   PetscCall(VecSetSizes(vecPetsc, PETSC_DECIDE, n));
   PetscCall(VecSetFromOptions(vecPetsc));
+  PetscCall(VecSetType(vecPetsc, VECKOKKOS));
 
   std::vector<PetscInt> indices(n);
   std::iota(indices.begin(), indices.end(), 0); // Fill indices with 0, 1, ..., size-1
@@ -110,23 +111,6 @@ DummyMatrixAssembler::DummyMatrixAssembler(const HighFive::File &file)
   std::vector<std::vector<PetscScalar>> AMatVecOfVec = readMatrixFromHDF5(AMatH5);
   PetscCallCXXAbort(PETSC_COMM_SELF, createPetscMat(AMatVecOfVec, MMat));
 
-  PetscInt nRows = AMatVecOfVec.size();
-
-  HighFive::DataSet xVecH5 = file.getDataSet("CMFD_Matrix/x");
-  std::vector<PetscScalar> xVecLocal;
-  xVecH5.read(xVecLocal);
-  PetscCallCXXAbort(PETSC_COMM_SELF, createPetscVec(xVecLocal, fluxGold));
-  PetscCallCXXAbort(PETSC_COMM_SELF, VecSetType(fluxGold, VECKOKKOS));
-
-  HighFive::DataSet bVecH5 = file.getDataSet("CMFD_Matrix/b");
-  std::vector<PetscScalar> bVecLocal;
-  bVecH5.read(bVecLocal);
-  PetscCallCXXAbort(PETSC_COMM_SELF, createPetscVec(bVecLocal, fissionVec));
-  PetscCallCXXAbort(PETSC_COMM_SELF, VecSetType(fissionVec, VECKOKKOS));
-
-  HighFive::DataSet kGoldH5 = file.getDataSet("STATE_0001/keff");
-  kGoldH5.read(&kGold);
-
   size_t firstCell, lastCell;
   HighFive::DataSet firstCellH5 = file.getDataSet("CMFD_CoarseMesh/first cell");
   firstCellH5.read(&firstCell);
@@ -136,5 +120,21 @@ DummyMatrixAssembler::DummyMatrixAssembler(const HighFive::File &file)
 
   HighFive::DataSet nGroupsH5 = file.getDataSet("CMFD_CoarseMesh/energy groups");
   nGroupsH5.read(&nGroups);
+
+  HighFive::DataSet kGoldH5 = file.getDataSet("STATE_0001/keff");
+  kGoldH5.read(&kGold);
+
+  PetscInt nRows = AMatVecOfVec.size();
+
+  HighFive::DataSet xVecH5 = file.getDataSet("CMFD_Matrix/x");
+  std::vector<PetscScalar> xVecLocal;
+  xVecH5.read(xVecLocal);
+  PetscCallCXXAbort(PETSC_COMM_SELF, createPetscVec(xVecLocal, fluxGold));
+  // PetscCallCXXAbort(PETSC_COMM_SELF, VecScale(fluxGold, kGold));
+
+  HighFive::DataSet bVecH5 = file.getDataSet("CMFD_Matrix/b");
+  std::vector<PetscScalar> bVecLocal;
+  bVecH5.read(bVecLocal);
+  PetscCallCXXAbort(PETSC_COMM_SELF, createPetscVec(bVecLocal, fissionVec));
 }
 

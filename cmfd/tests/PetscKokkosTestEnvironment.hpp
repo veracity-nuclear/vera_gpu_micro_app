@@ -80,7 +80,7 @@ struct DummyMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExe
     using AssemblySpace = Kokkos::DefaultHostExecutionSpace;
     using AssemblyMemorySpace = Kokkos::HostSpace;
 
-    Vec fluxGold = nullptr;
+    Vec fluxGold;
     double kGold;
     size_t nGroups, nCells;
 
@@ -89,7 +89,6 @@ struct DummyMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExe
     ~DummyMatrixAssembler()
     {
       PetscCallCXXAbort(PETSC_COMM_SELF, VecDestroy(&fluxGold));
-      PetscMatrixAssembler<AssemblySpace>::~PetscMatrixAssembler();
     };
 
     void _assembleM() override

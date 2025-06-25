@@ -42,8 +42,8 @@ struct PetscMatrixAssembler : public MatrixAssemblerInterface
     FluxView flux; // Kokkos view for the flux Vec
 
     // Returned data
-    Vec fissionVec = nullptr;
-    Mat MMat = nullptr;
+    Vec fissionVec;
+    Mat MMat;
 
     PetscMatrixAssembler() = default;
     PetscMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
@@ -83,6 +83,7 @@ struct PetscMatrixAssembler : public MatrixAssemblerInterface
     {
         VecGetKokkosView(fluxPetsc, &flux);
         _assembleFission(flux);
+        VecRestoreKokkosView(fluxPetsc, &flux);
         return fissionVec;
     }
 
