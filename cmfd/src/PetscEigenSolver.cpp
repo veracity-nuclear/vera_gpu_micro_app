@@ -39,9 +39,8 @@ PetscErrorCode PetscEigenSolver::solve(size_t maxIterations) {
 
     for (size_t iter = 0; iter < maxIterations; ++iter)
     {
-        if constexpr(true)
+        if constexpr(true) // future logging condition
         {
-            // Print iteration information
             PetscPrintf(PETSC_COMM_WORLD, "Iteration %zu: keff = %g\n", iter, keff);
         }
 

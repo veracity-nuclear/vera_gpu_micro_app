@@ -73,9 +73,12 @@ public:
         PetscCallG(VecNorm(diffVec, NORM_2, &norm));
 
         if (norm > solver->tol) {
-            VecView(solver->currentFlux, PETSC_VIEWER_STDOUT_SELF);
-            VecView(dummyAssemblerPtr->fluxGold, PETSC_VIEWER_STDOUT_SELF);
-            VecView(diffVec, PETSC_VIEWER_DRAW_SELF);
+            // VecView(solver->currentFlux, PETSC_VIEWER_STDOUT_SELF);
+            // VecView(dummyAssemblerPtr->fluxGold, PETSC_VIEWER_STDOUT_SELF);
+            // VecView(diffVec, PETSC_VIEWER_DRAW_SELF);
+            PetscCallG(VecPointwiseDivide(diffVec, dummyAssemblerPtr->fluxGold, solver->currentFlux));
+            // PetscCallG(VecScale(diffVec, 1.0 / solver->keff));
+            PetscCallG(VecView(diffVec, PETSC_VIEWER_STDOUT_SELF));
         }
 
         // ASSERT_LE(norm, solver->tol)
@@ -142,11 +145,14 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::ValuesIn(createParams<SimpleMatrixAssembler>(heavyTestFiles))
 );
 
+INSTANTIATE_TEST_SUITE_P(
+    TestEigenCOOLight,
+    PetscEigenSolverTest,
+    ::testing::ValuesIn(createParams<COOMatrixAssembler>(lightTestFiles))
+);
 
-
-// TODO
-// INSTANTIATE_TEST_SUITE_P(
-//     TestEigenCOO,
-//     PetscEigenSolverTest,
-//     ::testing::ValuesIn(createParams<COOMatrixAssembler>(testFiles))
-// );
+INSTANTIATE_TEST_SUITE_P(
+    TestEigenCOOHeavy,
+    PetscEigenSolverTest,
+    ::testing::ValuesIn(createParams<COOMatrixAssembler>(heavyTestFiles))
+);

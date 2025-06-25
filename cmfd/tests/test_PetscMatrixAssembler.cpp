@@ -191,6 +191,11 @@ TEST_P(PetscMatrixAssemblerTest, TestCOOMatrixAssembler)
   compareMatrices<COOMatrixAssembler>();
 }
 
+TEST_P(PetscMatrixAssemblerTest, TestCOOVectorAssembler)
+{
+  compareVectors<COOMatrixAssembler>();
+}
+
 INSTANTIATE_TEST_SUITE_P(
   TestAssemblyLight,
   PetscMatrixAssemblerTest,

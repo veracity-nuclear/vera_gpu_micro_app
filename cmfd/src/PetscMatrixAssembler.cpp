@@ -502,4 +502,44 @@ void COOMatrixAssembler::_assembleM()
 
 void COOMatrixAssembler::_assembleFission(const FluxView& flux)
 {
+    auto& _cmfdData = cmfdData;
+
+    // TODO: Assuming no zeros in the vector. We can optimize based on chi to get the sparsity pattern.
+    const PetscInt nnz = nRows;
+    Kokkos::View<PetscInt *, AssemblyMemorySpace> rowIndices("rowIndicesKokkos", nnz);
+    Kokkos::View<PetscScalar *, AssemblyMemorySpace> values("VecValuesKokkos", nnz);
+
+    {
+        Kokkos::TeamPolicy<AssemblySpace> nCellsRange(_cmfdData.nCells, _cmfdData.nGroups);
+
+        Kokkos::parallel_for("COOVector", nCellsRange, KOKKOS_LAMBDA(const typename Kokkos::TeamPolicy<AssemblySpace>::member_type& teamMember)
+        {
+            const PetscInt cellIdx = teamMember.league_rank();
+
+            PetscScalar cellFissionRate = 0.0;
+            Kokkos::parallel_reduce(Kokkos::TeamThreadRange(teamMember, _cmfdData.nGroups), [=] (const PetscInt fromGroupIdx, PetscScalar &localFissionRate)
+            {
+                // if FluxView is 2D
+                // localFissionRate += cmfdData.nuFissionXS(fromGroupIdx, cellIdx) * flux(fromGroupIdx, cellIdx);
+
+                // if FluxView is 1D. I think the data access pattern is bad
+                localFissionRate += _cmfdData.nuFissionXS(fromGroupIdx, cellIdx) * flux(cellIdx * _cmfdData.nGroups + fromGroupIdx);
+            }, cellFissionRate);
+
+            teamMember.team_barrier();
+
+            const PetscScalar localFissionRateVolume = cellFissionRate * _cmfdData.volume(cellIdx);
+
+            Kokkos::parallel_for(Kokkos::TeamThreadRange(teamMember, _cmfdData.nGroups), [=] (const PetscInt toGroupIdx)
+            {
+                const PetscInt vecIdx = cellIdx * _cmfdData.nGroups + toGroupIdx;
+                rowIndices(vecIdx) = vecIdx; // This is silly right now as we assume no zeros.
+                values(vecIdx) = _cmfdData.chi(toGroupIdx, cellIdx) * localFissionRateVolume;
+            });
+        });
+    }
+
+    PetscFunctionBeginUser;
+    VecSetPreallocationCOO(fissionVec, nnz, rowIndices.data());
+    VecSetValuesCOO(fissionVec, values.data(), INSERT_VALUES);
 }
