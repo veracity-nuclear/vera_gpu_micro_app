@@ -41,10 +41,11 @@ set(COMMON_TEST_MAIN_SRC ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_main.cpp)
 list(LENGTH CMFD_TEST_SUITE_FILES list_length)
 math(EXPR last_index "${list_length} - 1")
 foreach(i RANGE 0 ${last_index})
-    list(GET CMFD_TEST_SUITE_FILES ${i} test_exe_name)
+    list(GET CMFD_TEST_SUITE_FILES ${i} test_suite_basename)
+    set(test_exe_name "CMFD-${test_suite_basename}")
     list(GET CMFD_TEST_SUITE_LABELS ${i} labels)
 
-    set(test_suite_src ${CMAKE_CURRENT_SOURCE_DIR}/tests/${test_exe_name}.cpp)
+    set(test_suite_src ${CMAKE_CURRENT_SOURCE_DIR}/tests/${test_suite_basename}.cpp)
 
     add_executable(${test_exe_name}
         ${COMMON_TEST_MAIN_SRC}       # Common main for all tests
