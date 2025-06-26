@@ -57,35 +57,14 @@ public:
 
     void solve()
     {
-        Vec diffVec;
-        PetscScalar norm;
-
         PetscCallG(solver->solve(1000));
+
         ASSERT_NEAR(solver->keff, dummyAssemblerPtr->kGold, solver->tol)
             << "Keff = " << solver->keff
             << ", expected = " << dummyAssemblerPtr->kGold
             << ", tolerance = " << solver->tol;
 
-        PetscCallG(dummyAssemblerPtr->instantiateVec(diffVec));
-        PetscCallG(VecCopy(solver->currentFlux, diffVec));
-        PetscCallG(VecAXPY(diffVec, -1.0, dummyAssemblerPtr->fluxGold));
-
-        PetscCallG(VecNorm(diffVec, NORM_2, &norm));
-
-        if (norm > solver->tol) {
-            // VecView(solver->currentFlux, PETSC_VIEWER_STDOUT_SELF);
-            // VecView(dummyAssemblerPtr->fluxGold, PETSC_VIEWER_STDOUT_SELF);
-            // VecView(diffVec, PETSC_VIEWER_DRAW_SELF);
-            PetscCallG(VecPointwiseDivide(diffVec, dummyAssemblerPtr->fluxGold, solver->currentFlux));
-            // PetscCallG(VecScale(diffVec, 1.0 / solver->keff));
-            PetscCallG(VecView(diffVec, PETSC_VIEWER_STDOUT_SELF));
-        }
-
-        // ASSERT_LE(norm, solver->tol)
-        //     << "Norm of the difference between computed and gold flux is too high: "
-        //     << norm << " > " << solver->tol;
-
-        PetscCallG(VecDestroy(&diffVec));
+        vectorsAreParallel(solver->currentFlux, dummyAssemblerPtr->fluxGold, solver->tol);
     }
 };
 

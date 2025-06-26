@@ -1,6 +1,6 @@
 #include "PetscEigenSolver.hpp"
 
-PetscEigenSolver::PetscEigenSolver(AssemblerPtr&& _assemblerPtr, PCType pcType)
+PetscEigenSolver::PetscEigenSolver(AssemblerPtr&& _assemblerPtr, PCType pcType, PetscScalar initialGuess)
     : assemblerPtr(std::move(_assemblerPtr))
 {
     const Mat& A = assemblerPtr->getM();
@@ -14,7 +14,9 @@ PetscEigenSolver::PetscEigenSolver(AssemblerPtr&& _assemblerPtr, PCType pcType)
 
     PetscCallCXXAbort(PETSC_COMM_SELF, assemblerPtr->instantiateVec(pastFission));
     PetscCallCXXAbort(PETSC_COMM_SELF, assemblerPtr->instantiateVec(currentFlux));
-    VecSet(currentFlux, 1.0); // Initialize flux vector to zero
+
+    // Initialize flux vector to the initial guess at all values
+    VecSet(currentFlux, initialGuess);
 }
 
 PetscEigenSolver::~PetscEigenSolver() {

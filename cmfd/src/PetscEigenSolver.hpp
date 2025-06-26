@@ -25,7 +25,7 @@ struct PetscEigenSolver
     PetscEigenSolver() = default;
 
     // The assemblerPtr must be moved with std::move
-    PetscEigenSolver(AssemblerPtr&& assemblerPtr, PCType pcType = PCJACOBI);
+    PetscEigenSolver(AssemblerPtr&& assemblerPtr, PCType pcType = PCJACOBI, PetscScalar initialGuess = 1.0);
 
     ~PetscEigenSolver();
 

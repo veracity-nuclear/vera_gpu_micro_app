@@ -54,6 +54,11 @@ void compare2DHostAndDevice(
     const Kokkos::View<PetscScalar **, Kokkos::DefaultExecutionSpace> &d_view,
     const std::string &message = "");
 
+void vectorsAreParallel(
+    const Vec &v1,
+    const Vec &v2,
+    PetscScalar tol = 1.e-7);
+
 // Convert a HighFive group (data sets are rows) to a 2D vector
 std::vector<std::vector<PetscScalar>> readMatrixFromHDF5(const HighFive::Group &AMatH5);
 

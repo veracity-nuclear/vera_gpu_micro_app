@@ -37,6 +37,27 @@ void compare2DHostAndDevice(
   }
 }
 
+void vectorsAreParallel(
+    const Vec &v1,
+    const Vec &v2,
+    PetscScalar tol)
+{
+  PetscScalar dotProduct, normV1, normV2, normProduct;
+  PetscCallG(VecDot(v1, v2, &dotProduct));
+  PetscCallG(VecNorm(v1, NORM_2, &normV1));
+  PetscCallG(VecNorm(v2, NORM_2, &normV2));
+
+  // The dot product can be defined as:
+  // dot(v1, v2) = ||v1|| * ||v2|| * cos(theta)
+  // If v1 and v2 are parallel, then cos(theta) = +1 or -1,
+  // so dot(v1, v2)^2 should be close to ||v1||^2 * ||v2||^2.
+  normProduct = normV1 * normV2;
+  ASSERT_NEAR(dotProduct * dotProduct, normProduct * normProduct, tol)
+      << "Vectors are not parallel: dot product = " << dotProduct
+      << ", norms = (" << normV1 << ", " << normV2 << ")"
+      << ", tolerance = " << tol;
+}
+
 // Convert a HighFive group (data sets are rows) to a 2D vector
 std::vector<std::vector<PetscScalar>> readMatrixFromHDF5(const HighFive::Group &AMatH5)
 {
