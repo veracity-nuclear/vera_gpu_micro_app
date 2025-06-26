@@ -510,9 +510,8 @@ void COOMatrixAssembler::_assembleFission(const FluxView& flux)
     Kokkos::View<PetscScalar *, AssemblyMemorySpace> values("VecValuesKokkos", nnz);
 
     {
-        Kokkos::TeamPolicy<AssemblySpace> nCellsRange(_cmfdData.nCells, _cmfdData.nGroups);
-
-        Kokkos::parallel_for("COOVector", nCellsRange, KOKKOS_LAMBDA(const typename Kokkos::TeamPolicy<AssemblySpace>::member_type& teamMember)
+        // We create the functor beforehand to calclate the maximum team size
+        auto functorVectorAssemble = KOKKOS_LAMBDA(const typename Kokkos::TeamPolicy<AssemblySpace>::member_type& teamMember)
         {
             const PetscInt cellIdx = teamMember.league_rank();
 
@@ -536,7 +535,16 @@ void COOMatrixAssembler::_assembleFission(const FluxView& flux)
                 rowIndices(vecIdx) = vecIdx; // This is silly right now as we assume no zeros.
                 values(vecIdx) = _cmfdData.chi(toGroupIdx, cellIdx) * localFissionRateVolume;
             });
-        });
+        };
+
+        Kokkos::TeamPolicy<AssemblySpace> nCellsRange(_cmfdData.nCells, _cmfdData.nGroups);
+        int maxTeamSize = nCellsRange.team_size_max(functorVectorAssemble, Kokkos::ParallelReduceTag());
+        if (maxTeamSize > _cmfdData.nGroups)
+        {
+            // If the team size is too large, we need to reduce it
+            nCellsRange = Kokkos::TeamPolicy<AssemblySpace>(_cmfdData.nCells, maxTeamSize);
+        }
+        Kokkos::parallel_for("COOVector", nCellsRange, functorVectorAssemble);
     }
 
     PetscFunctionBeginUser;
