@@ -539,10 +539,12 @@ void COOMatrixAssembler::_assembleFission(const FluxView& flux)
 
         Kokkos::TeamPolicy<AssemblySpace> nCellsRange(_cmfdData.nCells, _cmfdData.nGroups);
         int maxTeamSize = nCellsRange.team_size_max(functorVectorAssemble, Kokkos::ParallelReduceTag());
+        int teamSizeRecommended = nCellsRange.team_size_recommended(functorVectorAssemble, Kokkos::ParallelReduceTag());
+        std::cout << "******************COOMatrixAssembler: maxTeamSize = " << maxTeamSize << ", teamSizeRecommended = " << teamSizeRecommended << std::endl;
         if (maxTeamSize > _cmfdData.nGroups)
         {
             // If the team size is too large, we need to reduce it
-            nCellsRange = Kokkos::TeamPolicy<AssemblySpace>(_cmfdData.nCells, maxTeamSize);
+            nCellsRange = Kokkos::TeamPolicy<AssemblySpace>(_cmfdData.nCells, Kokkos::AUTO);
         }
         Kokkos::parallel_for("COOVector", nCellsRange, functorVectorAssemble);
     }
