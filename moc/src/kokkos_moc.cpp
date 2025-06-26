@@ -31,7 +31,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         auto fsr_vol = std::make_unique<std::vector<double>>();
         _file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read(*fsr_vol);
         _nfsr = fsr_vol->size();
-        _h_fsr_vol = Kokkos::View<double*, Kokkos::HostSpace>("fsr_vol", _nfsr);
+        _h_fsr_vol = Kokkos::View<double*, layout, Kokkos::HostSpace>("fsr_vol", _nfsr);
         for (int i = 0; i < _nfsr; i++){
             _h_fsr_vol(i) = (*fsr_vol)[i];
         }
@@ -155,7 +155,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     Kokkos::deep_copy(_h_old_angflux, _h_angflux);
 
     // Build angle weights
-    _h_angle_weights = Kokkos::View<double**, Kokkos::HostSpace>("angle_weights", nazi, _npol);
+    _h_angle_weights = Kokkos::View<double**, layout, Kokkos::HostSpace>("angle_weights", nazi, _npol);
     for (int iazi = 0; iazi < nazi; iazi++) {
         for (int ipol = 0; ipol < _npol; ipol++) {
             _h_angle_weights(iazi, ipol) = _ray_spacing[iazi] * azi_weights[iazi] * polar_weights[ipol]
@@ -164,7 +164,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     }
 
     // Store the inverse polar angle sine
-    _h_rsinpolang = Kokkos::View<double*, Kokkos::HostSpace>("rsinpolang", _npol);
+    _h_rsinpolang = Kokkos::View<double*, layout, Kokkos::HostSpace>("rsinpolang", _npol);
     for (int ipol = 0; ipol < _npol; ipol++) {
         _h_rsinpolang(ipol) = 1.0 / std::sin(polar_angles[ipol]);
     }
@@ -177,7 +177,6 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
 
     // Allocate arrays needed during serial sweep
     if (_device == "serial") {
-        _h_segflux = Kokkos::View<double***, Kokkos::HostSpace>("segflux", 2, _max_segments + 1, _ng);
         _h_exparg = Kokkos::View<double**, Kokkos::HostSpace>("exparg", _max_segments + 1, _ng);
     }
 
@@ -202,8 +201,6 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     _d_ray_angle_index = Kokkos::create_mirror_view_and_copy(MemorySpace(), _h_ray_angle_index);
     _d_ray_fsrs = Kokkos::create_mirror_view_and_copy(MemorySpace(), _h_ray_fsrs);
     _d_ray_segments = Kokkos::create_mirror_view_and_copy(MemorySpace(), _h_ray_segments);
-    _d_segflux = Kokkos::create_mirror_view(ExecutionSpace(), _h_segflux);
-    Kokkos::deep_copy(_d_segflux, _h_segflux);
     _d_angflux = Kokkos::create_mirror(ExecutionSpace(), _h_angflux);
     Kokkos::deep_copy(_d_angflux, _h_angflux);
     _d_old_angflux = Kokkos::create_mirror(ExecutionSpace(), _h_old_angflux);
@@ -230,14 +227,14 @@ void KokkosMOC<ExecutionSpace>::_read_rays() {
     }
 
     // Convert the rays to a flattened format
-    _h_ray_nsegs = Kokkos::View<int*, Kokkos::HostSpace>("ray_nsegs", _n_rays + 1);
-    _h_ray_bc_face_start = Kokkos::View<int*, Kokkos::HostSpace>("ray_bc_face_start", _n_rays);
-    _h_ray_bc_face_end = Kokkos::View<int*, Kokkos::HostSpace>("ray_bc_face_end", _n_rays);
-    _h_ray_bc_index_frwd_start = Kokkos::View<int*, Kokkos::HostSpace>("ray_bc_index_frwd_start", _n_rays);
-    _h_ray_bc_index_frwd_end = Kokkos::View<int*, Kokkos::HostSpace>("ray_bc_index_frwd_end", _n_rays);
-    _h_ray_bc_index_bkwd_start = Kokkos::View<int*, Kokkos::HostSpace>("ray_bc_index_bkwd_start", _n_rays);
-    _h_ray_bc_index_bkwd_end = Kokkos::View<int*, Kokkos::HostSpace>("ray_bc_index_bkwd_end", _n_rays);
-    _h_ray_angle_index = Kokkos::View<int*, Kokkos::HostSpace>("ray_angle_index", _n_rays);
+    _h_ray_nsegs = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_nsegs", _n_rays + 1);
+    _h_ray_bc_face_start = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_bc_face_start", _n_rays);
+    _h_ray_bc_face_end = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_bc_face_end", _n_rays);
+    _h_ray_bc_index_frwd_start = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_bc_index_frwd_start", _n_rays);
+    _h_ray_bc_index_frwd_end = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_bc_index_frwd_end", _n_rays);
+    _h_ray_bc_index_bkwd_start = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_bc_index_bkwd_start", _n_rays);
+    _h_ray_bc_index_bkwd_end = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_bc_index_bkwd_end", _n_rays);
+    _h_ray_angle_index = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_angle_index", _n_rays);
     _h_ray_nsegs(0) = 0;
     int iray = 0;
     int nangles = 0;
@@ -265,8 +262,8 @@ void KokkosMOC<ExecutionSpace>::_read_rays() {
         }
     }
 
-    _h_ray_fsrs = Kokkos::View<int*, Kokkos::HostSpace>("ray_fsrs", _h_ray_nsegs(_n_rays));
-    _h_ray_segments = Kokkos::View<double*, Kokkos::HostSpace>("ray_segments", _h_ray_nsegs(_n_rays));
+    _h_ray_fsrs = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_fsrs", _h_ray_nsegs(_n_rays));
+    _h_ray_segments = Kokkos::View<double*, layout, Kokkos::HostSpace>("ray_segments", _h_ray_nsegs(_n_rays));
     iray = 0;
     for (const auto& objName : domain.listObjectNames()) {
         if (objName.substr(0, 6) == "Angle_") {

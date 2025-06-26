@@ -111,14 +111,12 @@ class KokkosMOC : public BaseMOC {
         Kokkos::View<double*, layout, MemorySpace> _d_ray_segments;
 
         // Solution host data
-        Kokkos::View<double***, layout, Kokkos::HostSpace> _h_segflux;
         Kokkos::View<double**, layout, Kokkos::HostSpace> _h_scalar_flux;
         Kokkos::View<double**, layout, Kokkos::HostSpace> _h_source;
         Kokkos::View<double***, layout, Kokkos::HostSpace> _h_angflux;
         Kokkos::View<double***, layout, Kokkos::HostSpace> _h_old_angflux;
 
         // Solution device data
-        Kokkos::View<double***, layout, MemorySpace> _d_segflux;
         Kokkos::View<double**, layout, MemorySpace> _d_scalar_flux;
         Kokkos::View<double**, layout, MemorySpace> _d_source;
         Kokkos::View<double***, layout, MemorySpace> _d_angflux;
