@@ -28,3 +28,4 @@ target_link_libraries(subchannel_tests
 )
 
 add_test(NAME subchannel_tests COMMAND subchannel_tests)
+set_tests_properties(subchannel_tests PROPERTIES LABELS "Subchannel;BASIC;CONTINUOUS;HEAVY")
