@@ -5,10 +5,11 @@
 TEST(HDF5UtilsTest, SingleDimensionalDatasetRead) {
     const std::string filename = std::string(TEST_DATA_DIR) + "/smr.h5";
     const std::string group_name = "/STATE_0001";
-    const std::string dataset_name = "pin_powers";
+    const std::string dataset_name = "total_power";
 
     try {
-
+        double total_power = read_hdf5_scalar(filename, group_name + "/" + dataset_name);
+        EXPECT_NEAR(total_power, 6.0606e6, 1e-6) << "Total power should be equal to 6.0606 MW";
     } catch (const HighFive::Exception& err) {
         std::cerr << "[ERROR] " << err.what() << "\n";
         FAIL();
