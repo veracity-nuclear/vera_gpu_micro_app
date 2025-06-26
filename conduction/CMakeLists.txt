@@ -7,6 +7,7 @@ target_link_libraries(conduction_lib
     HighFive::HighFive
     Kokkos::kokkos
     PETSc::PETSc
+    utils
 )
 
 add_executable(conduction_exec
@@ -19,8 +20,10 @@ enable_testing()
 set(TEST_EXECUTABLES
     test_cylinder_node
     test_cylindrical_solver
+    test_smr_serial
 )
 set(TEST_LABELS
+    "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
 )
