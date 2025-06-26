@@ -537,13 +537,17 @@ void COOMatrixAssembler::_assembleFission(const FluxView& flux)
             });
         };
 
+        // Use the team policy with the automatic team size to calculate the maximum team size
         Kokkos::TeamPolicy<AssemblySpace> nCellsRange(_cmfdData.nCells, Kokkos::AUTO);
         int maxTeamSize = nCellsRange.team_size_max(functorVectorAssemble, Kokkos::ParallelReduceTag());
+
+        // If we can set the team size to the number of groups, we do so
         if (maxTeamSize >= _cmfdData.nGroups)
         {
-            // If the team size is too large, we need to reduce it
             nCellsRange = Kokkos::TeamPolicy<AssemblySpace>(_cmfdData.nCells, _cmfdData.nGroups);
         }
+
+        // Actually execute the parallel for loop
         Kokkos::parallel_for("COOVector", nCellsRange, functorVectorAssemble);
     }
 
