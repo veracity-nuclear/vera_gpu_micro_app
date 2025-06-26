@@ -1,6 +1,8 @@
 /*
   This file tests if the PetscMatrixAssembler works as intended.
 */
+#pragma once
+
 #include "PetscKokkosTestEnvironment.hpp"
 #include "PetscMatrixAssembler.hpp"
 
@@ -195,17 +197,3 @@ TEST_P(PetscMatrixAssemblerTest, TestCOOVectorAssembler)
 {
   compareVectors<COOMatrixAssembler>();
 }
-
-INSTANTIATE_TEST_SUITE_P(
-  TestAssemblyLight,
-  PetscMatrixAssemblerTest,
-  ::testing::Values(
-    "data/pin_7g_16a_3p_serial.h5",
-    "data/7x7_7g_16a_3p_serial.h5"));
-
-INSTANTIATE_TEST_SUITE_P(
-  TestAssemblyHeavy,
-  PetscMatrixAssemblerTest,
-  ::testing::Values(
-    "data/mini-core_7g_16a_3p_serial.h5"));
-

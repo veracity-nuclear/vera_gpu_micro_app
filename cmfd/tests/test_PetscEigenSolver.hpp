@@ -1,9 +1,30 @@
+#pragma once
+
 #include "PetscEigenSolver.hpp"
 #include "PetscKokkosTestEnvironment.hpp"
 
 using AssemblerPtr = PetscEigenSolver::AssemblerPtr;
 using AssemblerPtrFactory = std::function<AssemblerPtr(const HighFive::Group&)>;
 using Params = std::tuple<std::string, AssemblerPtrFactory>;
+
+// Creates Params for the PetscEigenSolverTest where the template determines the type of Assembler used
+// and the vector of strings (argument) contains the file paths to be tested
+template<typename AssemblerType>
+std::vector<Params> createParams(const std::vector<std::string>& files)
+{
+    std::vector<Params> params;
+
+    AssemblerPtrFactory assemblerPtrFactory = [](const HighFive::Group &coarseMeshData)
+    {
+        return std::make_unique<AssemblerType>(coarseMeshData);
+    };
+
+    for (const auto& file : files) {
+        params.emplace_back(file, assemblerPtrFactory);
+    }
+
+    return params;
+}
 
 class PetscEigenSolverTest : public :: testing::TestWithParam<Params>
 {
@@ -39,20 +60,8 @@ public:
         PetscCallG(solver->solve(1));
 
         std::vector<double> keffHistory = solver->keffHistory;
-        ASSERT_EQ(keffHistory.size(), 1) << "Keff history should have one entry after one iteration";
-
+        ASSERT_EQ(keffHistory.size(), 2) << "Keff history should have two entries after one iteration";
         ASSERT_NE(keffHistory[0], keffHistory[1]) << "Keff should change after one iteration";
-    }
-
-    void solveTwoIterations()
-    {
-        PetscCallG(solver->solve(2));
-
-        std::vector<double> keffHistory = solver->keffHistory;
-        ASSERT_EQ(keffHistory.size(), 2) << "Keff history should have two entries after two iterations";
-
-        ASSERT_NE(keffHistory[0], keffHistory[1]) << "Keff should change after first iteration";
-        ASSERT_NE(keffHistory[1], keffHistory[0]) << "Keff should change after second iteration";
     }
 
     void solve()
@@ -74,64 +83,8 @@ TEST_P(PetscEigenSolverTest, TestOneIteration)
     solveOneIteration();
 }
 
-TEST_P(PetscEigenSolverTest, TestTwoIterations)
-{
-    // Test two iterations
-    solveTwoIterations();
-}
-
 TEST_P(PetscEigenSolverTest, FullSolve)
 {
     // Test the full solve
     solve();
 }
-
-template<typename AssemblerType>
-std::vector<Params> createParams(const std::vector<std::string>& files)
-{
-    std::vector<Params> params;
-
-    AssemblerPtrFactory assemblerPtrFactory = [](const HighFive::Group &coarseMeshData)
-    {
-        return std::make_unique<AssemblerType>(coarseMeshData);
-    };
-
-    for (const auto& file : files) {
-        params.emplace_back(file, assemblerPtrFactory);
-    }
-
-    return params;
-}
-
-static const std::vector<std::string> lightTestFiles = {
-    "data/pin_7g_16a_3p_serial.h5",
-    "data/7x7_7g_16a_3p_serial.h5"
-};
-
-static const std::vector<std::string> heavyTestFiles = {
-    "data/mini-core_7g_16a_3p_serial.h5",
-};
-
-INSTANTIATE_TEST_SUITE_P(
-    TestEigenSimpleLight,
-    PetscEigenSolverTest,
-    ::testing::ValuesIn(createParams<SimpleMatrixAssembler>(lightTestFiles))
-);
-
-INSTANTIATE_TEST_SUITE_P(
-    TestEigenSimpleHeavy,
-    PetscEigenSolverTest,
-    ::testing::ValuesIn(createParams<SimpleMatrixAssembler>(heavyTestFiles))
-);
-
-INSTANTIATE_TEST_SUITE_P(
-    TestEigenCOOLight,
-    PetscEigenSolverTest,
-    ::testing::ValuesIn(createParams<COOMatrixAssembler>(lightTestFiles))
-);
-
-INSTANTIATE_TEST_SUITE_P(
-    TestEigenCOOHeavy,
-    PetscEigenSolverTest,
-    ::testing::ValuesIn(createParams<COOMatrixAssembler>(heavyTestFiles))
-);

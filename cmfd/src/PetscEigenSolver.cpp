@@ -70,10 +70,12 @@ PetscErrorCode PetscEigenSolver::solve(size_t maxIterations) {
 
         if (iter > 0 && std::abs(keff - keffHistory[iter-1]) < tol) {
             // Convergence achieved
+            keffHistory.push_back(keff);
             return PETSC_SUCCESS;
         }
     }
 
+    keffHistory.push_back(keff);
     std::cerr << "Warning: Maximum iterations reached without convergence." << std::endl;
     return PETSC_SUCCESS;
     // return PETSC_ERR_CONV_FAILED;

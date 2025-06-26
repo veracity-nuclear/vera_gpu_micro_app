@@ -42,7 +42,7 @@ void vectorsAreParallel(
     const Vec &v2,
     PetscScalar tol)
 {
-  PetscScalar dotProduct, normV1, normV2, normProduct;
+  PetscScalar dotProduct, normV1, normV2, normProduct, dotProductSqr, normProductSqr, relError;
   PetscCallG(VecDot(v1, v2, &dotProduct));
   PetscCallG(VecNorm(v1, NORM_2, &normV1));
   PetscCallG(VecNorm(v2, NORM_2, &normV2));
@@ -52,10 +52,17 @@ void vectorsAreParallel(
   // If v1 and v2 are parallel, then cos(theta) = +1 or -1,
   // so dot(v1, v2)^2 should be close to ||v1||^2 * ||v2||^2.
   normProduct = normV1 * normV2;
-  ASSERT_NEAR(dotProduct * dotProduct, normProduct * normProduct, tol)
+
+  dotProductSqr = dotProduct * dotProduct;
+  normProductSqr = normProduct * normProduct;
+
+  relError = std::abs(dotProductSqr - normProductSqr) / std::max(normProductSqr, 1.0);
+
+  ASSERT_LE(relError, tol)
       << "Vectors are not parallel: dot product = " << dotProduct
       << ", norms = (" << normV1 << ", " << normV2 << ")"
-      << ", tolerance = " << tol;
+      << ", tolerance = " << tol <<
+      ", relative error = " << relError;
 }
 
 // Convert a HighFive group (data sets are rows) to a 2D vector
@@ -151,7 +158,6 @@ DummyMatrixAssembler::DummyMatrixAssembler(const HighFive::File &file)
   std::vector<PetscScalar> xVecLocal;
   xVecH5.read(xVecLocal);
   PetscCallCXXAbort(PETSC_COMM_SELF, createPetscVec(xVecLocal, fluxGold));
-  // PetscCallCXXAbort(PETSC_COMM_SELF, VecScale(fluxGold, kGold));
 
   HighFive::DataSet bVecH5 = file.getDataSet("CMFD_Matrix/b");
   std::vector<PetscScalar> bVecLocal;

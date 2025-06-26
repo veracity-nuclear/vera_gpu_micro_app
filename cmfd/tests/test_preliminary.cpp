@@ -319,7 +319,7 @@ TEST(s02_petsc, hdf5ToMatrix)
   }
 
   PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_STDOUT_WORLD));
-#ifndef NDEBUG
+#ifdef DEBUG
   PetscCallG(PetscOptionsSetValue(NULL, "-draw_size", "1920,1080")); // Set the size of the draw window
   PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_DRAW_WORLD));           // need x11 but allows visualization
 #endif
