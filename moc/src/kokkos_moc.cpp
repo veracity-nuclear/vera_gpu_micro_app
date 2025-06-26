@@ -354,8 +354,50 @@ Kokkos::TeamPolicy<Kokkos::Cuda> KokkosMOC<Kokkos::Cuda>::_configure_team_policy
 }
 #endif
 
-// Specializations for other execution spaces will be added by the user
-// ...
+template <typename ExecSpace>
+struct RayIndexCalculator {
+    KOKKOS_INLINE_FUNCTION
+    static void calculate(int league_rank, int team_rank,
+                         int npol, int ng,
+                         int& iray, int& ipol, int& ig) {
+        // Default implementation (for CUDA and others)
+        iray = league_rank;
+        ig = team_rank / npol;
+        ipol = team_rank % npol;
+    }
+};
+
+// Specialization for Serial backend
+#ifdef KOKKOS_ENABLE_SERIAL
+template <>
+struct RayIndexCalculator<Kokkos::Serial> {
+    KOKKOS_INLINE_FUNCTION
+    static void calculate(int league_rank, int team_rank,
+                         int npol, int ng,
+                         int& iray, int& ipol, int& ig) {
+        int flat_idx = league_rank;
+        iray = flat_idx / (npol * ng);
+        ipol = (flat_idx / ng) % npol;
+        ig = flat_idx % ng;
+    }
+};
+#endif
+
+// Specialization for OpenMP backend
+#ifdef KOKKOS_ENABLE_OPENMP
+template <>
+struct RayIndexCalculator<Kokkos::OpenMP> {
+    KOKKOS_INLINE_FUNCTION
+    static void calculate(int league_rank, int team_rank,
+                         int npol, int ng,
+                         int& iray, int& ipol, int& ig) {
+        int flat_idx = league_rank;
+        iray = flat_idx / (npol * ng);
+        ipol = (flat_idx / ng) % npol;
+        ig = flat_idx % ng;
+    }
+};
+#endif
 
 // Unified implementation of sweep
 template <typename ExecutionSpace>
@@ -395,19 +437,10 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
     Kokkos::parallel_for("MOC Sweep Rays", policy, KOKKOS_LAMBDA(const team_member& teamMember) {
         int iray, ipol, ig;
 
-        // For Serial, we need to decompose the flat index
-        if (std::is_same<ExecutionSpace, Kokkos::Serial>::value || std::is_same<ExecutionSpace, Kokkos::OpenMP>::value) {
-            int flat_idx = teamMember.league_rank();
-            iray = flat_idx / (npol * ng);
-            ipol = (flat_idx / ng) % npol;
-            ig = flat_idx % ng;
-        }
-        // For other backends, use team-based indexing
-        else {
-            iray = teamMember.league_rank();
-            ig = teamMember.team_rank() / npol;
-            ipol = teamMember.team_rank() % npol;
-        }
+        // Use the specialized helper to calculate indices - no branches!
+        RayIndexCalculator<ExecutionSpace>::calculate(
+            teamMember.league_rank(), teamMember.team_rank(),
+            npol, ng, iray, ipol, ig);
 
         int nsegs = ray_nsegs(iray + 1) - ray_nsegs(iray);
 
