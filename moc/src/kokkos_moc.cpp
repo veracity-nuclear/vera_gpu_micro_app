@@ -163,6 +163,26 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         }
     }
 
+    // Build exponential table
+    _n_exp_intervals = 40000;
+    double min_val = -40.0;
+    double max_val = 0.0;
+    _exp_rdx = _n_exp_intervals / (max_val - min_val);
+    double dx = 1.0 / _exp_rdx;
+    _h_exp_table = Kokkos::View<double**, layout, Kokkos::HostSpace>("exp_table", _n_exp_intervals + 1, 2);
+    double x1 = min_val;
+    double y1 = 1.0 - Kokkos::exp(x1);
+    for (size_t i = 0; i < _n_exp_intervals + 1; i++) {
+        double x2 = x1 + dx;
+        double y2 = 1.0 - Kokkos::exp(x1);
+        _h_exp_table(i, 0) = (y2 - y1) * _exp_rdx;
+        _h_exp_table(i, 1) = y1 - _h_exp_table(i, 0) * x1;
+        x1 = x2;
+        y1 = y2;
+    }
+    _d_exp_table = Kokkos::create_mirror(ExecutionSpace(), _h_exp_table);
+    Kokkos::deep_copy(_d_exp_table, _h_exp_table);
+
     // Store the inverse polar angle sine
     _h_rsinpolang = Kokkos::View<double*, layout, Kokkos::HostSpace>("rsinpolang", _npol);
     for (int ipol = 0; ipol < _npol; ipol++) {
@@ -394,6 +414,8 @@ struct RayIndexCalculator<Kokkos::OpenMP> {
 template <typename ExecutionSpace>
 KOKKOS_INLINE_FUNCTION
 void compute_exparg(int iray, int nsegs, int ig, int ipol,
+                    const Kokkos::View<const double**, ExecutionSpace>& exp_table,
+                    int n_intervals, double rdx,
                     Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space>& exparg,
                     const Kokkos::View<const double**, ExecutionSpace>& xstr,
                     const Kokkos::View<const int*, ExecutionSpace>& ray_fsrs,
@@ -401,16 +423,21 @@ void compute_exparg(int iray, int nsegs, int ig, int ipol,
                     const Kokkos::View<const double*, ExecutionSpace>& rsinpolang,
                     const Kokkos::View<const int*, ExecutionSpace>& ray_nsegs)
 {
-  if constexpr (!std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
-    for (int iseg = 0; iseg < nsegs; ++iseg) {
-      int iseg_idx = ray_nsegs(iray) + iseg;
-      int fsr = ray_fsrs(iseg_idx);
-      double sig = xstr(fsr, ig);
-      double len = ray_segments(iseg_idx);
-      double sinphi = rsinpolang(ipol);
-      exparg(iseg) = 1.0 - Kokkos::exp(-sig * len * sinphi);
+    if constexpr (!std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
+        for (int iseg = 0; iseg < nsegs; ++iseg) {
+            int iseg_idx = ray_nsegs(iray) + iseg;
+            int fsr = ray_fsrs(iseg_idx);
+            double val = -xstr(fsr, ig) * ray_segments(iseg_idx) * rsinpolang(ipol);
+            int i = Kokkos::floor(val * rdx) + n_intervals + 1;
+            if (i >= 0 && i < n_intervals + 1) {
+                exparg(iseg) = exp_table(i, 0) * val + exp_table(i, 1);
+            } else if (val < -700.0) {
+                exparg(iseg) = 1.0;
+            } else {
+                exparg(iseg) = 1.0 - Kokkos::exp(val);
+            }
+        }
     }
-  }
 }
 
 template <typename ExecutionSpace>
@@ -452,6 +479,9 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
     auto& angflux = _d_angflux;
     auto& old_angflux = _d_old_angflux;
     auto& max_segments = _max_segments;
+    auto& exp_table = _d_exp_table;
+    auto& n_exp_intervals = _n_exp_intervals;
+    auto& exp_rdx = _exp_rdx;
 
     // Initialize the scalar flux to 0.0
     Kokkos::deep_copy(scalar_flux, 0.0);
@@ -479,7 +509,7 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
 
         // Create thread-local exparg array for non-CUDA execution spaces using scratch space
         Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space> exparg(teamMember.team_scratch(0), nsegs);
-        compute_exparg<ExecutionSpace>(iray, nsegs, ig, ipol, exparg, xstr, ray_fsrs, ray_segments, rsinpolang, ray_nsegs);
+        compute_exparg<ExecutionSpace>(iray, nsegs, ig, ipol, exp_table, n_exp_intervals, exp_rdx, exparg, xstr, ray_fsrs, ray_segments, rsinpolang, ray_nsegs);
 
         int global_seg, ireg1, ireg2;
         int iseg2 = nsegs;

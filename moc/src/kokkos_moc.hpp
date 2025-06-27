@@ -66,6 +66,8 @@ class KokkosMOC : public BaseMOC {
         int _nfsr;  // Number of FSRs
         int _npol;  // Number of polar angles
         int _ng;  // Number of energy groups
+        int _n_exp_intervals;  // Number of exponential table intervals
+        double _exp_rdx;  // Exponential table inverse spacing
 
         // Geometry host data
         double _plane_height;  // Height of the plane
@@ -75,12 +77,14 @@ class KokkosMOC : public BaseMOC {
         std::vector<double> _ray_spacing;
         Kokkos::View<double**, layout, Kokkos::HostSpace> _h_angle_weights;
         Kokkos::View<double*, layout, Kokkos::HostSpace> _h_rsinpolang;
+        Kokkos::View<double**, layout, Kokkos::HostSpace> _h_exp_table;
 
         // Geometry device data
         Kokkos::View<double*, layout, MemorySpace> _d_fsr_vol;
         Kokkos::View<double**, layout, MemorySpace> _d_xstr;
         Kokkos::View<double**, layout, MemorySpace> _d_angle_weights;
         Kokkos::View<double*, layout, MemorySpace> _d_rsinpolang;
+        Kokkos::View<double**, layout, MemorySpace> _d_exp_table;
 
         // Ray host data
         int _n_rays;  // Number of rays
