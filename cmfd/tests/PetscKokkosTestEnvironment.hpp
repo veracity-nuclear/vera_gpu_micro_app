@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+#include "PetscMatrixAssembler.hpp"
+
 // PetscCall can't be used in the body of a TEST
 #define PetscCallG(call) ASSERT_EQ(call, PETSC_SUCCESS) << "PETSc call failed: " << #call;
 
@@ -52,6 +54,11 @@ void compare2DHostAndDevice(
     const Kokkos::View<PetscScalar **, Kokkos::DefaultExecutionSpace> &d_view,
     const std::string &message = "");
 
+void vectorsAreParallel(
+    const Vec &v1,
+    const Vec &v2,
+    PetscScalar tol = 1.e-7);
+
 // Convert a HighFive group (data sets are rows) to a 2D vector
 std::vector<std::vector<PetscScalar>> readMatrixFromHDF5(const HighFive::Group &AMatH5);
 
@@ -60,3 +67,41 @@ PetscErrorCode createPetscVec(const std::vector<PetscScalar> &vec, Vec &vecPetsc
 
 // Create a PETSc matrix (passed by ref) from a std::vector<std::vector<PetscScalar>>
 PetscErrorCode createPetscMat(const std::vector<std::vector<PetscScalar>> &vecOfVec, Mat &matPetsc);
+
+// Helper function to detect if T derives from any PetscMatrixAssembler<Space>
+template <typename T, typename = void>
+struct isPetscMatrixAssembler
+{
+  template <typename AnySpace>
+  static std::true_type test(const PetscMatrixAssembler<AnySpace> *);
+  static std::false_type test(...);
+  static constexpr bool value = decltype(test(std::declval<T *>()))::value;
+};
+
+// Struct for working with PetscMatrixAssembler without actually assembling a matrix
+// and instead using the matrices and vectors from an HDF5 file
+struct DummyMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExecutionSpace>
+{
+    using AssemblySpace = Kokkos::DefaultHostExecutionSpace;
+    using AssemblyMemorySpace = Kokkos::HostSpace;
+
+    Vec fluxGold;
+    double kGold;
+    size_t nGroups, nCells;
+
+    DummyMatrixAssembler() = default;
+    DummyMatrixAssembler(const HighFive::File &file);
+    ~DummyMatrixAssembler()
+    {
+      PetscCallCXXAbort(PETSC_COMM_SELF, VecDestroy(&fluxGold));
+    };
+
+    void _assembleM() override
+    {
+      // No-op, MMat is already initialized in the constructor
+    }
+    void _assembleFission(const FluxView &flux) override
+    {
+      // No-op, we don't need to assemble fission in this dummy assembler
+    }
+};
