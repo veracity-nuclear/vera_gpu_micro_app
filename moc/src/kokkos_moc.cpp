@@ -14,6 +14,9 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     _file(HighFive::File(_filename, HighFive::File::ReadOnly)),
     _device(args.get_option("device"))
 {
+    using HViewDouble1D = Kokkos::View<double*, layout, Kokkos::HostSpace>;
+    using HViewDouble2D = Kokkos::View<double**, layout, Kokkos::HostSpace>;
+    using HViewDouble3D = Kokkos::View<double***, layout, Kokkos::HostSpace>;
     // Read the rays
     _read_rays();
 
@@ -31,7 +34,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         auto fsr_vol = std::make_unique<std::vector<double>>();
         _file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read(*fsr_vol);
         _nfsr = fsr_vol->size();
-        _h_fsr_vol = Kokkos::View<double*, layout, Kokkos::HostSpace>("fsr_vol", _nfsr);
+        _h_fsr_vol = HViewDouble1D("fsr_vol", _nfsr);
         for (int i = 0; i < _nfsr; i++){
             _h_fsr_vol(i) = (*fsr_vol)[i];
         }
@@ -42,7 +45,8 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     _ng = _library.get_num_groups();
 
     // Read the material IDs
-    auto tmp_mat_id = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xsr_mat_id").read<std::vector<double>>();
+    std::string mat_id_path = "/MOC_Ray_Data/Domain_00001/Solution_Data/xsr_mat_id";
+    auto tmp_mat_id = _file.getDataSet(mat_id_path).read<std::vector<double>>();
     std::vector<int> xsr_mat_id;
     xsr_mat_id.reserve(tmp_mat_id.size());
     for (const auto& id : tmp_mat_id) {
@@ -63,8 +67,8 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     _get_xstr(starting_xsr);
 
     // Allocate scalar flux and source array
-    _h_scalar_flux = Kokkos::View<double**, layout, Kokkos::HostSpace>("scalar_flux", _nfsr, _ng);
-    _h_source = Kokkos::View<double**, layout, Kokkos::HostSpace>("source", _nfsr, _ng);
+    _h_scalar_flux = HViewDouble2D("scalar_flux", _nfsr, _ng);
+    _h_source = HViewDouble2D("source", _nfsr, _ng);
     Kokkos::deep_copy(_h_scalar_flux, 1.0);
     Kokkos::deep_copy(_h_source, 1.0);
 
@@ -84,7 +88,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         if (objName.substr(0, 6) == "Angle_") {
             HighFive::Group angleGroup = domain.getGroup(objName);
             // Read ray spacing
-            _ray_spacing.push_back(angleGroup.getDataSet("spacing").read<double>());            // Read the BC sizes
+            _ray_spacing.push_back(angleGroup.getDataSet("spacing").read<double>());  // Read the BC sizes
             int iazi = std::stoi(objName.substr(8)) - 1;
             std::vector<int> bc_size = angleGroup.getDataSet("BC_size").read<std::vector<int>>();
             bc_sizes.push_back(bc_size);
@@ -109,26 +113,30 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
 
     // Build map from face/BC index to ray index
     for (size_t iray = 0; iray < _n_rays; iray++) {
-        if (_h_ray_bc_index_frwd_start(iray) >= 0) {
-            angface_to_ray[_h_ray_angle_index(iray)][_h_ray_bc_face_start(iray)][_h_ray_bc_index_frwd_start(iray)] = iray;
+        int ang = _h_ray_angle_index(iray);
+        int bc_index = _h_ray_bc_index_frwd_start(iray);
+        if (bc_index >= 0) {
+            angface_to_ray[ang][_h_ray_bc_face_start(iray)][bc_index] = iray;
         }
-        if (_h_ray_bc_index_bkwd_start(iray) >= 0) {
-            angface_to_ray[_h_ray_angle_index(iray)][_h_ray_bc_face_end(iray)][_h_ray_bc_index_bkwd_start(iray)] = _n_rays + iray;
+        bc_index = _h_ray_bc_index_bkwd_start(iray);
+        if (bc_index >= 0) {
+            angface_to_ray[ang][_h_ray_bc_face_end(iray)][bc_index] = _n_rays + iray;
         }
     }
 
     // Now allocate the angular flux arrays, remap the long ray indexes, and initialize the angular flux arrays
     total_bc_points = 2 * total_bc_points + 2;  // Both directions on each ray, plus two for the vacuum rays
-    _h_angflux = Kokkos::View<double***, layout, Kokkos::HostSpace>("angflux", total_bc_points, _npol, _ng);
-    _h_old_angflux = Kokkos::View<double***, layout, Kokkos::HostSpace>("old_angflux", total_bc_points, _npol, _ng);
+    _h_angflux = HViewDouble3D("angflux", total_bc_points, _npol, _ng);
+    _h_old_angflux = HViewDouble3D("old_angflux", total_bc_points, _npol, _ng);
     for (size_t i = 0; i < _n_rays; i++) {
-        int irefl = _h_ray_angle_index(i) % 2 == 0 ? _h_ray_angle_index(i) + 1 : _h_ray_angle_index(i) - 1;
+        int ang = _h_ray_angle_index(i);
+        int irefl = ang % 2 == 0 ? ang + 1 : ang - 1;
         if (_h_ray_bc_index_frwd_start(i) == -1) {
             _h_ray_bc_index_frwd_start(i) = total_bc_points - 2;
             _h_ray_bc_index_bkwd_end(i) = total_bc_points - 1;
         } else {
             int start_index = _h_ray_bc_index_frwd_start(i);
-            _h_ray_bc_index_frwd_start(i) = angface_to_ray[_h_ray_angle_index(i)][_h_ray_bc_face_start(i)][start_index];
+            _h_ray_bc_index_frwd_start(i) = angface_to_ray[ang][_h_ray_bc_face_start(i)][start_index];
             _h_ray_bc_index_bkwd_end(i) = angface_to_ray[irefl][_h_ray_bc_face_start(i)][start_index];
             for (size_t ipol = 0; ipol < _npol; ipol++) {
                 for (size_t ig = 0; ig < _ng; ig++) {
@@ -143,7 +151,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         } else {
             int start_index = _h_ray_bc_index_bkwd_start(i);
             _h_ray_bc_index_frwd_end(i) = angface_to_ray[irefl][_h_ray_bc_face_end(i)][start_index];
-            _h_ray_bc_index_bkwd_start(i) = angface_to_ray[_h_ray_angle_index(i)][_h_ray_bc_face_end(i)][start_index];
+            _h_ray_bc_index_bkwd_start(i) = angface_to_ray[ang][_h_ray_bc_face_end(i)][start_index];
             for (size_t ipol = 0; ipol < _npol; ipol++) {
                 for (size_t ig = 0; ig < _ng; ig++) {
                     _h_angflux(_h_ray_bc_index_frwd_end(i), ipol, ig) = 0.0;
@@ -155,7 +163,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     Kokkos::deep_copy(_h_old_angflux, _h_angflux);
 
     // Build angle weights
-    _h_angle_weights = Kokkos::View<double**, layout, Kokkos::HostSpace>("angle_weights", nazi, _npol);
+    _h_angle_weights = HViewDouble2D("angle_weights", nazi, _npol);
     for (int iazi = 0; iazi < nazi; iazi++) {
         for (int ipol = 0; ipol < _npol; ipol++) {
             _h_angle_weights(iazi, ipol) = _ray_spacing[iazi] * azi_weights[iazi] * polar_weights[ipol]
@@ -169,7 +177,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     double max_val = 0.0;
     _exp_rdx = _n_exp_intervals / (max_val - min_val);
     double dx = 1.0 / _exp_rdx;
-    _h_exp_table = Kokkos::View<double**, layout, Kokkos::HostSpace>("exp_table", _n_exp_intervals + 1, 2);
+    _h_exp_table = HViewDouble2D("exp_table", _n_exp_intervals + 1, 2);
     double x1 = min_val;
     double y1 = 1.0 - Kokkos::exp(x1);
     for (size_t i = 0; i < _n_exp_intervals + 1; i++) {
@@ -184,7 +192,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     Kokkos::deep_copy(_d_exp_table, _h_exp_table);
 
     // Store the inverse polar angle sine
-    _h_rsinpolang = Kokkos::View<double*, layout, Kokkos::HostSpace>("rsinpolang", _npol);
+    _h_rsinpolang = HViewDouble1D("rsinpolang", _npol);
     for (int ipol = 0; ipol < _npol; ipol++) {
         _h_rsinpolang(ipol) = 1.0 / std::sin(polar_angles[ipol]);
     }
@@ -225,6 +233,8 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
 // Implement other methods with template prefix
 template <typename ExecutionSpace>
 void KokkosMOC<ExecutionSpace>::_read_rays() {
+    using HViewInt1D = Kokkos::View<int*, layout, Kokkos::HostSpace>;
+    using HViewDouble1D = Kokkos::View<double*, layout, Kokkos::HostSpace>;
     auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
 
     // Count the rays
@@ -242,14 +252,14 @@ void KokkosMOC<ExecutionSpace>::_read_rays() {
     }
 
     // Convert the rays to a flattened format
-    _h_ray_nsegs = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_nsegs", _n_rays + 1);
-    _h_ray_bc_face_start = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_bc_face_start", _n_rays);
-    _h_ray_bc_face_end = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_bc_face_end", _n_rays);
-    _h_ray_bc_index_frwd_start = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_bc_index_frwd_start", _n_rays);
-    _h_ray_bc_index_frwd_end = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_bc_index_frwd_end", _n_rays);
-    _h_ray_bc_index_bkwd_start = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_bc_index_bkwd_start", _n_rays);
-    _h_ray_bc_index_bkwd_end = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_bc_index_bkwd_end", _n_rays);
-    _h_ray_angle_index = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_angle_index", _n_rays);
+    _h_ray_nsegs = HViewInt1D("ray_nsegs", _n_rays + 1);
+    _h_ray_bc_face_start = HViewInt1D("ray_bc_face_start", _n_rays);
+    _h_ray_bc_face_end = HViewInt1D("ray_bc_face_end", _n_rays);
+    _h_ray_bc_index_frwd_start = HViewInt1D("ray_bc_index_frwd_start", _n_rays);
+    _h_ray_bc_index_frwd_end = HViewInt1D("ray_bc_index_frwd_end", _n_rays);
+    _h_ray_bc_index_bkwd_start = HViewInt1D("ray_bc_index_bkwd_start", _n_rays);
+    _h_ray_bc_index_bkwd_end = HViewInt1D("ray_bc_index_bkwd_end", _n_rays);
+    _h_ray_angle_index = HViewInt1D("ray_angle_index", _n_rays);
     _h_ray_nsegs(0) = 0;
     int iray = 0;
     int nangles = 0;
@@ -277,8 +287,8 @@ void KokkosMOC<ExecutionSpace>::_read_rays() {
         }
     }
 
-    _h_ray_fsrs = Kokkos::View<int*, layout, Kokkos::HostSpace>("ray_fsrs", _h_ray_nsegs(_n_rays));
-    _h_ray_segments = Kokkos::View<double*, layout, Kokkos::HostSpace>("ray_segments", _h_ray_nsegs(_n_rays));
+    _h_ray_fsrs = HViewInt1D("ray_fsrs", _h_ray_nsegs(_n_rays));
+    _h_ray_segments = HViewDouble1D("ray_segments", _h_ray_nsegs(_n_rays));
     iray = 0;
     for (const auto& objName : domain.listObjectNames()) {
         if (objName.substr(0, 6) == "Angle_") {
@@ -423,7 +433,10 @@ void compute_exparg(int iray, int nsegs, int ig, int ipol,
                     const Kokkos::View<const double*, ExecutionSpace>& rsinpolang,
                     const Kokkos::View<const int*, ExecutionSpace>& ray_nsegs)
 {
-    if constexpr (!std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
+#ifdef KOKKOS_ENABLE_CUDA
+    if constexpr (!std::is_same_v<ExecutionSpace, Kokkos::Cuda>)
+#endif
+    {
         for (int iseg = 0; iseg < nsegs; ++iseg) {
             int iseg_idx = ray_nsegs(iray) + iseg;
             int fsr = ray_fsrs(iseg_idx);
@@ -445,9 +458,12 @@ KOKKOS_INLINE_FUNCTION
 double eval_exp_arg(Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space>& exparg,
                     const int iseg, const double xstr, const double ray_segment, const double rsinpolang)
 {
+#ifdef KOKKOS_ENABLE_CUDA
     if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
         return 1.0 - Kokkos::exp(-xstr * ray_segment * rsinpolang);
-    } else {
+    } else
+#endif
+    {
         return exparg(iseg);
     }
 }
@@ -455,6 +471,7 @@ double eval_exp_arg(Kokkos::View<double*, typename ExecutionSpace::scratch_memor
 // Unified implementation of sweep
 template <typename ExecutionSpace>
 void KokkosMOC<ExecutionSpace>::_impl_sweep() {
+    using ScratchViewDouble1D = Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space>;
     Kokkos::deep_copy(_d_old_angflux, _h_old_angflux);
 
     auto& scalar_flux = _d_scalar_flux;
@@ -492,7 +509,7 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
 
     // Add scratch space for exponential arguments
     if (_device != "cuda") {
-        size_t scratch_size = Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space>::shmem_size(max_segments);
+        size_t scratch_size = ScratchViewDouble1D::shmem_size(max_segments);
         policy = policy.set_scratch_size(0, Kokkos::PerTeam(scratch_size));
     }
 
@@ -508,8 +525,9 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
         int nsegs = ray_nsegs(iray + 1) - ray_nsegs(iray);
 
         // Create thread-local exparg array for non-CUDA execution spaces using scratch space
-        Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space> exparg(teamMember.team_scratch(0), nsegs);
-        compute_exparg<ExecutionSpace>(iray, nsegs, ig, ipol, exp_table, n_exp_intervals, exp_rdx, exparg, xstr, ray_fsrs, ray_segments, rsinpolang, ray_nsegs);
+        ScratchViewDouble1D exparg(teamMember.team_scratch(0), nsegs);
+        compute_exparg<ExecutionSpace>(iray, nsegs, ig, ipol, exp_table, n_exp_intervals, exp_rdx, exparg,
+                                       xstr, ray_fsrs, ray_segments, rsinpolang, ray_nsegs);
 
         int global_seg, ireg1, ireg2;
         int iseg2 = nsegs;
@@ -523,14 +541,18 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
             // Forward segment sweep
             global_seg = ray_nsegs(iray) + iseg1;
             ireg1 = ray_fsrs(global_seg);
-            phid = (fsegflux - source(ireg1, ig)) * eval_exp_arg<ExecutionSpace>(exparg, iseg1, xstr(ireg1, ig), ray_segments(global_seg), rsinpolang(ipol));
+            phid = (fsegflux - source(ireg1, ig)) *
+                   eval_exp_arg<ExecutionSpace>(exparg, iseg1, xstr(ireg1, ig),
+                                                ray_segments(global_seg), rsinpolang(ipol));
             fsegflux -= phid;
             Kokkos::atomic_add(&scalar_flux(ireg1, ig), phid * angle_weights(ray_angle_index(iray), ipol));
 
             // Backward segment sweep
             global_seg = ray_nsegs(iray) + iseg2 - 1;
             ireg2 = ray_fsrs(global_seg);
-            phid = (bsegflux - source(ireg2, ig)) * eval_exp_arg<ExecutionSpace>(exparg, iseg2 - 1, xstr(ireg2, ig), ray_segments(global_seg), rsinpolang(ipol));
+            phid = (bsegflux - source(ireg2, ig)) *
+                   eval_exp_arg<ExecutionSpace>(exparg, iseg2 - 1, xstr(ireg2, ig),
+                                                ray_segments(global_seg), rsinpolang(ipol));
             bsegflux -= phid;
             Kokkos::atomic_add(&scalar_flux(ireg2, ig), phid * angle_weights(ray_angle_index(iray), ipol));
             iseg2--;
