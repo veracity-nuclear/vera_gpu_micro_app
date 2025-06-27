@@ -391,6 +391,40 @@ struct RayIndexCalculator<Kokkos::OpenMP> {
 };
 #endif
 
+template <typename ExecutionSpace>
+KOKKOS_INLINE_FUNCTION
+void compute_exparg(int iray, int nsegs, int ig, int ipol,
+                    Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space>& exparg,
+                    const Kokkos::View<const double**, ExecutionSpace>& xstr,
+                    const Kokkos::View<const int*, ExecutionSpace>& ray_fsrs,
+                    const Kokkos::View<const double*, ExecutionSpace>& ray_segments,
+                    const Kokkos::View<const double*, ExecutionSpace>& rsinpolang,
+                    const Kokkos::View<const int*, ExecutionSpace>& ray_nsegs)
+{
+  if constexpr (!std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
+    for (int iseg = 0; iseg < nsegs; ++iseg) {
+      int iseg_idx = ray_nsegs(iray) + iseg;
+      int fsr = ray_fsrs(iseg_idx);
+      double sig = xstr(fsr, ig);
+      double len = ray_segments(iseg_idx);
+      double sinphi = rsinpolang(ipol);
+      exparg(iseg) = 1.0 - Kokkos::exp(-sig * len * sinphi);
+    }
+  }
+}
+
+template <typename ExecutionSpace>
+KOKKOS_INLINE_FUNCTION
+double eval_exp_arg(Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space>& exparg,
+                    const int iseg, const double xstr, const double ray_segment, const double rsinpolang)
+{
+    if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
+        return 1.0 - Kokkos::exp(-xstr * ray_segment * rsinpolang);
+    } else {
+        return exparg(iseg);
+    }
+}
+
 // Unified implementation of sweep
 template <typename ExecutionSpace>
 void KokkosMOC<ExecutionSpace>::_impl_sweep() {
@@ -417,6 +451,7 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
     auto& angle_weights = _d_angle_weights;
     auto& angflux = _d_angflux;
     auto& old_angflux = _d_old_angflux;
+    auto& max_segments = _max_segments;
 
     // Initialize the scalar flux to 0.0
     Kokkos::deep_copy(scalar_flux, 0.0);
@@ -424,6 +459,12 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
     // Use the specialized team policy configuration
     typedef typename Kokkos::TeamPolicy<ExecutionSpace>::member_type team_member;
     auto policy = _configure_team_policy(n_rays, npol, ng);
+
+    // Add scratch space for exponential arguments
+    if (_device != "cuda") {
+        size_t scratch_size = Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space>::shmem_size(max_segments);
+        policy = policy.set_scratch_size(0, Kokkos::PerTeam(scratch_size));
+    }
 
     // Use the team-based approach for all backends
     Kokkos::parallel_for("MOC Sweep Rays", policy, KOKKOS_LAMBDA(const team_member& teamMember) {
@@ -435,6 +476,10 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
             npol, ng, iray, ipol, ig);
 
         int nsegs = ray_nsegs(iray + 1) - ray_nsegs(iray);
+
+        // Create thread-local exparg array for non-CUDA execution spaces using scratch space
+        Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space> exparg(teamMember.team_scratch(0), nsegs);
+        compute_exparg<ExecutionSpace>(iray, nsegs, ig, ipol, exparg, xstr, ray_fsrs, ray_segments, rsinpolang, ray_nsegs);
 
         int global_seg, ireg1, ireg2;
         int iseg2 = nsegs;
@@ -448,14 +493,14 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
             // Forward segment sweep
             global_seg = ray_nsegs(iray) + iseg1;
             ireg1 = ray_fsrs(global_seg);
-            phid = (fsegflux - source(ireg1, ig)) * (1.0 - exp(-xstr(ireg1, ig) * ray_segments(global_seg) * rsinpolang(ipol)));
+            phid = (fsegflux - source(ireg1, ig)) * eval_exp_arg<ExecutionSpace>(exparg, iseg1, xstr(ireg1, ig), ray_segments(global_seg), rsinpolang(ipol));
             fsegflux -= phid;
             Kokkos::atomic_add(&scalar_flux(ireg1, ig), phid * angle_weights(ray_angle_index(iray), ipol));
 
             // Backward segment sweep
             global_seg = ray_nsegs(iray) + iseg2 - 1;
             ireg2 = ray_fsrs(global_seg);
-            phid = (bsegflux - source(ireg2, ig)) * (1.0 - exp(-xstr(ireg2, ig) * ray_segments(global_seg) * rsinpolang(ipol)));
+            phid = (bsegflux - source(ireg2, ig)) * eval_exp_arg<ExecutionSpace>(exparg, iseg2 - 1, xstr(ireg2, ig), ray_segments(global_seg), rsinpolang(ipol));
             bsegflux -= phid;
             Kokkos::atomic_add(&scalar_flux(ireg2, ig), phid * angle_weights(ray_angle_index(iray), ipol));
             iseg2--;
