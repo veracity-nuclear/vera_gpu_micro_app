@@ -5,7 +5,7 @@ inline bool isNonZero(const PetscScalar& value)
     return std::abs(value) > PETSC_MACHINE_EPSILON;
 }
 
-void SimpleMatrixAssembler::_assembleM()
+PetscErrorCode SimpleMatrixAssembler::_assembleM()
 {
     PetscFunctionBeginUser;
 
@@ -15,11 +15,11 @@ void SimpleMatrixAssembler::_assembleM()
     // Set the matrix dimensions (just for compatibility checks))
     // The PETSC_DECIDEs are for sub matrices split across multiple MPI ranks.
     const PetscInt matSize = cmfdData.nCells * cmfdData.nGroups;
-    MatSetSizes(MMat, PETSC_DECIDE, PETSC_DECIDE, matSize, matSize);
+    PetscCall(MatSetSizes(MMat, PETSC_DECIDE, PETSC_DECIDE, matSize, matSize));
 
     // Set the type of the matrix (etc.) based on PETSc CLI options.
     // Default is AIJ sparse matrix.
-    MatSetFromOptions(MMat);
+    PetscCall(MatSetFromOptions(MMat));
 
     // TODO Figure out a way to change assembly type. Runtime vs compile time?
     // Should these just be different classes?
@@ -39,7 +39,7 @@ void SimpleMatrixAssembler::_assembleM()
                 const PetscScalar value = -1 * scatteringMat(scatterToIdx, scatterFromIdx) * volume;
                 if (isNonZero(value))
                 {
-                    MatSetValue(MMat, cellIdx * cmfdData.nGroups + scatterFromIdx, cellIdx * cmfdData.nGroups + scatterToIdx, value, ADD_VALUES);
+                    PetscCall(MatSetValue(MMat, cellIdx * cmfdData.nGroups + scatterFromIdx, cellIdx * cmfdData.nGroups + scatterToIdx, value, ADD_VALUES));
                 }
             }
         }
@@ -52,11 +52,11 @@ void SimpleMatrixAssembler::_assembleM()
             if (isNonZero(value))
             {
                 const PetscInt diagIdx = cellIdx * cmfdData.nGroups + groupIdx;
-                MatSetValue(MMat, diagIdx, diagIdx, value, ADD_VALUES);
+                PetscCall(MatSetValue(MMat, diagIdx, diagIdx, value, ADD_VALUES));
             }
             {
                 const PetscInt diagIdx = cellIdx * cmfdData.nGroups + groupIdx;
-                MatSetValue(MMat, diagIdx, diagIdx, value, ADD_VALUES);
+                PetscCall(MatSetValue(MMat, diagIdx, diagIdx, value, ADD_VALUES));
             }
         }
     }
@@ -80,20 +80,20 @@ void SimpleMatrixAssembler::_assembleM()
             if (posCellMatIdx >= 0)
             {
                 const PetscScalar value = -1 * dhat + dtilde;
-                if (isNonZero(value)) {MatSetValue(MMat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {PetscCall(MatSetValue(MMat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES));}
             }
             if (negCellMatIdx >= 0)
             {
                 const PetscScalar value = dhat + dtilde;
-                if (isNonZero(value)) {MatSetValue(MMat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {PetscCall(MatSetValue(MMat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES));}
             }
             if (posCellMatIdx >= 0 && negCellMatIdx >= 0)
             {
                 const PetscScalar value1 = -1 * dhat - dtilde;
-                if (isNonZero(value1)) {MatSetValue(MMat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES);}
+                if (isNonZero(value1)) {PetscCall(MatSetValue(MMat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES));}
 
                 const PetscScalar value2 = dhat - dtilde;
-                if (isNonZero(value2)) {MatSetValue(MMat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES);}
+                if (isNonZero(value2)) {PetscCall(MatSetValue(MMat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES));}
             }
         }
     }
@@ -107,7 +107,7 @@ void SimpleMatrixAssembler::_assembleM()
                 const PetscScalar value = -1 * cmfdData.scatteringXS(scatterToIdx, scatterFromIdx, cellIdx) * cmfdData.volume(cellIdx);
                 if (isNonZero(value))
                 {
-                    MatSetValue(MMat, cellIdx * cmfdData.nGroups + scatterFromIdx, cellIdx * cmfdData.nGroups + scatterToIdx, value, ADD_VALUES);
+                    PetscCall(MatSetValue(MMat, cellIdx * cmfdData.nGroups + scatterFromIdx, cellIdx * cmfdData.nGroups + scatterToIdx, value, ADD_VALUES));
                 }
             }
         }
@@ -122,7 +122,7 @@ void SimpleMatrixAssembler::_assembleM()
             if (isNonZero(value))
             {
                 const PetscInt diagIdx = cellIdx * cmfdData.nGroups + groupIdx;
-                MatSetValue(MMat, diagIdx, diagIdx, value, ADD_VALUES);
+                PetscCall(MatSetValue(MMat, diagIdx, diagIdx, value, ADD_VALUES));
             }
         }
     }
@@ -143,31 +143,33 @@ void SimpleMatrixAssembler::_assembleM()
             if (posCellMatIdx >= 0)
             {
                 const PetscScalar value = -1 * dhat + dtilde;
-                if (isNonZero(value)) {MatSetValue(MMat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {PetscCall(MatSetValue(MMat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES));}
             }
             if (negCellMatIdx >= 0)
             {
                 const PetscScalar value = dhat + dtilde;
-                if (isNonZero(value)) {MatSetValue(MMat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {PetscCall(MatSetValue(MMat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES));}
             }
             if (posCellMatIdx >= 0 && negCellMatIdx >= 0)
             {
                 const PetscScalar value1 = -1 * dhat - dtilde;
-                if (isNonZero(value1)) {MatSetValue(MMat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES);}
+                if (isNonZero(value1)) {PetscCall(MatSetValue(MMat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES));}
 
                 const PetscScalar value2 = dhat - dtilde;
-                if (isNonZero(value2)) {MatSetValue(MMat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES);}
+                if (isNonZero(value2)) {PetscCall(MatSetValue(MMat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES));}
             }
         }
     }
     #endif
 
     // Actually put the values into the matrix
-    MatAssemblyBegin(MMat, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(MMat, MAT_FINAL_ASSEMBLY);
+    PetscCall(MatAssemblyBegin(MMat, MAT_FINAL_ASSEMBLY));
+    PetscCall(MatAssemblyEnd(MMat, MAT_FINAL_ASSEMBLY));
+
+    return PETSC_SUCCESS;
 }
 
-void SimpleMatrixAssembler::_assembleFission(const FluxView& flux)
+PetscErrorCode SimpleMatrixAssembler::_assembleFission(const FluxView& flux)
 {
     std::vector<PetscInt> vecIndices;
     std::vector<PetscScalar> vecValues;
@@ -203,12 +205,14 @@ void SimpleMatrixAssembler::_assembleFission(const FluxView& flux)
     }
 
     // Actually put the values into the vector
-    VecSetValues(fissionVec, vecIndices.size(), vecIndices.data(), vecValues.data(), INSERT_VALUES);
-    VecAssemblyBegin(fissionVec);
-    VecAssemblyEnd(fissionVec);
+    PetscCall(VecSetValues(fissionVec, vecIndices.size(), vecIndices.data(), vecValues.data(), INSERT_VALUES));
+    PetscCall(VecAssemblyBegin(fissionVec));
+    PetscCall(VecAssemblyEnd(fissionVec));
+
+    return PETSC_SUCCESS;
 }
 
-void COOMatrixAssembler::_assembleM()
+PetscErrorCode COOMatrixAssembler::_assembleM()
 {
     /*
     The shape of a two cell three group matrix is
@@ -277,18 +281,18 @@ void COOMatrixAssembler::_assembleM()
 
     // // There are a lot of options here for splitting up the matrix into submatrices per mpi rank
     // //  (on the PETSc side), i.e., # of rows/cols per rank and number of zeros on and off the diagonal (per row).
-    MatCreateAIJKokkos(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE,
+    PetscCall(MatCreateAIJKokkos(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE,
         matSize, matSize,
         PETSC_DEFAULT, NULL,
         PETSC_DEFAULT, NULL,
-        &MMat);
+        &MMat));
 
     // Attempt. Could optimize with d_nnz based on scatter matrix layout (4th from last param)
     // MatCreateAIJKokkos(PETSC_COMM_WORLD, cmfdData.nGroups, cmfdData.nGroups,
     //     matSize, matSize, cmfdData.nGroups, NULL, 1, NULL, &MMat);
 
     static constexpr int method = 2;
-    // METHOD 1: Use Vectors with emplace back to avoid storing zeros
+    // METHOD 1: Use Vectors with emplace back to aPetscErrorCode storing zeros
     if constexpr(method == 1)
     {
         std::vector<PetscInt> rowIndices, colIndices;
@@ -382,8 +386,8 @@ void COOMatrixAssembler::_assembleM()
         size_t numNonZero = values.size();
 
 
-        MatSetPreallocationCOO(MMat, numNonZero, rowIndices.data(), colIndices.data());
-        MatSetValuesCOO(MMat, values.data(), ADD_VALUES);
+        PetscCall(MatSetPreallocationCOO(MMat, numNonZero, rowIndices.data(), colIndices.data()));
+        PetscCall(MatSetValuesCOO(MMat, values.data(), ADD_VALUES));
     }
     else if constexpr(method == 2) // METHOD 2:
     // Use Kokkos views somewhat naively (use teams, scratch pad, etc. to optimize)
@@ -495,12 +499,14 @@ void COOMatrixAssembler::_assembleM()
         );
     }
 
-        MatSetPreallocationCOO(MMat, maxNNZEntries, rowIndices.data(), colIndices.data());
-        MatSetValuesCOO(MMat, values.data(), ADD_VALUES);
+        PetscCall(MatSetPreallocationCOO(MMat, maxNNZEntries, rowIndices.data(), colIndices.data()));
+        PetscCall(MatSetValuesCOO(MMat, values.data(), ADD_VALUES));
     }
+
+    return PETSC_SUCCESS;
 }
 
-void COOMatrixAssembler::_assembleFission(const FluxView& flux)
+PetscErrorCode COOMatrixAssembler::_assembleFission(const FluxView& flux)
 {
     auto& _cmfdData = cmfdData;
 
@@ -552,6 +558,8 @@ void COOMatrixAssembler::_assembleFission(const FluxView& flux)
     }
 
     PetscFunctionBeginUser;
-    VecSetPreallocationCOO(fissionVec, nnz, rowIndices.data());
-    VecSetValuesCOO(fissionVec, values.data(), INSERT_VALUES);
+    PetscCall(VecSetPreallocationCOO(fissionVec, nnz, rowIndices.data()));
+    PetscCall(VecSetValuesCOO(fissionVec, values.data(), INSERT_VALUES));
+
+    return PETSC_SUCCESS;
 }

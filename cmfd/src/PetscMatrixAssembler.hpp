@@ -97,8 +97,8 @@ struct PetscMatrixAssembler : public MatrixAssemblerInterface
     // can't have host lambda functions in a private method.
     // These are protected when a pointer to the interface base
     // class is used.
-    virtual void _assembleM() = 0;
-    virtual void _assembleFission(const FluxView& flux) = 0;
+    virtual PetscErrorCode _assembleM() = 0;
+    virtual PetscErrorCode _assembleFission(const FluxView& flux) = 0;
 };
 
 // Uses Mat/VecSetValue(s) to naively assemble a matrix in PETSc. The focus is on accuracy over performance.
@@ -110,11 +110,11 @@ struct SimpleMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostEx
     SimpleMatrixAssembler() = default;
     SimpleMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
         : PetscMatrixAssembler<AssemblySpace>(CMFDCoarseMesh) {
-            _assembleM();
+            PetscCallCXXAbort(PETSC_COMM_SELF, _assembleM());
         }
 
-    void _assembleM() override;
-    void _assembleFission(const FluxView& flux) override;
+    PetscErrorCode _assembleM() override;
+    PetscErrorCode _assembleFission(const FluxView& flux) override;
 };
 
 // Uses Mat/VecSetValueCOO to assemble a matrix in PETSc.
@@ -126,11 +126,11 @@ struct COOMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExecu
     COOMatrixAssembler() = default;
     COOMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
         : PetscMatrixAssembler<AssemblySpace>(CMFDCoarseMesh) {
-            _assembleM();
+            PetscCallCXXAbort(PETSC_COMM_SELF, _assembleM());
         }
 
-    void _assembleM() override;
-    void _assembleFission(const FluxView& flux) override;
+    PetscErrorCode _assembleM() override;
+    PetscErrorCode _assembleFission(const FluxView& flux) override;
 };
 
 // Uses Kokkos views to assemble a matrix in PETSc (CSR Format)
@@ -142,9 +142,9 @@ struct KokkosMatrixAssembler : public PetscMatrixAssembler<>
     KokkosMatrixAssembler() = default;
     KokkosMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
         : PetscMatrixAssembler<AssemblySpace>(CMFDCoarseMesh) {
-            _assembleM();
+            PetscCallCXXAbort(PETSC_COMM_SELF, _assembleM());
         }
 
-    void _assembleM() override;
-    void _assembleFission(const FluxView& flux) override;
+    PetscErrorCode _assembleM() override;
+    PetscErrorCode _assembleFission(const FluxView& flux) override;
 };
