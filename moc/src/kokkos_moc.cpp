@@ -182,7 +182,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     double y1 = 1.0 - Kokkos::exp(x1);
     for (size_t i = 0; i < _n_exp_intervals + 1; i++) {
         double x2 = x1 + dx;
-        double y2 = 1.0 - Kokkos::exp(x1);
+        double y2 = 1.0 - Kokkos::exp(x2);
         _h_exp_table(i, 0) = (y2 - y1) * _exp_rdx;
         _h_exp_table(i, 1) = y1 - _h_exp_table(i, 0) * x1;
         x1 = x2;
@@ -423,7 +423,7 @@ struct RayIndexCalculator<Kokkos::OpenMP> {
 
 template <typename ExecutionSpace>
 KOKKOS_INLINE_FUNCTION
-void compute_exparg(int iray, int nsegs, int ig, int ipol,
+void compute_exparg(int iray, int ig, int ipol,
                     const Kokkos::View<const double**, ExecutionSpace>& exp_table,
                     int n_intervals, double rdx,
                     Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space>& exparg,
@@ -437,17 +437,16 @@ void compute_exparg(int iray, int nsegs, int ig, int ipol,
     if constexpr (!std::is_same_v<ExecutionSpace, Kokkos::Cuda>)
 #endif
     {
-        for (int iseg = 0; iseg < nsegs; ++iseg) {
-            int iseg_idx = ray_nsegs(iray) + iseg;
-            int fsr = ray_fsrs(iseg_idx);
-            double val = -xstr(fsr, ig) * ray_segments(iseg_idx) * rsinpolang(ipol);
+        for (int iseg = ray_nsegs(iray); iseg < ray_nsegs(iray + 1); iseg++) {
+            int local_seg = iseg - ray_nsegs(iray);
+            double val = -xstr(ray_fsrs(iseg), ig) * ray_segments(iseg) * rsinpolang(ipol);
             int i = Kokkos::floor(val * rdx) + n_intervals + 1;
             if (i >= 0 && i < n_intervals + 1) {
-                exparg(iseg) = exp_table(i, 0) * val + exp_table(i, 1);
+                exparg(local_seg) = exp_table(i, 0) * val + exp_table(i, 1);
             } else if (val < -700.0) {
-                exparg(iseg) = 1.0;
+                exparg(local_seg) = 1.0;
             } else {
-                exparg(iseg) = 1.0 - Kokkos::exp(val);
+                exparg(local_seg) = 1.0 - Kokkos::exp(val);
             }
         }
     }
@@ -526,7 +525,7 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
 
         // Create thread-local exparg array for non-CUDA execution spaces using scratch space
         ScratchViewDouble1D exparg(teamMember.team_scratch(0), nsegs);
-        compute_exparg<ExecutionSpace>(iray, nsegs, ig, ipol, exp_table, n_exp_intervals, exp_rdx, exparg,
+        compute_exparg<ExecutionSpace>(iray, ig, ipol, exp_table, n_exp_intervals, exp_rdx, exparg,
                                        xstr, ray_fsrs, ray_segments, rsinpolang, ray_nsegs);
 
         int global_seg, ireg1, ireg2;
