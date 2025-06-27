@@ -75,14 +75,12 @@ class KokkosMOC : public BaseMOC {
         std::vector<double> _ray_spacing;
         Kokkos::View<double**, layout, Kokkos::HostSpace> _h_angle_weights;
         Kokkos::View<double*, layout, Kokkos::HostSpace> _h_rsinpolang;
-        Kokkos::View<double**, layout, Kokkos::HostSpace> _h_exparg;
 
         // Geometry device data
         Kokkos::View<double*, layout, MemorySpace> _d_fsr_vol;
         Kokkos::View<double**, layout, MemorySpace> _d_xstr;
         Kokkos::View<double**, layout, MemorySpace> _d_angle_weights;
         Kokkos::View<double*, layout, MemorySpace> _d_rsinpolang;
-        Kokkos::View<double**, layout, MemorySpace> _d_exparg;
 
         // Ray host data
         int _n_rays;  // Number of rays

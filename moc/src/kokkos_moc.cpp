@@ -175,11 +175,6 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         _max_segments = std::max(_max_segments, _h_ray_nsegs(i + 1) - _h_ray_nsegs(i));
     }
 
-    // Allocate arrays needed during serial sweep
-    if (_device == "serial") {
-        _h_exparg = Kokkos::View<double**, Kokkos::HostSpace>("exparg", _max_segments + 1, _ng);
-    }
-
     // Instead of conditional device setup, always initialize device views
     _d_angle_weights = Kokkos::create_mirror(ExecutionSpace(), _h_angle_weights);
     Kokkos::deep_copy(_d_angle_weights, _h_angle_weights);
