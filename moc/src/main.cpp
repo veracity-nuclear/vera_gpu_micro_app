@@ -138,8 +138,7 @@ int main(int argc, char* argv[]) {
             return 1;
             #endif
         } else {
-            // Default to DefaultExecutionSpace
-            sweeper = std::make_shared<KokkosMOC<Kokkos::DefaultExecutionSpace>>(parser);
+            throw std::runtime_error("Unsupported Kokkos execution space: " + device_type);
         }
     } else if (sweeper_type == "serial") {
         sweeper = std::make_shared<SerialMOC>(parser);

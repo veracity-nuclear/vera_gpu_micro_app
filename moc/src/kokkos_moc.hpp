@@ -11,6 +11,14 @@ template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
 class KokkosMOC : public BaseMOC {
     using layout = typename ExecutionSpace::array_layout;
     using MemorySpace = typename ExecutionSpace::memory_space;
+    using HViewInt1D = Kokkos::View<int*, layout, Kokkos::HostSpace>;
+    using HViewDouble1D = Kokkos::View<double*, layout, Kokkos::HostSpace>;
+    using HViewDouble2D = Kokkos::View<double**, layout, Kokkos::HostSpace>;
+    using HViewDouble3D = Kokkos::View<double***, layout, Kokkos::HostSpace>;
+    using DViewInt1D = Kokkos::View<int*, layout, MemorySpace>;
+    using DViewDouble1D = Kokkos::View<double*, layout, MemorySpace>;
+    using DViewDouble2D = Kokkos::View<double**, layout, MemorySpace>;
+    using DViewDouble3D = Kokkos::View<double***, layout, MemorySpace>;
 
     // Friend declaration for googletest
     friend class BasicTest_test_kokkos_exp_table_Test;
@@ -74,56 +82,56 @@ class KokkosMOC : public BaseMOC {
 
         // Geometry host data
         double _plane_height;  // Height of the plane
-        Kokkos::View<double*, layout, Kokkos::HostSpace> _h_fsr_vol;
+        HViewDouble1D _h_fsr_vol;
         std::vector<int> _fsr_mat_id;  // FSR material IDs
-        Kokkos::View<double**, layout, Kokkos::HostSpace> _h_xstr;
+        HViewDouble2D _h_xstr;
         std::vector<double> _ray_spacing;
-        Kokkos::View<double**, layout, Kokkos::HostSpace> _h_angle_weights;
-        Kokkos::View<double*, layout, Kokkos::HostSpace> _h_rsinpolang;
-        Kokkos::View<double**, layout, Kokkos::HostSpace> _h_exp_table;
+        HViewDouble2D _h_angle_weights;
+        HViewDouble1D _h_rsinpolang;
+        HViewDouble2D _h_exp_table;
 
         // Geometry device data
-        Kokkos::View<double*, layout, MemorySpace> _d_fsr_vol;
-        Kokkos::View<double**, layout, MemorySpace> _d_xstr;
-        Kokkos::View<double**, layout, MemorySpace> _d_angle_weights;
-        Kokkos::View<double*, layout, MemorySpace> _d_rsinpolang;
-        Kokkos::View<double**, layout, MemorySpace> _d_exp_table;
+        DViewDouble1D _d_fsr_vol;
+        DViewDouble2D _d_xstr;
+        DViewDouble2D _d_angle_weights;
+        DViewDouble1D _d_rsinpolang;
+        DViewDouble2D _d_exp_table;
 
         // Ray host data
         int _n_rays;  // Number of rays
         int _max_segments;  // Maximum number of segments in any ray
-        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_nsegs;
-        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_bc_face_start;
-        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_bc_face_end;
-        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_bc_index_frwd_start;
-        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_bc_index_frwd_end;
-        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_bc_index_bkwd_start;
-        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_bc_index_bkwd_end;
-        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_angle_index;
-        Kokkos::View<int*, layout, Kokkos::HostSpace> _h_ray_fsrs;
-        Kokkos::View<double*, layout, Kokkos::HostSpace> _h_ray_segments;
+        HViewInt1D _h_ray_nsegs;
+        HViewInt1D _h_ray_bc_face_start;
+        HViewInt1D _h_ray_bc_face_end;
+        HViewInt1D _h_ray_bc_index_frwd_start;
+        HViewInt1D _h_ray_bc_index_frwd_end;
+        HViewInt1D _h_ray_bc_index_bkwd_start;
+        HViewInt1D _h_ray_bc_index_bkwd_end;
+        HViewInt1D _h_ray_angle_index;
+        HViewInt1D _h_ray_fsrs;
+        HViewDouble1D _h_ray_segments;
 
         // Ray device data
-        Kokkos::View<int*, layout, MemorySpace> _d_ray_nsegs;
-        Kokkos::View<int*, layout, MemorySpace> _d_ray_bc_face_start;
-        Kokkos::View<int*, layout, MemorySpace> _d_ray_bc_face_end;
-        Kokkos::View<int*, layout, MemorySpace> _d_ray_bc_index_frwd_start;
-        Kokkos::View<int*, layout, MemorySpace> _d_ray_bc_index_frwd_end;
-        Kokkos::View<int*, layout, MemorySpace> _d_ray_bc_index_bkwd_start;
-        Kokkos::View<int*, layout, MemorySpace> _d_ray_bc_index_bkwd_end;
-        Kokkos::View<int*, layout, MemorySpace> _d_ray_angle_index;
-        Kokkos::View<int*, layout, MemorySpace> _d_ray_fsrs;
-        Kokkos::View<double*, layout, MemorySpace> _d_ray_segments;
+        DViewInt1D _d_ray_nsegs;
+        DViewInt1D _d_ray_bc_face_start;
+        DViewInt1D _d_ray_bc_face_end;
+        DViewInt1D _d_ray_bc_index_frwd_start;
+        DViewInt1D _d_ray_bc_index_frwd_end;
+        DViewInt1D _d_ray_bc_index_bkwd_start;
+        DViewInt1D _d_ray_bc_index_bkwd_end;
+        DViewInt1D _d_ray_angle_index;
+        DViewInt1D _d_ray_fsrs;
+        DViewDouble1D _d_ray_segments;
 
         // Solution host data
-        Kokkos::View<double**, layout, Kokkos::HostSpace> _h_scalar_flux;
-        Kokkos::View<double**, layout, Kokkos::HostSpace> _h_source;
-        Kokkos::View<double***, layout, Kokkos::HostSpace> _h_angflux;
-        Kokkos::View<double***, layout, Kokkos::HostSpace> _h_old_angflux;
+        HViewDouble2D _h_scalar_flux;
+        HViewDouble2D _h_source;
+        HViewDouble3D _h_angflux;
+        HViewDouble3D _h_old_angflux;
 
         // Solution device data
-        Kokkos::View<double**, layout, MemorySpace> _d_scalar_flux;
-        Kokkos::View<double**, layout, MemorySpace> _d_source;
-        Kokkos::View<double***, layout, MemorySpace> _d_angflux;
-        Kokkos::View<double***, layout, MemorySpace> _d_old_angflux;
+        DViewDouble2D _d_scalar_flux;
+        DViewDouble2D _d_source;
+        DViewDouble3D _d_angflux;
+        DViewDouble3D _d_old_angflux;
 };

@@ -14,9 +14,6 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     _file(HighFive::File(_filename, HighFive::File::ReadOnly)),
     _device(args.get_option("device"))
 {
-    using HViewDouble1D = Kokkos::View<double*, layout, Kokkos::HostSpace>;
-    using HViewDouble2D = Kokkos::View<double**, layout, Kokkos::HostSpace>;
-    using HViewDouble3D = Kokkos::View<double***, layout, Kokkos::HostSpace>;
     // Read the rays
     _read_rays();
 
@@ -172,24 +169,29 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     }
 
     // Build exponential table
-    _n_exp_intervals = 40000;
-    double min_val = -40.0;
-    double max_val = 0.0;
-    _exp_rdx = _n_exp_intervals / (max_val - min_val);
-    double dx = 1.0 / _exp_rdx;
-    _h_exp_table = HViewDouble2D("exp_table", _n_exp_intervals + 1, 2);
-    double x1 = min_val;
-    double y1 = 1.0 - Kokkos::exp(x1);
-    for (size_t i = 0; i < _n_exp_intervals + 1; i++) {
-        double x2 = x1 + dx;
-        double y2 = 1.0 - Kokkos::exp(x2);
-        _h_exp_table(i, 0) = (y2 - y1) * _exp_rdx;
-        _h_exp_table(i, 1) = y1 - _h_exp_table(i, 0) * x1;
-        x1 = x2;
-        y1 = y2;
+#ifdef KOKKOS_ENABLE_CUDA
+    if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Cuda>)
+#endif
+    {
+        _n_exp_intervals = 40000;
+        double min_val = -40.0;
+        double max_val = 0.0;
+        _exp_rdx = _n_exp_intervals / (max_val - min_val);
+        double dx = 1.0 / _exp_rdx;
+        _h_exp_table = HViewDouble2D("exp_table", _n_exp_intervals + 1, 2);
+        double x1 = min_val;
+        double y1 = 1.0 - Kokkos::exp(x1);
+        for (size_t i = 0; i < _n_exp_intervals + 1; i++) {
+            double x2 = x1 + dx;
+            double y2 = 1.0 - Kokkos::exp(x2);
+            _h_exp_table(i, 0) = (y2 - y1) * _exp_rdx;
+            _h_exp_table(i, 1) = y1 - _h_exp_table(i, 0) * x1;
+            x1 = x2;
+            y1 = y2;
+        }
+        _d_exp_table = Kokkos::create_mirror(ExecutionSpace(), _h_exp_table);
+        Kokkos::deep_copy(_d_exp_table, _h_exp_table);
     }
-    _d_exp_table = Kokkos::create_mirror(ExecutionSpace(), _h_exp_table);
-    Kokkos::deep_copy(_d_exp_table, _h_exp_table);
 
     // Store the inverse polar angle sine
     _h_rsinpolang = HViewDouble1D("rsinpolang", _npol);
@@ -233,8 +235,6 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
 // Implement other methods with template prefix
 template <typename ExecutionSpace>
 void KokkosMOC<ExecutionSpace>::_read_rays() {
-    using HViewInt1D = Kokkos::View<int*, layout, Kokkos::HostSpace>;
-    using HViewDouble1D = Kokkos::View<double*, layout, Kokkos::HostSpace>;
     auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
 
     // Count the rays
@@ -382,41 +382,25 @@ struct RayIndexCalculator {
     static void calculate(int league_rank, int team_rank,
                          int npol, int ng,
                          int& iray, int& ipol, int& ig) {
-        // Default implementation (for CUDA and others)
-        iray = league_rank;
-        ig = team_rank / npol;
-        ipol = team_rank % npol;
+        // Default implementation
+        int flat_idx = league_rank;
+        iray = flat_idx / (npol * ng);
+        ipol = (flat_idx / ng) % npol;
+        ig = flat_idx % ng;
     }
 };
 
 // Specialization for Serial backend
-#ifdef KOKKOS_ENABLE_SERIAL
+#ifdef KOKKOS_ENABLE_CUDA
 template <>
-struct RayIndexCalculator<Kokkos::Serial> {
+struct RayIndexCalculator<Kokkos::Cuda> {
     KOKKOS_INLINE_FUNCTION
     static void calculate(int league_rank, int team_rank,
                          int npol, int ng,
                          int& iray, int& ipol, int& ig) {
-        int flat_idx = league_rank;
-        iray = flat_idx / (npol * ng);
-        ipol = (flat_idx / ng) % npol;
-        ig = flat_idx % ng;
-    }
-};
-#endif
-
-// Specialization for OpenMP backend
-#ifdef KOKKOS_ENABLE_OPENMP
-template <>
-struct RayIndexCalculator<Kokkos::OpenMP> {
-    KOKKOS_INLINE_FUNCTION
-    static void calculate(int league_rank, int team_rank,
-                         int npol, int ng,
-                         int& iray, int& ipol, int& ig) {
-        int flat_idx = league_rank;
-        iray = flat_idx / (npol * ng);
-        ipol = (flat_idx / ng) % npol;
-        ig = flat_idx % ng;
+        iray = league_rank;
+        ig = team_rank / npol;
+        ipol = team_rank % npol;
     }
 };
 #endif
@@ -562,7 +546,7 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
     });
 
     // Scale the flux with source, volume, and transport XS
-    constexpr double fourpi = 4.0 * M_PI;
+    static constexpr double fourpi = 4.0 * M_PI;
     Kokkos::parallel_for("ScaleScalarFlux",
         Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<2>>({0, 0}, {nfsr, ng}),
         KOKKOS_LAMBDA(int i, int g) {
