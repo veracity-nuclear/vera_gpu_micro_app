@@ -5,22 +5,21 @@ inline bool isNonZero(const PetscScalar& value)
     return std::abs(value) > PETSC_MACHINE_EPSILON;
 }
 
-Mat SimpleMatrixAssembler::assemble() const
+void SimpleMatrixAssembler::_assembleM()
 {
-    Mat mat;
     PetscFunctionBeginUser;
 
     // Create the matrix (not allocated yet)
-    MatCreate(PETSC_COMM_WORLD, &mat);
+    MatCreate(PETSC_COMM_WORLD, &MMat);
 
     // Set the matrix dimensions (just for compatibility checks))
     // The PETSC_DECIDEs are for sub matrices split across multiple MPI ranks.
     const PetscInt matSize = cmfdData.nCells * cmfdData.nGroups;
-    MatSetSizes(mat, PETSC_DECIDE, PETSC_DECIDE, matSize, matSize);
+    MatSetSizes(MMat, PETSC_DECIDE, PETSC_DECIDE, matSize, matSize);
 
     // Set the type of the matrix (etc.) based on PETSc CLI options.
     // Default is AIJ sparse matrix.
-    MatSetFromOptions(mat);
+    MatSetFromOptions(MMat);
 
     // TODO Figure out a way to change assembly type. Runtime vs compile time?
     // Should these just be different classes?
@@ -40,7 +39,7 @@ Mat SimpleMatrixAssembler::assemble() const
                 const PetscScalar value = -1 * scatteringMat(scatterToIdx, scatterFromIdx) * volume;
                 if (isNonZero(value))
                 {
-                    MatSetValue(mat, cellIdx * cmfdData.nGroups + scatterFromIdx, cellIdx * cmfdData.nGroups + scatterToIdx, value, ADD_VALUES);
+                    MatSetValue(MMat, cellIdx * cmfdData.nGroups + scatterFromIdx, cellIdx * cmfdData.nGroups + scatterToIdx, value, ADD_VALUES);
                 }
             }
         }
@@ -53,11 +52,11 @@ Mat SimpleMatrixAssembler::assemble() const
             if (isNonZero(value))
             {
                 const PetscInt diagIdx = cellIdx * cmfdData.nGroups + groupIdx;
-                MatSetValue(mat, diagIdx, diagIdx, value, ADD_VALUES);
+                MatSetValue(MMat, diagIdx, diagIdx, value, ADD_VALUES);
             }
             {
                 const PetscInt diagIdx = cellIdx * cmfdData.nGroups + groupIdx;
-                MatSetValue(mat, diagIdx, diagIdx, value, ADD_VALUES);
+                MatSetValue(MMat, diagIdx, diagIdx, value, ADD_VALUES);
             }
         }
     }
@@ -81,20 +80,20 @@ Mat SimpleMatrixAssembler::assemble() const
             if (posCellMatIdx >= 0)
             {
                 const PetscScalar value = -1 * dhat + dtilde;
-                if (isNonZero(value)) {MatSetValue(mat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {MatSetValue(MMat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES);}
             }
             if (negCellMatIdx >= 0)
             {
                 const PetscScalar value = dhat + dtilde;
-                if (isNonZero(value)) {MatSetValue(mat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {MatSetValue(MMat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES);}
             }
             if (posCellMatIdx >= 0 && negCellMatIdx >= 0)
             {
                 const PetscScalar value1 = -1 * dhat - dtilde;
-                if (isNonZero(value1)) {MatSetValue(mat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES);}
+                if (isNonZero(value1)) {MatSetValue(MMat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES);}
 
                 const PetscScalar value2 = dhat - dtilde;
-                if (isNonZero(value2)) {MatSetValue(mat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES);}
+                if (isNonZero(value2)) {MatSetValue(MMat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES);}
             }
         }
     }
@@ -108,7 +107,7 @@ Mat SimpleMatrixAssembler::assemble() const
                 const PetscScalar value = -1 * cmfdData.scatteringXS(scatterToIdx, scatterFromIdx, cellIdx) * cmfdData.volume(cellIdx);
                 if (isNonZero(value))
                 {
-                    MatSetValue(mat, cellIdx * cmfdData.nGroups + scatterFromIdx, cellIdx * cmfdData.nGroups + scatterToIdx, value, ADD_VALUES);
+                    MatSetValue(MMat, cellIdx * cmfdData.nGroups + scatterFromIdx, cellIdx * cmfdData.nGroups + scatterToIdx, value, ADD_VALUES);
                 }
             }
         }
@@ -123,7 +122,7 @@ Mat SimpleMatrixAssembler::assemble() const
             if (isNonZero(value))
             {
                 const PetscInt diagIdx = cellIdx * cmfdData.nGroups + groupIdx;
-                MatSetValue(mat, diagIdx, diagIdx, value, ADD_VALUES);
+                MatSetValue(MMat, diagIdx, diagIdx, value, ADD_VALUES);
             }
         }
     }
@@ -144,36 +143,73 @@ Mat SimpleMatrixAssembler::assemble() const
             if (posCellMatIdx >= 0)
             {
                 const PetscScalar value = -1 * dhat + dtilde;
-                if (isNonZero(value)) {MatSetValue(mat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {MatSetValue(MMat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES);}
             }
             if (negCellMatIdx >= 0)
             {
                 const PetscScalar value = dhat + dtilde;
-                if (isNonZero(value)) {MatSetValue(mat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {MatSetValue(MMat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES);}
             }
             if (posCellMatIdx >= 0 && negCellMatIdx >= 0)
             {
                 const PetscScalar value1 = -1 * dhat - dtilde;
-                if (isNonZero(value1)) {MatSetValue(mat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES);}
+                if (isNonZero(value1)) {MatSetValue(MMat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES);}
 
                 const PetscScalar value2 = dhat - dtilde;
-                if (isNonZero(value2)) {MatSetValue(mat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES);}
+                if (isNonZero(value2)) {MatSetValue(MMat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES);}
             }
         }
     }
     #endif
 
     // Actually put the values into the matrix
-    MatAssemblyBegin(mat, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(mat, MAT_FINAL_ASSEMBLY);
-    return mat;
+    MatAssemblyBegin(MMat, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(MMat, MAT_FINAL_ASSEMBLY);
 }
 
-Mat COOMatrixAssembler::assemble() const
+void SimpleMatrixAssembler::_assembleFission(const FluxView& flux)
 {
-    Mat mat;
+    std::vector<PetscInt> vecIndices;
+    std::vector<PetscScalar> vecValues;
+    vecIndices.reserve(nRows);
+    vecValues.reserve(nRows);
+
     PetscFunctionBeginUser;
 
+    for (PetscInt cellIdx = 0; cellIdx < cmfdData.nCells; ++cellIdx)
+    {
+        PetscScalar localFissionRate = 0.0;
+        for (PetscInt fromGroupIdx = 0; fromGroupIdx < cmfdData.nGroups; ++fromGroupIdx)
+        {
+            // if FluxView is 2D
+            // localFissionRate += cmfdData.nuFissionXS(fromGroupIdx, cellIdx) * flux(fromGroupIdx, cellIdx);
+
+            // if FluxView is 1D
+            localFissionRate += cmfdData.nuFissionXS(fromGroupIdx, cellIdx) * flux(cellIdx * cmfdData.nGroups + fromGroupIdx);
+        }
+
+        const PetscScalar localFissionRateVolume = localFissionRate * cmfdData.volume(cellIdx);
+
+        for (PetscInt toGroupIdx = 0; toGroupIdx < cmfdData.nGroups; ++toGroupIdx)
+        {
+            const PetscScalar neutronSource = cmfdData.chi(toGroupIdx, cellIdx) * localFissionRateVolume;
+            if (isNonZero(neutronSource))
+            {
+                const PetscInt vecIdx = cellIdx * cmfdData.nGroups + toGroupIdx;
+                vecIndices.push_back(vecIdx);
+                vecValues.push_back(neutronSource);
+            }
+        }
+    }
+
+    // Actually put the values into the vector
+    VecSetValues(fissionVec, vecIndices.size(), vecIndices.data(), vecValues.data(), INSERT_VALUES);
+    VecAssemblyBegin(fissionVec);
+    VecAssemblyEnd(fissionVec);
+}
+
+void COOMatrixAssembler::_assembleM()
+{
     /*
     The shape of a two cell three group matrix is
         X X X | X 0 0                 |
@@ -229,13 +265,15 @@ Mat COOMatrixAssembler::assemble() const
     (That is, in total we add nGroups * nPosLeakageSurfs entries to the end of each COO vector.)
     */
 
-    static constexpr size_t posPosDisplacement = 0;
-    static constexpr size_t negPosDisplacement = 1;
-    static constexpr size_t negNegDisplacement = 2;
-    static constexpr size_t posNegDisplacement = 3;
-    static constexpr PetscInt entriesPerSurf = 4;
-    PetscInt maxNNZInRow = cmfdData.nGroups + entriesPerSurf * MAX_POS_SURF_PER_CELL;
-    PetscInt matSize = cmfdData.nCells * cmfdData.nGroups;
+   static constexpr size_t posPosDisplacement = 0;
+   static constexpr size_t negPosDisplacement = 1;
+   static constexpr size_t negNegDisplacement = 2;
+   static constexpr size_t posNegDisplacement = 3;
+   static constexpr PetscInt entriesPerSurf = 4;
+   PetscInt maxNNZInRow = cmfdData.nGroups + entriesPerSurf * MAX_POS_SURF_PER_CELL;
+   PetscInt matSize = cmfdData.nCells * cmfdData.nGroups;
+
+   PetscFunctionBeginUser;
 
     // // There are a lot of options here for splitting up the matrix into submatrices per mpi rank
     // //  (on the PETSc side), i.e., # of rows/cols per rank and number of zeros on and off the diagonal (per row).
@@ -243,11 +281,11 @@ Mat COOMatrixAssembler::assemble() const
         matSize, matSize,
         PETSC_DEFAULT, NULL,
         PETSC_DEFAULT, NULL,
-        &mat);
+        &MMat);
 
     // Attempt. Could optimize with d_nnz based on scatter matrix layout (4th from last param)
     // MatCreateAIJKokkos(PETSC_COMM_WORLD, cmfdData.nGroups, cmfdData.nGroups,
-    //     matSize, matSize, cmfdData.nGroups, NULL, 1, NULL, &mat);
+    //     matSize, matSize, cmfdData.nGroups, NULL, 1, NULL, &MMat);
 
     static constexpr int method = 2;
     // METHOD 1: Use Vectors with emplace back to avoid storing zeros
@@ -344,8 +382,8 @@ Mat COOMatrixAssembler::assemble() const
         size_t numNonZero = values.size();
 
 
-        MatSetPreallocationCOO(mat, numNonZero, rowIndices.data(), colIndices.data());
-        MatSetValuesCOO(mat, values.data(), ADD_VALUES);
+        MatSetPreallocationCOO(MMat, numNonZero, rowIndices.data(), colIndices.data());
+        MatSetValuesCOO(MMat, values.data(), ADD_VALUES);
     }
     else if constexpr(method == 2) // METHOD 2:
     // Use Kokkos views somewhat naively (use teams, scratch pad, etc. to optimize)
@@ -457,8 +495,63 @@ Mat COOMatrixAssembler::assemble() const
         );
     }
 
-        MatSetPreallocationCOO(mat, maxNNZEntries, rowIndices.data(), colIndices.data());
-        MatSetValuesCOO(mat, values.data(), ADD_VALUES);
+        MatSetPreallocationCOO(MMat, maxNNZEntries, rowIndices.data(), colIndices.data());
+        MatSetValuesCOO(MMat, values.data(), ADD_VALUES);
     }
-    return mat;
+}
+
+void COOMatrixAssembler::_assembleFission(const FluxView& flux)
+{
+    auto& _cmfdData = cmfdData;
+
+    // TODO: Assuming no zeros in the vector. We can optimize based on chi to get the sparsity pattern.
+    const PetscInt nnz = nRows;
+    Kokkos::View<PetscInt *, AssemblyMemorySpace> rowIndices("rowIndicesKokkos", nnz);
+    Kokkos::View<PetscScalar *, AssemblyMemorySpace> values("VecValuesKokkos", nnz);
+
+    {
+        // We create the functor beforehand to calclate the maximum team size
+        auto functorVectorAssemble = KOKKOS_LAMBDA(const typename Kokkos::TeamPolicy<AssemblySpace>::member_type& teamMember)
+        {
+            const PetscInt cellIdx = teamMember.league_rank();
+
+            PetscScalar cellFissionRate = 0.0;
+            Kokkos::parallel_reduce(Kokkos::TeamThreadRange(teamMember, _cmfdData.nGroups), [=] (const PetscInt fromGroupIdx, PetscScalar &localFissionRate)
+            {
+                // if FluxView is 2D
+                // localFissionRate += cmfdData.nuFissionXS(fromGroupIdx, cellIdx) * flux(fromGroupIdx, cellIdx);
+
+                // if FluxView is 1D. I think the data access pattern is bad
+                localFissionRate += _cmfdData.nuFissionXS(fromGroupIdx, cellIdx) * flux(cellIdx * _cmfdData.nGroups + fromGroupIdx);
+            }, cellFissionRate);
+
+            teamMember.team_barrier();
+
+            const PetscScalar localFissionRateVolume = cellFissionRate * _cmfdData.volume(cellIdx);
+
+            Kokkos::parallel_for(Kokkos::TeamThreadRange(teamMember, _cmfdData.nGroups), [=] (const PetscInt toGroupIdx)
+            {
+                const PetscInt vecIdx = cellIdx * _cmfdData.nGroups + toGroupIdx;
+                rowIndices(vecIdx) = vecIdx; // This is silly right now as we assume no zeros.
+                values(vecIdx) = _cmfdData.chi(toGroupIdx, cellIdx) * localFissionRateVolume;
+            });
+        };
+
+        // Use the team policy with the automatic team size to calculate the maximum team size
+        Kokkos::TeamPolicy<AssemblySpace> nCellsRange(_cmfdData.nCells, Kokkos::AUTO);
+        int maxTeamSize = nCellsRange.team_size_max(functorVectorAssemble, Kokkos::ParallelReduceTag());
+
+        // If we can set the team size to the number of groups, we do so
+        if (maxTeamSize >= _cmfdData.nGroups)
+        {
+            nCellsRange = Kokkos::TeamPolicy<AssemblySpace>(_cmfdData.nCells, _cmfdData.nGroups);
+        }
+
+        // Actually execute the parallel for loop
+        Kokkos::parallel_for("COOVector", nCellsRange, functorVectorAssemble);
+    }
+
+    PetscFunctionBeginUser;
+    VecSetPreallocationCOO(fissionVec, nnz, rowIndices.data());
+    VecSetValuesCOO(fissionVec, values.data(), INSERT_VALUES);
 }

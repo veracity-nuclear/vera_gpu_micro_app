@@ -37,6 +37,34 @@ void compare2DHostAndDevice(
   }
 }
 
+void vectorsAreParallel(
+    const Vec &v1,
+    const Vec &v2,
+    PetscScalar tol)
+{
+  PetscScalar dotProduct, normV1, normV2, normProduct, dotProductSqr, normProductSqr, relError;
+  PetscCallG(VecDot(v1, v2, &dotProduct));
+  PetscCallG(VecNorm(v1, NORM_2, &normV1));
+  PetscCallG(VecNorm(v2, NORM_2, &normV2));
+
+  // The dot product can be defined as:
+  // dot(v1, v2) = ||v1|| * ||v2|| * cos(theta)
+  // If v1 and v2 are parallel, then cos(theta) = +1 or -1,
+  // so dot(v1, v2)^2 should be close to ||v1||^2 * ||v2||^2.
+  normProduct = normV1 * normV2;
+
+  dotProductSqr = dotProduct * dotProduct;
+  normProductSqr = normProduct * normProduct;
+
+  relError = std::abs(dotProductSqr - normProductSqr) / std::max(normProductSqr, 1.0);
+
+  ASSERT_LE(relError, tol)
+      << "Vectors are not parallel: dot product = " << dotProduct
+      << ", norms = (" << normV1 << ", " << normV2 << ")"
+      << ", tolerance = " << tol <<
+      ", relative error = " << relError;
+}
+
 // Convert a HighFive group (data sets are rows) to a 2D vector
 std::vector<std::vector<PetscScalar>> readMatrixFromHDF5(const HighFive::Group &AMatH5)
 {
@@ -64,6 +92,7 @@ PetscErrorCode createPetscVec(const std::vector<PetscScalar> &vec, Vec &vecPetsc
   PetscCall(VecCreate(PETSC_COMM_WORLD, &vecPetsc));
   PetscCall(VecSetSizes(vecPetsc, PETSC_DECIDE, n));
   PetscCall(VecSetFromOptions(vecPetsc));
+  PetscCall(VecSetType(vecPetsc, VECKOKKOS));
 
   std::vector<PetscInt> indices(n);
   std::iota(indices.begin(), indices.end(), 0); // Fill indices with 0, 1, ..., size-1
@@ -103,3 +132,36 @@ PetscErrorCode createPetscMat(const std::vector<std::vector<PetscScalar>> &vecOf
 
   PetscFunctionReturn(PETSC_SUCCESS);
 }
+
+DummyMatrixAssembler::DummyMatrixAssembler(const HighFive::File &file)
+{
+  HighFive::Group AMatH5 = file.getGroup("CMFD_Matrix/A");
+  std::vector<std::vector<PetscScalar>> AMatVecOfVec = readMatrixFromHDF5(AMatH5);
+  PetscCallCXXAbort(PETSC_COMM_SELF, createPetscMat(AMatVecOfVec, MMat));
+
+  size_t firstCell, lastCell;
+  HighFive::DataSet firstCellH5 = file.getDataSet("CMFD_CoarseMesh/first cell");
+  firstCellH5.read(&firstCell);
+  HighFive::DataSet lastCellH5 = file.getDataSet("CMFD_CoarseMesh/last cell");
+  lastCellH5.read(&lastCell);
+  nCells = lastCell - firstCell + 1;
+
+  HighFive::DataSet nGroupsH5 = file.getDataSet("CMFD_CoarseMesh/energy groups");
+  nGroupsH5.read(&nGroups);
+
+  HighFive::DataSet kGoldH5 = file.getDataSet("STATE_0001/keff");
+  kGoldH5.read(&kGold);
+
+  PetscInt nRows = AMatVecOfVec.size();
+
+  HighFive::DataSet xVecH5 = file.getDataSet("CMFD_Matrix/x");
+  std::vector<PetscScalar> xVecLocal;
+  xVecH5.read(xVecLocal);
+  PetscCallCXXAbort(PETSC_COMM_SELF, createPetscVec(xVecLocal, fluxGold));
+
+  HighFive::DataSet bVecH5 = file.getDataSet("CMFD_Matrix/b");
+  std::vector<PetscScalar> bVecLocal;
+  bVecH5.read(bVecLocal);
+  PetscCallCXXAbort(PETSC_COMM_SELF, createPetscVec(bVecLocal, fissionVec));
+}
+

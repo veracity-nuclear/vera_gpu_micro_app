@@ -35,7 +35,7 @@ TEST(readData, initialize)
     // Get data the standard way
     size_t firstCell, lastCell, nEnergyGroups;
     std::vector<PetscScalar> volume;
-    std::vector<std::vector<PetscScalar>> chi, Dhat, Dtilde, nuFissionXs, pastFlux, removalXs, transportXs;
+    std::vector<std::vector<PetscScalar>> chi, Dhat, Dtilde, nuFissionXs, removalXs, transportXs;
     std::vector<std::vector<PetscInt>> surf2Cell;
     std::vector<std::vector<std::vector<PetscScalar>>> scatteringXs;
 
@@ -47,7 +47,6 @@ TEST(readData, initialize)
     CMFDCoarseMesh.getDataSet("Dhat").read(Dhat);
     CMFDCoarseMesh.getDataSet("Dtilde").read(Dtilde);
     CMFDCoarseMesh.getDataSet("nu-fission XS").read(nuFissionXs);
-    CMFDCoarseMesh.getDataSet("flux").read(pastFlux);
     CMFDCoarseMesh.getDataSet("removal XS").read(removalXs);
     CMFDCoarseMesh.getDataSet("transport XS").read(transportXs);
     CMFDCoarseMesh.getDataSet("scattering XS").read(scatteringXs);
@@ -73,7 +72,6 @@ TEST(readData, initialize)
     compare2DViewAndVector(h_data.dHat, Dhat, "Dhat data mismatch");
     compare2DViewAndVector(h_data.dTilde, Dtilde, "Dtilde data mismatch");
     compare2DViewAndVector(h_data.nuFissionXS, nuFissionXs, "Nu Fission XS data mismatch");
-    compare2DViewAndVector(h_data.pastFlux, pastFlux, "Past Flux data mismatch");
     compare2DViewAndVector(h_data.removalXS, removalXs, "Removal XS data mismatch");
     compare2DViewAndVector(h_data.transportXS, transportXs, "Transport XS data mismatch");
 
@@ -105,7 +103,6 @@ TEST(readData, initialize)
     compare2DHostAndDevice(h_data.dHat, d_data.dHat, "Dhat data mismatch on device");
     compare2DHostAndDevice(h_data.dTilde, d_data.dTilde, "Dtilde data mismatch on device");
     compare2DHostAndDevice(h_data.nuFissionXS, d_data.nuFissionXS, "Nu Fission XS data mismatch on device");
-    compare2DHostAndDevice(h_data.pastFlux, d_data.pastFlux, "Past Flux data mismatch on device");
     compare2DHostAndDevice(h_data.removalXS, d_data.removalXS, "Removal XS data mismatch on device");
     compare2DHostAndDevice(h_data.transportXS, d_data.transportXS, "Transport XS data mismatch on device");
 

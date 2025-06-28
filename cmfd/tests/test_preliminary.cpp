@@ -320,8 +320,9 @@ TEST(s02_petsc, hdf5ToMatrix)
 
   PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_STDOUT_WORLD));
 #ifndef NDEBUG
-  PetscCallG(PetscOptionsSetValue(NULL, "-draw_size", "1920,1080")); // Set the size of the draw window
-  PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_DRAW_WORLD));           // need x11 but allows visualization
+  // PetscCallG(PetscOptionsSetValue(NULL, "-draw_size", "1920,1080")); // Set the size of the draw window
+  // PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_DRAW_WORLD));           // need x11 but allows visualization
+  PetscCallG(MatView(AMatPetsc, PETSC_VIEWER_STDOUT_WORLD)); // Print the matrix to stdout
 #endif
 
   PetscCallG(MatDestroy(&AMatPetsc));
@@ -354,6 +355,7 @@ TEST(s02_petsc, solve)
 
   PetscCallG(createPetscMat(AMatLocal, AMatPetsc));
   PetscCallG(createPetscVec(bVecLocal, bVecPetsc));
+  PetscCallG(VecSetType(bVecPetsc, VECKOKKOS));
 
   /*
     This doesn't actually duplicate the values from bVecPetsc,

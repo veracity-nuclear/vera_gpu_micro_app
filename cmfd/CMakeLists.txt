@@ -1,6 +1,7 @@
 add_library(cmfd_lib
     src/main.cpp
     src/PetscMatrixAssembler.cpp
+    src/PetscEigenSolver.cpp
 )
 
 target_link_libraries(cmfd_lib
@@ -24,16 +25,22 @@ enable_testing()
 set(TEST_ENV_IMPL ${CMAKE_CURRENT_SOURCE_DIR}/tests/PetscKokkosTestEnvironment.cpp)
 
 set(CMFD_TEST_SUITE_FILES
-    test_CMFDData
     test_PETSc_ex3k.kokkos
-    test_PetscMatrixAssembler
     test_preliminary
+    test_CMFDData
+    test_PetscMatrixAssemblerLight
+    test_PetscMatrixAssemblerHeavy
+    test_PetscEigenSolverLight
+    test_PetscEigenSolverHeavy
 )
 set(CMFD_TEST_SUITE_LABELS
     "BASIC\;CONTINUOUS\;HEAVY"
-    "CONTINUOUS\;HEAVY"
-    "CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
+    "CONTINUOUS\;HEAVY"
+    "CONTINUOUS\;HEAVY"
+    "HEAVY"
+    "CONTINUOUS\;HEAVY"
+    "HEAVY"
 )
 
 set(COMMON_TEST_MAIN_SRC ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_main.cpp)
