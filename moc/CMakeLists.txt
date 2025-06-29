@@ -26,6 +26,7 @@ enable_testing()
 include(../cmake/TestFunctions.cmake)
 
 set(TEST_EXECUTABLES
+    test_exp_table
     test_serial_moc_1region_1angle
     test_serial_moc_4region_1angle
     test_serial_moc_1region_16angle
@@ -38,6 +39,7 @@ set(TEST_EXECUTABLES
     heavy_test_serial_moc_mini-core
 )
 SET(TEST_LABELS
+    "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "CONTINUOUS\;HEAVY"

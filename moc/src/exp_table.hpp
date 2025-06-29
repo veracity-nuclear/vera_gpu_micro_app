@@ -6,6 +6,7 @@
 // Defines an exponential table for fast computation of the exponential function
 // for values in the range [-40, 0] with a resolution of 1/1000.
 class ExpTable {
+    friend class BasicTest_test_exp_table_Test;
     public:
         // Constructor
         ExpTable();
