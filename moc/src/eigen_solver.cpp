@@ -5,10 +5,14 @@
 #include <vector>
 #include <string>
 #include <cmath>
+#include "argument_parser.hpp"
 #include "base_moc.hpp"
 
-EigenSolver::EigenSolver(const std::vector<std::string> args, std::shared_ptr<BaseMOC> sweeper)
-  : _sweeper(sweeper),
+EigenSolver::EigenSolver(const ArgumentParser& args, std::shared_ptr<BaseMOC> sweeper)
+  : _max_iters(std::stoi(args.get_option("max_iter"))),
+    _kconv(std::stod(args.get_option("k_conv_crit"))),
+    _fconv(std::stod(args.get_option("f_conv_crit"))),
+    _sweeper(sweeper),
     _fsr_vol(sweeper->fsr_vol())
   {
   _scalar_flux = _sweeper->scalar_flux();

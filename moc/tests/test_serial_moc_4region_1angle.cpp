@@ -12,7 +12,7 @@ TEST(BasicTest, cart_4region_7g_1a_1p_serial) {
     auto parser = ArgumentParser::vera_gpu_moc_parser(raw_args[0]);
     parser.parse(3, args);
     std::shared_ptr<BaseMOC> sweeper(new SerialMOC(parser));
-    EigenSolver solver(parser.get_args("test_serial_moc_4region_1angle.exe"), sweeper);
+    EigenSolver solver(parser, sweeper);
     solver.solve();
     EXPECT_NEAR(solver.keff(), 0.73822768, 1.0e-7);
 }
