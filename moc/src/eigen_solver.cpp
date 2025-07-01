@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include <cmath>
+#include <Kokkos_Core.hpp>
 #include "argument_parser.hpp"
 #include "base_moc.hpp"
 
@@ -35,6 +36,7 @@ void EigenSolver::solve() {
       // Execute the MOC sweep
       _sweeper->sweep();
 
+      Kokkos::Profiling::pushRegion("EigenSolver fissrc and keff update");
       // Update fission source and keff
       _scalar_flux = _sweeper->scalar_flux();
       _fissrc = _sweeper->fission_source(_keff);
@@ -64,12 +66,6 @@ void EigenSolver::solve() {
                 << "   " << std::scientific << std::setprecision(2) << knorm
                 << "   " << fnorm << std::endl;
 
-      // Check for convergence
-      if (fabs(knorm) < _kconv && fabs(fnorm) < _fconv) {
-          std::cout << "Converged after " << iteration + 1 << " iterations." << std::endl;
-          break;
-      }
-
       // Save the old values
       for (size_t i = 0; i < _fissrc.size(); ++i) {
           for (size_t g = 0; g < _scalar_flux[i].size(); ++g) {
@@ -79,6 +75,13 @@ void EigenSolver::solve() {
       _old_keff = _keff;
       _fissrc = _sweeper->fission_source(_keff);
       _old_fissrc = _fissrc;
+      Kokkos::Profiling::popRegion();
+
+      // Check for convergence
+      if (fabs(knorm) < _kconv && fabs(fnorm) < _fconv) {
+          std::cout << "Converged after " << iteration + 1 << " iterations." << std::endl;
+          break;
+      }
   }
 }
 

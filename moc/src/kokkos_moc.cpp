@@ -17,6 +17,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     // Read the rays
     _read_rays();
 
+    Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC init " + _device);
     // Read mapping data
     auto xsrToFsrMap = _file.getDataSet("/MOC_Ray_Data/Domain_00001/XSRtoFSR_Map").read<std::vector<int>>();
     auto starting_xsr = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Starting XSR").read<int>();
@@ -157,6 +158,18 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
             }
         }
     }
+
+    // Store the inverse polar angle sine
+    _h_rsinpolang = HViewDouble1D("rsinpolang", _npol);
+    for (int ipol = 0; ipol < _npol; ipol++) {
+        _h_rsinpolang(ipol) = 1.0 / std::sin(polar_angles[ipol]);
+    }
+
+    // Count maximum segments across all rays
+    _max_segments = 0;
+    for (int i = 0; i < _n_rays; i++) {
+        _max_segments = std::max(_max_segments, _h_ray_nsegs(i + 1) - _h_ray_nsegs(i));
+    }
     Kokkos::deep_copy(_h_old_angflux, _h_angflux);
 
     // Build angle weights
@@ -167,8 +180,10 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
                 * M_PI * std::sin(polar_angles[ipol]);
         }
     }
+    Kokkos::Profiling::popRegion();
 
-// Build exponential table (for all execution spaces that want to use table lookup)
+    Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC exp table " + _device);
+    // Build exponential table (for all execution spaces that want to use table lookup)
     bool build_table = false;
 #ifdef KOKKOS_ENABLE_SERIAL
     build_table = std::is_same_v<ExecutionSpace, Kokkos::Serial>;
@@ -196,19 +211,9 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         _d_exp_table = Kokkos::create_mirror(ExecutionSpace(), _h_exp_table);
         Kokkos::deep_copy(_d_exp_table, _h_exp_table);
     }
+    Kokkos::Profiling::popRegion();
 
-    // Store the inverse polar angle sine
-    _h_rsinpolang = HViewDouble1D("rsinpolang", _npol);
-    for (int ipol = 0; ipol < _npol; ipol++) {
-        _h_rsinpolang(ipol) = 1.0 / std::sin(polar_angles[ipol]);
-    }
-
-    // Count maximum segments across all rays
-    _max_segments = 0;
-    for (int i = 0; i < _n_rays; i++) {
-        _max_segments = std::max(_max_segments, _h_ray_nsegs(i + 1) - _h_ray_nsegs(i));
-    }
-
+    Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC mirror views " + _device);
     // Instead of conditional device setup, always initialize device views
     _d_angle_weights = Kokkos::create_mirror(ExecutionSpace(), _h_angle_weights);
     Kokkos::deep_copy(_d_angle_weights, _h_angle_weights);
@@ -234,11 +239,13 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     Kokkos::deep_copy(_d_angflux, _h_angflux);
     _d_old_angflux = Kokkos::create_mirror(ExecutionSpace(), _h_old_angflux);
     Kokkos::deep_copy(_d_old_angflux, _h_old_angflux);
+    Kokkos::Profiling::popRegion();
 }
 
 // Implement other methods with template prefix
 template <typename ExecutionSpace>
 void KokkosMOC<ExecutionSpace>::_read_rays() {
+    Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC _read_rays " + _device);
     auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
 
     // Count the rays
@@ -311,6 +318,7 @@ void KokkosMOC<ExecutionSpace>::_read_rays() {
             }
         }
     }
+    Kokkos::Profiling::popRegion();
 }
 
 // Get the total cross sections for each FSR from the library
@@ -330,6 +338,7 @@ void KokkosMOC<ExecutionSpace>::_get_xstr(
 // Build the fission source term for each FSR based on the scalar flux and nu-fission cross sections
 template <typename ExecutionSpace>
 std::vector<double> KokkosMOC<ExecutionSpace>::fission_source(const double keff) const {
+    Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC fission source " + _device);
     std::vector<double> fissrc(_nfsr, 0.0);
     for (size_t i = 0; i < _nfsr; i++) {
         if (_library.is_fissile(_fsr_mat_id[i])) {
@@ -338,12 +347,14 @@ std::vector<double> KokkosMOC<ExecutionSpace>::fission_source(const double keff)
             }
         }
     }
+    Kokkos::Profiling::popRegion();
     return fissrc;
 }
 
 // Build the total source term for each FSR based on the fission source and scattering cross sections
 template <typename ExecutionSpace>
 void KokkosMOC<ExecutionSpace>::update_source(const std::vector<double>& fissrc) {
+    Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC update source " + _device);
     int _nfsr = _h_scalar_flux.extent(0);
     int ng = _h_scalar_flux.extent(1);
     for (size_t i = 0; i < _nfsr; i++) {
@@ -360,6 +371,7 @@ void KokkosMOC<ExecutionSpace>::update_source(const std::vector<double>& fissrc)
     }
     // Always copy to device
     Kokkos::deep_copy(_d_source, _h_source);
+    Kokkos::Profiling::popRegion();
 }
 
 // General template implementation (fallback)
