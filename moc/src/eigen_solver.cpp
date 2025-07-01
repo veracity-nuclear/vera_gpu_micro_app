@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include <cmath>
+#include <chrono>
 #include <Kokkos_Core.hpp>
 #include "argument_parser.hpp"
 #include "base_moc.hpp"
@@ -28,8 +29,12 @@ EigenSolver::EigenSolver(const ArgumentParser& args, std::shared_ptr<BaseMOC> sw
 void EigenSolver::solve() {
 
   // Source iteration loop
-  std::cout << "Iteration         keff       knorm      fnorm" << std::endl;
+  std::cout << "Iteration         keff       knorm      fnorm   elapsed_time(s)" << std::endl;
+  auto total_start_time = std::chrono::high_resolution_clock::now();
+  double elapsed_seconds = 0.0;
+
   for (int iteration = 0; iteration < _max_iters; iteration++) {
+      auto iter_start_time = std::chrono::high_resolution_clock::now();
       // Build source and zero the fluxes
       _sweeper->update_source(_fissrc);
 
@@ -60,11 +65,17 @@ void EigenSolver::solve() {
       // Calculate the keff convergence metric
       double knorm = _keff - _old_keff;
 
+      // Calculate elapsed time for this iteration
+      auto iter_end_time = std::chrono::high_resolution_clock::now();
+      auto iter_duration = std::chrono::duration_cast<std::chrono::microseconds>(iter_end_time - iter_start_time);
+      elapsed_seconds += iter_duration.count() / 1000000.0;
+
       // Print the iteration results
       std::cout << " " << std::setw(8) << iteration
                 << "   " << std::fixed << std::setprecision(8) << _keff
                 << "   " << std::scientific << std::setprecision(2) << knorm
-                << "   " << fnorm << std::endl;
+                << "   " << fnorm
+                << "   " << std::fixed << std::setprecision(4) << elapsed_seconds << std::endl;
 
       // Save the old values
       for (size_t i = 0; i < _fissrc.size(); ++i) {
