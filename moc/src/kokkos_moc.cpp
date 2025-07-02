@@ -407,12 +407,11 @@ void KokkosMOC<ExecutionSpace>::_get_xssc(
     const std::vector<int>& fsr_mat_id,
     const c5g7_library& library
 ) {
-    _h_xssc = HViewDouble3D("xssc", num_fsr, library.get_num_groups());
+    _h_xssc = HViewDouble3D("xssc", num_fsr, library.get_num_groups(), library.get_num_groups());
     for (auto i = 0; i < fsr_mat_id.size(); i++) {
-        auto scat_xs = library.scat(fsr_mat_id[i]);
         for (int g = 0; g < library.get_num_groups(); g++) {
             for (int g2 = 0; g2 < library.get_num_groups(); g2++) {
-                _h_xssc(i, g, g2) = scat_xs[g][g2];
+                _h_xssc(i, g, g2) = library.scat(fsr_mat_id[i], g, g2);
             }
         }
     }
