@@ -8,8 +8,8 @@
 
 TEST(BasicTest, pin_7g_16a_3p_kokkos) {
     const char* raw_args[] = {"exe", "data/pin_7g_16a_3p_serial.h5", "data/c5g7.xsl", "--sweeper", "kokkos", "--device", "openmp", "--kokkos-num-threads=4"};
-    char** args = const_cast<char**>(raw_args);
     int argc = 8;
+    char** args = const_cast<char**>(raw_args);
     Kokkos::initialize(argc, args);
     {
         auto parser = ArgumentParser::vera_gpu_moc_parser(raw_args[0]);
