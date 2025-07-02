@@ -3,6 +3,7 @@
 #include <vector>
 #include <highfive/highfive.hpp>
 #include "exp_table.hpp"
+#include "c5g7_library.hpp"
 #include "long_ray.hpp"
 #include "base_moc.hpp"
 #include "argument_parser.hpp"
@@ -29,6 +30,10 @@ class SerialMOC : public BaseMOC {
 
     private:
         void _read_rays();  // Read rays from the HDF5 file
+        void _get_xstr(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xstr from XS library
+        void _get_xsnf(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xsnf from XS library
+        void _get_xsch(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xsch from XS library
+        void _get_xssc(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xssc from XS library
 
         size_t _max_segments;  // Maximum number of segments in any ray
         int _nfsr;  // Number of FSRs

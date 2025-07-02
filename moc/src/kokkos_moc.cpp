@@ -19,12 +19,11 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC init " + _device);
     // Read the FSR volumes and plane height
     {
-        auto fsr_vol = std::make_unique<std::vector<double>>();
-        _file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read(*fsr_vol);
-        _nfsr = fsr_vol->size();
+        auto fsr_vol = _file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read<std::vector<double>>();
+        _nfsr = fsr_vol.size();
         _h_fsr_vol = HViewDouble1D("fsr_vol", _nfsr);
         for (int i = 0; i < _nfsr; i++){
-            _h_fsr_vol(i) = (*fsr_vol)[i];
+            _h_fsr_vol(i) = fsr_vol[i];
         }
     }
     _plane_height = _file.getDataSet("/MOC_Ray_Data/Domain_00001/plane_height").read<double>();
@@ -35,12 +34,12 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         auto xsnf = _file.getDataSet("MOC_Ray_Data/Domain_00001/Solution_Data/xsnf").read<std::vector<std::vector<double>>>();
         auto xsch = _file.getDataSet("MOC_Ray_Data/Domain_00001/Solution_Data/xsch").read<std::vector<std::vector<double>>>();
         auto xssc = _file.getDataSet("MOC_Ray_Data/Domain_00001/Solution_Data/xssc").read<std::vector<std::vector<std::vector<double>>>>();
-	_ng = xstr[0].size();
-	_h_xstr = HViewDouble2D("xstr", _nfsr, _ng);
-	_h_xsnf = HViewDouble2D("xsnf", _nfsr, _ng);
-	_h_xsch = HViewDouble2D("xsch", _nfsr, _ng);
-	_h_xssc = HViewDouble3D("xssc", _nfsr, _ng, _ng);
-	for (int i = 0; i < _nfsr; i++) {
+    	_ng = xstr[0].size();
+	    _h_xstr = HViewDouble2D("xstr", _nfsr, _ng);
+    	_h_xsnf = HViewDouble2D("xsnf", _nfsr, _ng);
+	    _h_xsch = HViewDouble2D("xsch", _nfsr, _ng);
+    	_h_xssc = HViewDouble3D("xssc", _nfsr, _ng, _ng);
+	    for (int i = 0; i < _nfsr; i++) {
             for (int to = 0; to < _ng; to++) {
                 _h_xstr(i, to) = xstr[i][to];
                 _h_xsnf(i, to) = xsnf[i][to];
@@ -69,7 +68,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         }
 
         // Calculate the FSR material IDs
-	std::vector<int> fsr_mat_id(_nfsr);
+        std::vector<int> fsr_mat_id(_nfsr);
         int ixsr = 0;
         for (int i = 0; i < _nfsr; i++) {
             if (i == xsrToFsrMap[ixsr]) {
@@ -81,9 +80,9 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         auto library = c5g7_library(args.get_positional(1));
         _ng = library.get_num_groups();
         _get_xstr(_nfsr, fsr_mat_id, library);
-	_get_xsnf(_nfsr, fsr_mat_id, library);
-	_get_xsch(_nfsr, fsr_mat_id, library);
-	_get_xssc(_nfsr, fsr_mat_id, library);
+        _get_xsnf(_nfsr, fsr_mat_id, library);
+        _get_xsch(_nfsr, fsr_mat_id, library);
+        _get_xssc(_nfsr, fsr_mat_id, library);
     }
 
     // Allocate scalar flux and source array
