@@ -3,7 +3,6 @@
 #include <vector>
 #include <highfive/highfive.hpp>
 #include "exp_table.hpp"
-#include "c5g7_library.hpp"
 #include "long_ray.hpp"
 #include "base_moc.hpp"
 #include "argument_parser.hpp"
@@ -38,11 +37,12 @@ class SerialMOC : public BaseMOC {
         double _plane_height;  // Height of the plane
         std::string _filename;  // HDF5 file name
         HighFive::File _file; // HDF5 file object
-        const c5g7_library _library;  // Cross-section library object
         const ExpTable _exp_table;  // Exponential table for calculations
         std::vector<double> _fsr_vol;  // FSR volumes
-        std::vector<int> _fsr_mat_id;  // FSR material IDs
-        std::vector<std::vector<double>> _xstr;  // Cross-sections for each FSR
+        std::vector<std::vector<double>> _xstr;  // Transport cross-sections for each FSR
+        std::vector<std::vector<double>> _xsnf;  // Nu-fission cross-sections for each FSR
+        std::vector<std::vector<double>> _xsch;  // Chi for each FSR
+        std::vector<std::vector<std::vector<double>>> _xssc;  // Scattering cross-sections for each FSR
         std::vector<LongRay> _rays;  // Long rays for MOC
         std::vector<double> _ray_spacing;
         std::vector<std::vector<double>> _angle_weights;  // Weights for each angle
