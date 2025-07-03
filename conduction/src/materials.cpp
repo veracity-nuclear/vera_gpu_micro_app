@@ -8,7 +8,7 @@ double Clad::k(double T) const {
     return 7.51 + 2.09e-2 * T - 1.45e-5 * T * T + 7.67e-9 * T * T * T;
 }
 
-double Clad::Cp(double T) const override {
+double Clad::Cp(double T) const {
     static const std::vector<double> T_vals = {
         300.0, 400.0, 640.0, 1090.0, 1093.0, 1113.0, 1133.0, 1153.0, 1173.0,
         1193.0, 1213.0, 1233.0, 1248.0, 2098.0, 2099.0
@@ -25,7 +25,7 @@ double Clad::Cp(double T) const override {
     auto upper = std::upper_bound(T_vals.begin(), T_vals.end(), T);
     size_t i = std::distance(T_vals.begin(), upper) - 1;
 
-    double T0 = T[i], T1 = T[i + 1];
+    double T0 = T_vals[i], T1 = T_vals[i + 1];
     double Cp0 = Cp_vals[i], Cp1 = Cp_vals[i + 1];
 
     return Cp0 + (Cp1 - Cp0) * (T - T0) / (T1 - T0);
@@ -55,7 +55,7 @@ double UO2::Cp(double T, double Bu, double gad) const {
     double R = 8.314; // universal gas constant [J/mol-K]
     double theta = 535.285; // Einstein temperature [K]
     double E_D = 1.577e5; // Debye energy [J/mol]
-    double K1, K2, K3 = 296.7, 2.43e-2, 8.745e7; // empirical constants for UO2 heat capacity [J/kg-K]
+    double K1 = 296.7, K2 = 2.43e-2, K3 = 8.745e7; // empirical constants for UO2 heat capacity [J/kg-K]
 
     return K1 * std::pow(theta, 2.0) * std::exp(theta / T) / (std::pow(T, 2.0) * (std::exp(theta / T) - 1.0)) \
         + K2 * T + OM / 2 * K3 * E_D / (R * std::pow(T, 2.0)) * std::exp(-E_D / (R * T));

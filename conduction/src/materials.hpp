@@ -3,6 +3,8 @@
 #include <stdexcept>
 #include <string>
 #include <cmath>
+#include <vector>
+#include <algorithm>
 
 /**
  * @brief Abstract base class representing a solid material with temperature-dependent properties.
