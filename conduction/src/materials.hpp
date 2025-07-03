@@ -1,12 +1,23 @@
 #pragma once
 
 #include <stdexcept>
+#include <string>
+#include <cmath>
 
 /**
  * @brief Abstract base class representing a solid material with temperature-dependent properties.
  */
 class SolidMaterial {
 public:
+    /**
+     * @brief Default constructor for SolidMaterial.
+     * @param name Name of the material.
+    */
+    explicit SolidMaterial(const std::string& name) : name(name) {}
+
+    /**
+     * @brief Virtual destructor for SolidMaterial.
+     */
     virtual ~SolidMaterial() = default;
 
     /**
@@ -29,20 +40,43 @@ public:
      * @return Density in kg/m³.
      */
     virtual double rho(double T) const = 0;
-};
 
-class Fuel : public SolidMaterial {
-    public:
-        Fuel() = default;
-        double k(double T) const override { return 1.05 + 2150 / (T - 73.15); }
-        double Cp(double T) const override { throw std::runtime_error("Fuel heat capacity not implemented"); }
-        double rho(double T) const override { throw std::runtime_error("Fuel density not implemented"); }
+    /**
+     * @brief Get the name of the material.
+     * @return Name of the material.
+     */
+    std::string getName() const { return name; }
+
+protected:
+    /**
+     * @brief Name of the material, used for identification and debugging.
+     */
+    std::string name;
 };
 
 class Clad : public SolidMaterial {
-    public:
-        Clad() = default;
-        double k(double T) const override { return 7.51 + 2.09e-2 * T - 1.45e-5 * T * T + 7.67e-9 * T * T * T; }
-        double Cp(double T) const override { throw std::runtime_error("Clad heat capacity not implemented"); }
-        double rho(double T) const override { throw std::runtime_error("Clad density not implemented"); }
+public:
+    Clad() : SolidMaterial("Clad") {}
+    Clad(const std::string &name) : SolidMaterial(name) {}
+    double k(double T) const override;
+    double Cp(double T) const override;
+    double rho(double T) const override { throw std::runtime_error("Clad density not implemented"); }
+};
+
+class FuelMaterial : public SolidMaterial {
+public:
+    FuelMaterial() : SolidMaterial("Fuel") {}
+    FuelMaterial(const std::string &name) : SolidMaterial(name) {}
+    virtual double k(double T, double Bu, double gad) const = 0;
+    virtual double Cp(double T, double Bu, double gad) const = 0;
+    virtual double rho(double T, double Bu, double gad) const = 0;
+};
+
+class UO2 : public FuelMaterial {
+public:
+    UO2() : FuelMaterial("UO2") {}
+    UO2(const std::string &name) : FuelMaterial(name) {}
+    double k(double T, double Bu, double gad) const override;
+    double Cp(double T, double Bu, double gad) const override;
+    double rho(double T, double Bu, double gad) const override { throw std::runtime_error("UO2 density not implemented"); }
 };
