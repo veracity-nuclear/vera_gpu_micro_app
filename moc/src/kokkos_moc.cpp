@@ -493,7 +493,6 @@ void tally_scalar_flux(
     Kokkos::View<double***, typename ExecutionSpace::array_layout, typename ExecutionSpace::memory_space> threaded_flux,
     const int ireg,
     const int ig,
-    const int thread,
     const double contribution
 ) {
     Kokkos::atomic_add(&flux(ireg, ig), contribution);
@@ -507,7 +506,6 @@ void tally_scalar_flux<Kokkos::Serial>(
     Kokkos::View<double***, typename Kokkos::Serial::array_layout, typename Kokkos::Serial::memory_space> threaded_flux,
     const int ireg,
     const int ig,
-    const int thread,
     const double contribution
 ) {
     flux(ireg, ig) += contribution;
@@ -522,10 +520,9 @@ void tally_scalar_flux<Kokkos::OpenMP>(
     Kokkos::View<double***, typename Kokkos::OpenMP::array_layout, typename Kokkos::OpenMP::memory_space> threaded_flux,
     const int ireg,
     const int ig,
-    const int thread,
     const double contribution
 ) {
-    threaded_flux(thread, ireg, ig) += contribution;
+    threaded_flux(omp_get_thread_num(), ireg, ig) += contribution;
 }
 #endif
 
@@ -615,7 +612,6 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
                 threaded_scalar_flux,
                 ireg1,
                 ig,
-                static_cast<int>(teamMember.team_rank()),
                 phid * angle_weights(ray_angle_index(iray), ipol)
             );
 
@@ -631,7 +627,6 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
                 threaded_scalar_flux,
                 ireg2,
                 ig,
-                static_cast<int>(teamMember.team_rank()),
                 phid * angle_weights(ray_angle_index(iray), ipol)
             );
             iseg2--;
@@ -642,16 +637,13 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
     });
 
     if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
-        // Combine the thread-local scalar flux contributions into the global scalar flux
-        Kokkos::parallel_for("CombineThreadedScalarFlux",
-            Kokkos::RangePolicy<ExecutionSpace>(0, ExecutionSpace::concurrency()),
-            KOKKOS_LAMBDA(int thread) {
-                for (int i = 0; i < nfsr; i++) {
-                    for (int g = 0; g < ng; g++) {
-                        scalar_flux(i, g) += threaded_scalar_flux(thread, i, g);
-                    }
+        for (int k = 0; k < ExecutionSpace::concurrency(); k++) {
+            for (int i = 0; i < nfsr; i++) {
+                for (int g = 0; g < ng; g++) {
+                    scalar_flux(i, g) += threaded_scalar_flux(k, i, g);
                 }
-        });
+            }
+        }
     }
 
     // Scale the flux with source, volume, and transport XS
