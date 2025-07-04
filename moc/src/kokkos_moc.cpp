@@ -386,7 +386,6 @@ Kokkos::TeamPolicy<ExecutionSpace> KokkosMOC<ExecutionSpace>::_configure_team_po
     return Kokkos::TeamPolicy<ExecutionSpace>(n_teams, 1, 1);
 }
 
-// Specialization for CUDA
 #ifdef KOKKOS_ENABLE_CUDA
 template <>
 Kokkos::TeamPolicy<Kokkos::Cuda> KokkosMOC<Kokkos::Cuda>::_configure_team_policy(int n_rays, int npol, int ng) {
@@ -528,7 +527,8 @@ void tally_scalar_flux<Kokkos::OpenMP>(
 
 // Unified implementation of sweep
 template <typename ExecutionSpace>
-void KokkosMOC<ExecutionSpace>::_impl_sweep() {
+void KokkosMOC<ExecutionSpace>::sweep() {
+    Kokkos::Profiling::pushRegion("KokkosMOC::Sweep " + _device);
     using ScratchViewDouble1D = Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space>;
     Kokkos::deep_copy(_d_old_angflux, _h_old_angflux);
 
@@ -658,11 +658,7 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
     Kokkos::deep_copy(_h_scalar_flux, _d_scalar_flux);
     Kokkos::deep_copy(_h_angflux, _d_angflux);
     Kokkos::deep_copy(_h_old_angflux, _h_angflux);
-}
-
-template <typename ExecutionSpace>
-void KokkosMOC<ExecutionSpace>::sweep() {
-    _impl_sweep();
+    Kokkos::Profiling::popRegion();
 }
 
 // Explicit template instantiations
