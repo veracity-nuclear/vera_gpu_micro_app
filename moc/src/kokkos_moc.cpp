@@ -239,6 +239,10 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     Kokkos::deep_copy(_d_angflux, _h_angflux);
     _d_old_angflux = Kokkos::create_mirror(ExecutionSpace(), _h_old_angflux);
     Kokkos::deep_copy(_d_old_angflux, _h_old_angflux);
+
+    if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
+        _d_thread_scalar_flux = DViewDouble3D("thread_scalar_flux", ExecutionSpace::concurrency(), _nfsr, _ng);
+    }
     Kokkos::Profiling::popRegion();
 }
 
@@ -510,6 +514,19 @@ void tally_scalar_flux<Kokkos::Serial>(
 }
 #endif
 
+#ifdef KOKKOS_ENABLE_OPENMP
+template <>
+KOKKOS_INLINE_FUNCTION
+void tally_scalar_flux<Kokkos::OpenMP>(
+    Kokkos::View<double**, typename Kokkos::OpenMP::array_layout, typename Kokkos::OpenMP::memory_space> flux,
+    Kokkos::View<double***, typename Kokkos::OpenMP::array_layout, typename Kokkos::OpenMP::memory_space> threaded_flux,
+    const int ireg,
+    const int ig,
+    const int thread,
+    const double contribution
+) {
+    threaded_flux(thread, ireg, ig) += contribution;
+}
 #endif
 
 // Unified implementation of sweep
@@ -543,9 +560,13 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
     auto& exp_table = _d_exp_table;
     auto& n_exp_intervals = _n_exp_intervals;
     auto& exp_rdx = _exp_rdx;
+    auto& threaded_scalar_flux = _d_thread_scalar_flux;
 
     // Initialize the scalar flux to 0.0
     Kokkos::deep_copy(scalar_flux, 0.0);
+    if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
+        Kokkos::deep_copy(threaded_scalar_flux, 0.0);
+    }
 
     // Use the specialized team policy configuration
     typedef typename Kokkos::TeamPolicy<ExecutionSpace>::member_type team_member;
@@ -619,6 +640,19 @@ void KokkosMOC<ExecutionSpace>::_impl_sweep() {
         angflux(ray_bc_index_frwd_end(iray), ipol, ig) = fsegflux;
         angflux(ray_bc_index_bkwd_end(iray), ipol, ig) = bsegflux;
     });
+
+    if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
+        // Combine the thread-local scalar flux contributions into the global scalar flux
+        Kokkos::parallel_for("CombineThreadedScalarFlux",
+            Kokkos::RangePolicy<ExecutionSpace>(0, ExecutionSpace::concurrency()),
+            KOKKOS_LAMBDA(int thread) {
+                for (int i = 0; i < nfsr; i++) {
+                    for (int g = 0; g < ng; g++) {
+                        scalar_flux(i, g) += threaded_scalar_flux(thread, i, g);
+                    }
+                }
+        });
+    }
 
     // Scale the flux with source, volume, and transport XS
     static constexpr double fourpi = 4.0 * M_PI;
