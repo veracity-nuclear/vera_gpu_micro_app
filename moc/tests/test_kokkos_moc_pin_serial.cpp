@@ -15,7 +15,7 @@ TEST(BasicTest, pin_7g_16a_3p_kokkos) {
         auto parser = ArgumentParser::vera_gpu_moc_parser(raw_args[0]);
         parser.parse(argc, args);
         std::shared_ptr<BaseMOC> sweeper(new KokkosMOC(parser));
-        EigenSolver solver(parser.get_args("test_kokkos_moc_pin.exe"), sweeper);
+        EigenSolver solver(parser, sweeper);
         solver.solve();
         EXPECT_NEAR(solver.keff(), 1.32569606, 1.0e-6);
     }

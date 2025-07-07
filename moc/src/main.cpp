@@ -105,9 +105,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Get a vector of arguments compatible with the original EigenSolver constructor
-    std::vector<std::string> solver_args = parser.get_args(argv[0]);
-
     // Set up the sweeper
     std::shared_ptr<BaseMOC> sweeper;
     std::string device_type = parser.get_option("device");
@@ -145,7 +142,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Pass by reference to EigenSolver
-    EigenSolver eigen_solver(solver_args, sweeper);
+    EigenSolver eigen_solver(parser, sweeper);
 
     // Use the eigen_solver
     eigen_solver.solve();

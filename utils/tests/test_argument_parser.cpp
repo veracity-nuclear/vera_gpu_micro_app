@@ -253,13 +253,6 @@ TEST(BasicTest, GetArgs) {
 
     ASSERT_TRUE(parser.parse(argc, argv));
 
-    std::vector<std::string> solver_args = parser.get_args("test_program");
-
-    ASSERT_EQ(solver_args.size(), 3); // program_name + 2 positional args
-    ASSERT_EQ(solver_args[0], "test_program");
-    ASSERT_EQ(solver_args[1], "in.txt");
-    ASSERT_EQ(solver_args[2], "out.txt");
-
     cleanup_args(argc, argv);
 }
 

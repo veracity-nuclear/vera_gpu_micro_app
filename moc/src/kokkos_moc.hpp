@@ -134,4 +134,5 @@ class KokkosMOC : public BaseMOC {
         DViewDouble2D _d_source;
         DViewDouble3D _d_angflux;
         DViewDouble3D _d_old_angflux;
+        DViewDouble3D _d_thread_scalar_flux;
 };

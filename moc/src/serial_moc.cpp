@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <highfive/H5Easy.hpp>
 #include <highfive/highfive.hpp>
+#include <Kokkos_Core.hpp>
 #include "exp_table.hpp"
 #include "long_ray.hpp"
 #include "c5g7_library.hpp"
@@ -225,6 +226,7 @@ void SerialMOC::update_source(const std::vector<double>& fissrc) {
 
 // Main function to run the serial MOC sweep
 void SerialMOC::sweep() {
+    Kokkos::Profiling::pushRegion("SerialMOC::Sweep");
     // Initialize old values and a few scratch values
     int iseg, ireg, refl_angle;
     double phid1, phid2;
@@ -324,4 +326,5 @@ void SerialMOC::sweep() {
     // }
 
     _old_angflux = _angflux;
+    Kokkos::Profiling::popRegion();
 }
