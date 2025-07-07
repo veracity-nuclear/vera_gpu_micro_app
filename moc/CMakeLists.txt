@@ -42,10 +42,10 @@ SET(TEST_LABELS
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
+    "BASIC\;CONTINUOUS\;HEAVY"
     "CONTINUOUS\;HEAVY"
     "CONTINUOUS\;HEAVY"
     "CONTINUOUS\;HEAVY"
-    "HEAVY"
     "HEAVY"
     "HEAVY"
     "HEAVY"
@@ -58,5 +58,6 @@ foreach(i RANGE 0 ${last_index})
     list(GET TEST_EXECUTABLES ${i} test)
     list(GET TEST_LABELS ${i} labels)
     create_labeled_test(${test} ${CMAKE_CURRENT_SOURCE_DIR}/tests "moc_lib;HighFive::HighFive;Kokkos::kokkos;GTest::gtest" ${CMAKE_CURRENT_SOURCE_DIR}/src "${labels};MOC")
+    set_tests_properties(${test} PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()
 

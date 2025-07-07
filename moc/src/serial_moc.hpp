@@ -30,6 +30,10 @@ class SerialMOC : public BaseMOC {
 
     private:
         void _read_rays();  // Read rays from the HDF5 file
+        void _get_xstr(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xstr from XS library
+        void _get_xsnf(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xsnf from XS library
+        void _get_xsch(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xsch from XS library
+        void _get_xssc(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xssc from XS library
 
         size_t _max_segments;  // Maximum number of segments in any ray
         int _nfsr;  // Number of FSRs
@@ -38,11 +42,12 @@ class SerialMOC : public BaseMOC {
         double _plane_height;  // Height of the plane
         std::string _filename;  // HDF5 file name
         HighFive::File _file; // HDF5 file object
-        const c5g7_library _library;  // Cross-section library object
         const ExpTable _exp_table;  // Exponential table for calculations
         std::vector<double> _fsr_vol;  // FSR volumes
-        std::vector<int> _fsr_mat_id;  // FSR material IDs
-        std::vector<std::vector<double>> _xstr;  // Cross-sections for each FSR
+        std::vector<std::vector<double>> _xstr;  // Transport cross-sections for each FSR
+        std::vector<std::vector<double>> _xsnf;  // Nu-fission cross-sections for each FSR
+        std::vector<std::vector<double>> _xsch;  // Chi for each FSR
+        std::vector<std::vector<std::vector<double>>> _xssc;  // Scattering cross-sections for each FSR
         std::vector<LongRay> _rays;  // Long rays for MOC
         std::vector<double> _ray_spacing;
         std::vector<std::vector<double>> _angle_weights;  // Weights for each angle

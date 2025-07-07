@@ -10,7 +10,6 @@
 template <typename ExecutionSpace>
 KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     _filename(args.get_positional(0)),
-    _library(args.get_positional(1)),
     _file(HighFive::File(_filename, HighFive::File::ReadOnly)),
     _device(args.get_option("device"))
 {
@@ -18,51 +17,73 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     _read_rays();
 
     Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC init " + _device);
-    // Read mapping data
-    auto xsrToFsrMap = _file.getDataSet("/MOC_Ray_Data/Domain_00001/XSRtoFSR_Map").read<std::vector<int>>();
-    auto starting_xsr = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Starting XSR").read<int>();
-
-    // Adjust xsrToFsrMap by subtracting starting_xsr from each element
-    for (auto& xsr : xsrToFsrMap) {
-        xsr -= starting_xsr;
-    }
-
     // Read the FSR volumes and plane height
     {
-        auto fsr_vol = std::make_unique<std::vector<double>>();
-        _file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read(*fsr_vol);
-        _nfsr = fsr_vol->size();
+        auto fsr_vol = _file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read<std::vector<double>>();
+        _nfsr = fsr_vol.size();
         _h_fsr_vol = HViewDouble1D("fsr_vol", _nfsr);
         for (int i = 0; i < _nfsr; i++){
-            _h_fsr_vol(i) = (*fsr_vol)[i];
+            _h_fsr_vol(i) = fsr_vol[i];
         }
     }
     _plane_height = _file.getDataSet("/MOC_Ray_Data/Domain_00001/plane_height").read<double>();
 
-    // Initialize the library
-    _ng = _library.get_num_groups();
-
-    // Read the material IDs
-    std::string mat_id_path = "/MOC_Ray_Data/Domain_00001/Solution_Data/xsr_mat_id";
-    auto tmp_mat_id = _file.getDataSet(mat_id_path).read<std::vector<double>>();
-    std::vector<int> xsr_mat_id;
-    xsr_mat_id.reserve(tmp_mat_id.size());
-    for (const auto& id : tmp_mat_id) {
-        xsr_mat_id.push_back(static_cast<int>(id) - 1);
-    }
-
-    // Calculate the FSR material IDs
-    _fsr_mat_id.resize(_nfsr);
-    int ixsr = 0;
-    for (int i = 0; i < _nfsr; i++) {
-        if (i == xsrToFsrMap[ixsr]) {
-            ixsr++;
-        }
-        _fsr_mat_id[i] = xsr_mat_id[ixsr - 1];
-    }
-
     // Get XS
-    _get_xstr(starting_xsr);
+    if (args.get_positional(0) == args.get_positional(1)) {
+        auto xstr = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xstr").read<std::vector<std::vector<double>>>();
+        auto xsnf = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xsnf").read<std::vector<std::vector<double>>>();
+        auto xsch = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xsch").read<std::vector<std::vector<double>>>();
+        auto xssc = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xssc").read<std::vector<std::vector<std::vector<double>>>>();
+    	_ng = xstr[0].size();
+	    _h_xstr = HViewDouble2D("xstr", _nfsr, _ng);
+    	_h_xsnf = HViewDouble2D("xsnf", _nfsr, _ng);
+	    _h_xsch = HViewDouble2D("xsch", _nfsr, _ng);
+    	_h_xssc = HViewDouble3D("xssc", _nfsr, _ng, _ng);
+	    for (int i = 0; i < _nfsr; i++) {
+            for (int to = 0; to < _ng; to++) {
+                _h_xstr(i, to) = xstr[i][to];
+                _h_xsnf(i, to) = xsnf[i][to];
+                _h_xsch(i, to) = xsch[i][to];
+                for (int from = 0; from < _ng; from++) {
+                    _h_xssc(i, to, from) = xssc[i][to][from];
+                }
+            }
+        }
+    } else {
+        // Read mapping data
+        auto xsrToFsrMap = _file.getDataSet("/MOC_Ray_Data/Domain_00001/XSRtoFSR_Map").read<std::vector<int>>();
+        auto starting_xsr = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Starting XSR").read<int>();
+
+        // Adjust xsrToFsrMap by subtracting starting_xsr from each element
+        for (auto& xsr : xsrToFsrMap) {
+            xsr -= starting_xsr;
+        }
+
+        // Read the material IDs
+        auto tmp_mat_id = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xsr_mat_id").read<std::vector<double>>();
+        std::vector<int> xsr_mat_id;
+        xsr_mat_id.reserve(tmp_mat_id.size());
+        for (const auto& id : tmp_mat_id) {
+            xsr_mat_id.push_back(static_cast<int>(id) - 1);
+        }
+
+        // Calculate the FSR material IDs
+        std::vector<int> fsr_mat_id(_nfsr);
+        int ixsr = 0;
+        for (int i = 0; i < _nfsr; i++) {
+            if (i == xsrToFsrMap[ixsr]) {
+                ixsr++;
+            }
+            fsr_mat_id[i] = xsr_mat_id[ixsr - 1];
+        }
+
+        auto library = c5g7_library(args.get_positional(1));
+        _ng = library.get_num_groups();
+        _get_xstr(_nfsr, fsr_mat_id, library);
+        _get_xsnf(_nfsr, fsr_mat_id, library);
+        _get_xsch(_nfsr, fsr_mat_id, library);
+        _get_xssc(_nfsr, fsr_mat_id, library);
+    }
 
     // Allocate scalar flux and source array
     _h_scalar_flux = HViewDouble2D("scalar_flux", _nfsr, _ng);
@@ -221,6 +242,12 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     _d_rsinpolang = Kokkos::create_mirror_view_and_copy(MemorySpace(), _h_rsinpolang);
     _d_xstr = Kokkos::create_mirror(ExecutionSpace(), _h_xstr);
     Kokkos::deep_copy(_d_xstr, _h_xstr);
+    _d_xsnf = Kokkos::create_mirror(ExecutionSpace(), _h_xsnf);
+    Kokkos::deep_copy(_d_xsnf, _h_xsnf);
+    _d_xsch = Kokkos::create_mirror(ExecutionSpace(), _h_xsch);
+    Kokkos::deep_copy(_d_xsch, _h_xsch);
+    _d_xssc = Kokkos::create_mirror(ExecutionSpace(), _h_xssc);
+    Kokkos::deep_copy(_d_xssc, _h_xssc);
     _d_scalar_flux = Kokkos::create_mirror(ExecutionSpace(), _h_scalar_flux);
     Kokkos::deep_copy(_d_scalar_flux, _h_scalar_flux);
     _d_source = Kokkos::create_mirror(ExecutionSpace(), _h_source);
@@ -328,13 +355,64 @@ void KokkosMOC<ExecutionSpace>::_read_rays() {
 // Get the total cross sections for each FSR from the library
 template <typename ExecutionSpace>
 void KokkosMOC<ExecutionSpace>::_get_xstr(
-    const int starting_xsr
+    const int num_fsr,
+    const std::vector<int>& fsr_mat_id,
+    const c5g7_library& library
 ) {
-    _h_xstr = Kokkos::View<double**, layout, Kokkos::HostSpace>("xstr", _nfsr, _library.get_num_groups());
-    for (auto i = 0; i < _fsr_mat_id.size(); i++) {
-        auto total_xs = _library.total(_fsr_mat_id[i]);
-        for (int g = 0; g < _library.get_num_groups(); g++) {
-            _h_xstr(i, g) = total_xs[g];
+    _h_xstr = HViewDouble2D("xstr", num_fsr, library.get_num_groups());
+    for (auto i = 0; i < fsr_mat_id.size(); i++) {
+        auto transport_xs = library.total(fsr_mat_id[i]);
+        for (int g = 0; g < library.get_num_groups(); g++) {
+            _h_xstr(i, g) = transport_xs[g];
+        }
+    }
+}
+
+// Get the nu-fission cross sections for each FSR from the library
+template <typename ExecutionSpace>
+void KokkosMOC<ExecutionSpace>::_get_xsnf(
+    const int num_fsr,
+    const std::vector<int>& fsr_mat_id,
+    const c5g7_library& library
+) {
+    _h_xsnf = HViewDouble2D("xsnf", num_fsr, library.get_num_groups());
+    for (auto i = 0; i < fsr_mat_id.size(); i++) {
+        auto nufiss_xs = library.nufiss(fsr_mat_id[i]);
+        for (int g = 0; g < library.get_num_groups(); g++) {
+            _h_xsnf(i, g) = nufiss_xs[g];
+        }
+    }
+}
+
+// Get the chi for each FSR from the library
+template <typename ExecutionSpace>
+void KokkosMOC<ExecutionSpace>::_get_xsch(
+    const int num_fsr,
+    const std::vector<int>& fsr_mat_id,
+    const c5g7_library& library
+) {
+    _h_xsch = HViewDouble2D("xsch", num_fsr, library.get_num_groups());
+    for (auto i = 0; i < fsr_mat_id.size(); i++) {
+        auto chi = library.chi(fsr_mat_id[i]);
+        for (int g = 0; g < library.get_num_groups(); g++) {
+            _h_xsch(i, g) = chi[g];
+        }
+    }
+}
+
+// Get the scattering cross sections for each FSR from the library
+template <typename ExecutionSpace>
+void KokkosMOC<ExecutionSpace>::_get_xssc(
+    const int num_fsr,
+    const std::vector<int>& fsr_mat_id,
+    const c5g7_library& library
+) {
+    _h_xssc = HViewDouble3D("xssc", num_fsr, library.get_num_groups(), library.get_num_groups());
+    for (auto i = 0; i < fsr_mat_id.size(); i++) {
+        for (int g = 0; g < library.get_num_groups(); g++) {
+            for (int g2 = 0; g2 < library.get_num_groups(); g2++) {
+                _h_xssc(i, g, g2) = library.scat(fsr_mat_id[i], g, g2);
+            }
         }
     }
 }
@@ -345,10 +423,8 @@ std::vector<double> KokkosMOC<ExecutionSpace>::fission_source(const double keff)
     Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC fission source " + _device);
     std::vector<double> fissrc(_nfsr, 0.0);
     for (size_t i = 0; i < _nfsr; i++) {
-        if (_library.is_fissile(_fsr_mat_id[i])) {
-            for (int g = 0; g < _ng; g++) {
-                fissrc[i] += _library.nufiss(_fsr_mat_id[i], g) * _h_scalar_flux(i, g) / keff;
-            }
+        for (int g = 0; g < _ng; g++) {
+            fissrc[i] += _h_xsnf(i, g) * _h_scalar_flux(i, g) / keff;
         }
     }
     Kokkos::Profiling::popRegion();
@@ -363,14 +439,14 @@ void KokkosMOC<ExecutionSpace>::update_source(const std::vector<double>& fissrc)
     int ng = _h_scalar_flux.extent(1);
     for (size_t i = 0; i < _nfsr; i++) {
         for (int g = 0; g < ng; g++) {
-            _h_source(i, g) = fissrc[i] * _library.chi(_fsr_mat_id[i], g);
+            _h_source(i, g) = fissrc[i] * _h_xsch(i, g);
             for (int g2 = 0; g2 < ng; g2++) {
                 if (g != g2) {
-                    _h_source(i, g) += _library.scat(_fsr_mat_id[i], g, g2) * _h_scalar_flux(i, g2);
+                    _h_source(i, g) += _h_xssc(i, g, g2) * _h_scalar_flux(i, g2);
                 }
             }
-            _h_source(i, g) += _library.self_scat(_fsr_mat_id[i], g) * _h_scalar_flux(i, g);
-            _h_source(i, g) /= (_library.total(_fsr_mat_id[i], g) * 4.0 * M_PI);
+            _h_source(i, g) += _h_xssc(i, g, g) * _h_scalar_flux(i, g);
+            _h_source(i, g) /= (_h_xstr(i, g) * fourpi);
         }
     }
     // Always copy to device
@@ -647,7 +723,6 @@ void KokkosMOC<ExecutionSpace>::sweep() {
     }
 
     // Scale the flux with source, volume, and transport XS
-    static constexpr double fourpi = 4.0 * M_PI;
     Kokkos::parallel_for("ScaleScalarFlux",
         Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<2>>({0, 0}, {nfsr, ng}),
         KOKKOS_LAMBDA(int i, int g) {

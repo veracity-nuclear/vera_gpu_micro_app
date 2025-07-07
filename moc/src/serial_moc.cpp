@@ -9,73 +9,60 @@
 #include "long_ray.hpp"
 #include "c5g7_library.hpp"
 
-namespace {
-    // Get the total cross sections for each FSR from the library
-    std::vector<std::vector<double>> get_xstr(
-        const int num_fsr,
-        const int starting_xsr,
-        const std::vector<int>& fsr_mat_id,
-        const c5g7_library& library
-    ) {
-        std::vector<std::vector<double>> xs;
-        xs.resize(num_fsr);
-        for (auto i = 0; i < fsr_mat_id.size(); i++) {
-            xs[i] = library.total(fsr_mat_id[i]);
-        }
-        return xs;
-    }
-
-    // Reflect the angle for reflecting boundary conditions
-    inline int reflect_angle(int angle) {
-        return angle % 2 == 0 ? angle + 1 : angle - 1;
-    }
-}
-
 SerialMOC::SerialMOC(const ArgumentParser& args) :
     _filename(args.get_positional(0)),
-    _library(args.get_positional(1)),
     _file(HighFive::File(_filename, HighFive::File::ReadOnly))
 {
     // Read the rays
     _read_rays();
-
-    // Read mapping data
-    auto xsrToFsrMap = _file.getDataSet("/MOC_Ray_Data/Domain_00001/XSRtoFSR_Map").read<std::vector<int>>();
-    auto starting_xsr = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Starting XSR").read<int>();
-
-    // Adjust xsrToFsrMap by subtracting starting_xsr from each element
-    for (auto& xsr : xsrToFsrMap) {
-        xsr -= starting_xsr;
-    }
 
     // Read the FSR volumes and plane height
     _fsr_vol = _file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read<std::vector<double>>();
     _plane_height = _file.getDataSet("/MOC_Ray_Data/Domain_00001/plane_height").read<double>();
     _nfsr = _fsr_vol.size();
 
-    // Initialize the library
-    _ng = _library.get_num_groups();
-
-    // Read the material IDs
-    auto tmp_mat_id = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xsr_mat_id").read<std::vector<double>>();
-    std::vector<int> xsr_mat_id;
-    xsr_mat_id.reserve(tmp_mat_id.size());
-    for (const auto& id : tmp_mat_id) {
-        xsr_mat_id.push_back(static_cast<int>(id) - 1);
-    }
-
-    // Calculate the FSR material IDs
-    _fsr_mat_id.resize(_nfsr);
-    int ixsr = 0;
-    for (int i = 0; i < _nfsr; i++) {
-        if (i == xsrToFsrMap[ixsr]) {
-            ixsr++;
-        }
-        _fsr_mat_id[i] = xsr_mat_id[ixsr - 1];
-    }
-
     // Get XS
-    _xstr = get_xstr(_nfsr, starting_xsr, _fsr_mat_id, _library);
+    if (args.get_positional(0) == args.get_positional(1)) {
+        _xstr = _file.getDataSet("MOC_Ray_Data/Domain_00001/Solution_Data/xstr").read<std::vector<std::vector<double>>>();
+        _xsnf = _file.getDataSet("MOC_Ray_Data/Domain_00001/Solution_Data/xsnf").read<std::vector<std::vector<double>>>();
+        _xsch = _file.getDataSet("MOC_Ray_Data/Domain_00001/Solution_Data/xsch").read<std::vector<std::vector<double>>>();
+        _xssc = _file.getDataSet("MOC_Ray_Data/Domain_00001/Solution_Data/xssc").read<std::vector<std::vector<std::vector<double>>>>();
+	    _ng = _xstr[0].size();
+    } else {
+        // Read mapping data
+        auto xsrToFsrMap = _file.getDataSet("/MOC_Ray_Data/Domain_00001/XSRtoFSR_Map").read<std::vector<int>>();
+        auto starting_xsr = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Starting XSR").read<int>();
+
+        // Adjust xsrToFsrMap by subtracting starting_xsr from each element
+        for (auto& xsr : xsrToFsrMap) {
+            xsr -= starting_xsr;
+        }
+
+        // Read the material IDs
+        auto tmp_mat_id = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xsr_mat_id").read<std::vector<double>>();
+        std::vector<int> xsr_mat_id;
+        xsr_mat_id.reserve(tmp_mat_id.size());
+        for (const auto& id : tmp_mat_id) {
+            xsr_mat_id.push_back(static_cast<int>(id) - 1);
+        }
+
+        // Calculate the FSR material IDs
+        std::vector<int> fsr_mat_id(_nfsr);
+        int ixsr = 0;
+        for (int i = 0; i < _nfsr; i++) {
+            if (i == xsrToFsrMap[ixsr]) {
+                ixsr++;
+            }
+            fsr_mat_id[i] = xsr_mat_id[ixsr - 1];
+        }
+
+        auto library = c5g7_library(args.get_positional(1));
+        _ng = library.get_num_groups();
+        _get_xstr(_nfsr, fsr_mat_id, library);
+        _get_xsnf(_nfsr, fsr_mat_id, library);
+        _get_xsch(_nfsr, fsr_mat_id, library);
+        _get_xssc(_nfsr, fsr_mat_id, library);
+    }
 
     // Allocate scalar flux and source array
     _scalar_flux.resize(_nfsr);
@@ -188,15 +175,71 @@ void SerialMOC::_read_rays() {
     std::cout << "Successfully set up " << nrays << " rays from file: " << _filename << std::endl;
 }
 
+// Get the total cross sections for each FSR from the library
+void SerialMOC::_get_xstr(
+    const int num_fsr,
+    const std::vector<int>& fsr_mat_id,
+    const c5g7_library& library
+) {
+    _xstr.resize(num_fsr);
+    for (auto i = 0; i < fsr_mat_id.size(); i++) {
+        _xstr[i] = library.total(fsr_mat_id[i]);
+    }
+}
+
+// Get the nu-fission cross sections for each FSR from the library
+void SerialMOC::_get_xsnf(
+    const int num_fsr,
+    const std::vector<int>& fsr_mat_id,
+    const c5g7_library& library
+) {
+    _xsnf.resize(num_fsr);
+    for (auto i = 0; i < fsr_mat_id.size(); i++) {
+        _xsnf[i] = library.nufiss(fsr_mat_id[i]);
+    }
+}
+
+// Get the chi for each FSR from the library
+void SerialMOC::_get_xsch(
+    const int num_fsr,
+    const std::vector<int>& fsr_mat_id,
+    const c5g7_library& library
+) {
+    _xsch.resize(num_fsr);
+    for (auto i = 0; i < fsr_mat_id.size(); i++) {
+        _xsch[i] = library.chi(fsr_mat_id[i]);
+    }
+}
+
+// Get the scattering cross sections for each FSR from the library
+void SerialMOC::_get_xssc(
+    const int num_fsr,
+    const std::vector<int>& fsr_mat_id,
+    const c5g7_library& library
+) {
+    _xssc.resize(num_fsr);
+    for (auto i = 0; i < fsr_mat_id.size(); i++) {
+        _xssc[i].resize(_ng);
+        for (int g = 0; g < _ng; g++) {
+            _xssc[i][g].resize(_ng);
+            for (int g2 = 0; g2 < _ng; g2++) {
+                _xssc[i][g][g2] = library.scat(fsr_mat_id[i], g, g2);
+            }
+        }
+    }
+}
+
+// Reflect the angle for reflecting boundary conditions
+inline int reflect_angle(int angle) {
+    return angle % 2 == 0 ? angle + 1 : angle - 1;
+}
+
 // Build the fission source term for each FSR based on the scalar flux and nu-fission cross sections
 std::vector<double> SerialMOC::fission_source(const double keff) const {
     std::vector<double> fissrc(_nfsr, 0.0);
     for (size_t i = 0; i < _nfsr; i++) {
-        if (_library.is_fissile(_fsr_mat_id[i])) {
-            for (int g = 0; g < _ng; g++) {
-                fissrc[i] += _library.nufiss(_fsr_mat_id[i], g) * _scalar_flux[i][g] / keff;
-                // std::cout << i << " " << g << " " << fissrc[i] << " " << library.nufiss(fsr_mat_id[i], g) / keff << " " << scalar_flux[i][g] << std::endl;
-            }
+        for (int g = 0; g < _ng; g++) {
+            fissrc[i] += _xsnf[i][g] * _scalar_flux[i][g] / keff;
         }
     }
     return fissrc;
@@ -208,18 +251,14 @@ void SerialMOC::update_source(const std::vector<double>& fissrc) {
     int ng = _scalar_flux[0].size();
     for (size_t i = 0; i < _nfsr; i++) {
         for (int g = 0; g < ng; g++) {
-            _source[i][g] = fissrc[i] * _library.chi(_fsr_mat_id[i], g);
-            // std::cout << "mgfs " << i << " " << g << " " << i << " " << fissrc[i] << " " << library.chi(fsr_mat_id[i], g) << " : " << _source[i][g] << std::endl;
+            _source[i][g] = fissrc[i] * _xsch[i][g];
             for (int g2 = 0; g2 < ng; g2++) {
                 if (g != g2) {
-                    _source[i][g] += _library.scat(_fsr_mat_id[i], g, g2) * _scalar_flux[i][g2];
-                    // std::cout << "inscatter " << i << " " << g << " " << g2 << " " << " " << _scalar_flux[i][g2] << " " << library.scat(fsr_mat_id[i], g, g2) << " : " << _source[i][g] << std::endl;
+                    _source[i][g] += _xssc[i][g][g2] * _scalar_flux[i][g2];
                 }
             }
-            _source[i][g] += _library.self_scat(_fsr_mat_id[i], g) * _scalar_flux[i][g];
-            // std::cout << "selfscatter a " << g << " " << i << " " << old_source << " " << library.self_scat(fsr_mat_id[i], g) << " " << _scalar_flux[i][g] << " : " << source[i][g] << std::endl;
-            _source[i][g] /= (_library.total(_fsr_mat_id[i], g) * 4.0 * M_PI);
-            // std::cout << "selfscatter b " << g << " " << i << " " << 4.0 * M_PI << " " << library.total(fsr_mat_id[i], g) <<  " : " << source[i][g] << std::endl;
+            _source[i][g] += _xssc[i][g][g] * _scalar_flux[i][g];
+            _source[i][g] /= (_xstr[i][g] * 4.0 * M_PI);
         }
     }
 }
