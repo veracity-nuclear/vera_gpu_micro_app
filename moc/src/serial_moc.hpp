@@ -59,14 +59,13 @@ class SerialMOC : public BaseMOC {
         std::vector<int> _ray_angle_index;  // Angle index for each ray
         std::vector<int> _ray_fsrs;  // Flattened FSR IDs for all segments
         std::vector<double> _ray_segments;  // Flattened segment lengths for all segments
-        
+
         std::vector<double> _ray_spacing;
         std::vector<std::vector<double>> _angle_weights;  // Weights for each angle
         std::vector<double> _rsinpolang;  // Precomputed sin(polar angle) values for ray tracing
-        std::vector<std::vector<std::vector<double>>> _segflux;  // Segment flux array
         std::vector<std::vector<double>> _exparg;  // Exponential arguments for each segment and group
         std::vector<std::vector<double>> _scalar_flux;  // Scalar flux array
         std::vector<std::vector<double>> _source;  // Multrigroup total source term for each FSR
-        std::vector<AngFluxBCAngle> _angflux;  // Angular flux for each angle
-        std::vector<AngFluxBCAngle> _old_angflux;  // Angular flux for each angle
+        std::vector<std::vector<std::vector<double>>> _angflux;  // Angular flux for each angle
+        std::vector<std::vector<std::vector<double>>> _old_angflux;  // Angular flux for each angle
 };
