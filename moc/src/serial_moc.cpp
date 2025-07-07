@@ -190,10 +190,7 @@ SerialMOC::SerialMOC(const ArgumentParser& args) :
     }
 
     // Initialize the exponential argument array
-    _exparg.resize(_max_segments + 1);
-    for (size_t i = 0; i < _max_segments + 1; i++) {
-        _exparg[i].resize(_ng, 0.0);
-    }
+    _exparg.resize(_max_segments + 1, 0.0);
 }
 
 void SerialMOC::_read_rays() {
@@ -383,10 +380,8 @@ void SerialMOC::update_source(const std::vector<double>& fissrc) {
 void SerialMOC::sweep() {
     Kokkos::Profiling::pushRegion("SerialMOC::Sweep");
     // Initialize old values and a few scratch values
-    int iseg, ireg, refl_angle;
+    int iseg1, iseg2, ireg, refl_angle, global_seg;
     double phid1, phid2;
-    std::vector<double> fsegflux(_ng, 0.0);
-    std::vector<double> bsegflux(_ng, 0.0);
 
     // Initialize the scalar flux to 0.0
     for (auto i = 0; i < _nfsr; i++) {
@@ -401,48 +396,37 @@ void SerialMOC::sweep() {
 
         // Sweep all the polar angles
         for (size_t ipol = 0; ipol < _npol; ipol++) {
-
-            // Store the exponential arguments for this ray
-            for (size_t i = 0; i < nsegs; i++) {
-                int global_seg = _ray_nsegs[iray] + i;
-                for (size_t ig = 0; ig < _ng; ig++) {
-                    _exparg[i][ig] = _exp_table.expt(-_xstr[_ray_fsrs[global_seg] - 1][ig] * _ray_segments[global_seg] * _rsinpolang[ipol]);
-                }
-            }
-
-            // Initialize the ray flux with the angular flux BCs
             for (size_t ig = 0; ig < _ng; ig++) {
-                fsegflux[ig] = _old_angflux[_ray_bc_index_frwd_start[iray]][ipol][ig];
-                bsegflux[ig] = _old_angflux[_ray_bc_index_bkwd_start[iray]][ipol][ig];
-            }
 
-            // Forward sweep
-            for (iseg = 0; iseg < nsegs; iseg++) {
-                int global_seg = _ray_nsegs[iray] + iseg;
-                ireg = _ray_fsrs[global_seg] - 1;
-                for (size_t ig = 0; ig < _ng; ig++) {
-                    phid1 = fsegflux[ig] - _source[ireg][ig];
-                    phid1 *= _exparg[iseg][ig];
-                    fsegflux[ig] = fsegflux[ig] - phid1;
+                // Store the exponential arguments for this ray
+                for (size_t i = 0; i < nsegs; i++) {
+                    int global_seg = _ray_nsegs[iray] + i;
+                    _exparg[i] = _exp_table.expt(-_xstr[_ray_fsrs[global_seg] - 1][ig] * _ray_segments[global_seg] * _rsinpolang[ipol]);
+                }
+
+                double fsegflux = _old_angflux[_ray_bc_index_frwd_start[iray]][ipol][ig];
+                double bsegflux = _old_angflux[_ray_bc_index_bkwd_start[iray]][ipol][ig];
+
+                // Forward sweep
+                iseg2 = nsegs;
+                for (int iseg1 = 0; iseg1 < nsegs; iseg1++) {
+                    global_seg = _ray_nsegs[iray] + iseg1;
+                    ireg = _ray_fsrs[global_seg] - 1;
+                    phid1 = fsegflux - _source[ireg][ig];
+                    phid1 *= _exparg[iseg1];
+                    fsegflux = fsegflux - phid1;
                     _scalar_flux[ireg][ig] += phid1 * _angle_weights[_ray_angle_index[iray]][ipol];
-                }
-            }
-            for (size_t ig = 0; ig < _ng; ig++) {
-                _angflux[_ray_bc_index_frwd_end[iray]][ipol][ig] = fsegflux[ig];
-            }
-            // Backward sweep
-            for (iseg = nsegs; iseg > 0; iseg--) {
-                int global_seg = _ray_nsegs[iray] + iseg - 1;
-                ireg = _ray_fsrs[global_seg] - 1;
-                for (size_t ig = 0; ig < _ng; ig++) {
-                    phid2 = bsegflux[ig] - _source[ireg][ig];
-                    phid2 *= _exparg[iseg - 1][ig];
-                    bsegflux[ig] = bsegflux[ig] - phid2;
+
+                    int global_seg = _ray_nsegs[iray] + iseg2 - 1;
+                    ireg = _ray_fsrs[global_seg] - 1;
+                    phid2 = bsegflux - _source[ireg][ig];
+                    phid2 *= _exparg[iseg2 - 1];
+                    bsegflux = bsegflux - phid2;
                     _scalar_flux[ireg][ig] += phid2 * _angle_weights[_ray_angle_index[iray]][ipol];
+                    iseg2--;
                 }
-            }
-            for (size_t ig = 0; ig < _ng; ig++) {
-                _angflux[_ray_bc_index_bkwd_end[iray]][ipol][ig] = bsegflux[ig];
+                _angflux[_ray_bc_index_frwd_end[iray]][ipol][ig] = fsegflux;
+                _angflux[_ray_bc_index_bkwd_end[iray]][ipol][ig] = bsegflux;
             }
         }
     }
