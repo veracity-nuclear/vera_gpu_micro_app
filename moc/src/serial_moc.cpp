@@ -274,16 +274,11 @@ void SerialMOC::sweep() {
     for (auto i = 0; i < _nfsr; i++) {
         for (auto g = 0; g < _ng; g++) {
             _scalar_flux[i][g] = 0.0;
-            // std::cout << "source " << i << " " << g << " " << source[i][g] << " " << _old__scalar_flux[i][g] << std::endl;
         }
     }
 
     // Sweep all the long rayse
     for (const auto& ray : _rays) {
-        // if (ray.angle() == 2) {
-        //     throw std::runtime_error("Beginning of ray loop");
-        // }
-
         // Sweep all the polar angles
         for (size_t ipol = 0; ipol < _npol; ipol++) {
 
@@ -330,39 +325,25 @@ void SerialMOC::sweep() {
             // Store the final segments' angular flux into the BCs
             for (size_t ig = 0; ig < _ng; ig++) {
                 refl_angle = reflect_angle(ray.angle());
-                if (ray._bc_index[RAY_START] != -1) {
+                if (ray._bc_index[RAY_END] != -1) {
                     _angflux[refl_angle].faces[ray._bc_face[RAY_END]]._angflux[ray._bc_index[RAY_END]][ipol][ig] =
                         _segflux[RAY_START][ray._fsrs.size()][ig];
                 }
                 refl_angle = reflect_angle(ray.angle());
-                if (ray._bc_index[RAY_END] != -1) {
+                if (ray._bc_index[RAY_START] != -1) {
                     _angflux[refl_angle].faces[ray._bc_face[RAY_START]]._angflux[ray._bc_index[RAY_START]][ipol][ig] =
                         _segflux[RAY_END][0][ig];
                 }
             }
-            // throw std::runtime_error("End of segment loop");
         }
-        // throw std::runtime_error("End of polar loop");
     }
 
     // Scale the flux with source, volume, and transport XS
     for (size_t i = 0; i < _nfsr; ++i) {
         for (size_t g = 0; g < _ng; ++g) {
-            // printf("Scaling scalar flux for FSR %d, group %d: %f %f %f %f %f\n",
-            //     i, g, _scalar_flux[i][g], _xstr[i][g], _fsr_vol[i], _plane_height, _source[i][g]);
             _scalar_flux[i][g] = _scalar_flux[i][g] / (_xstr[i][g] * _fsr_vol[i] / _plane_height) + _source[i][g] * 4.0 * M_PI;
         }
     }
-
-    // Print the scalar flux
-    // std::cout << "Scalar Flux:" << std::endl;
-    // for (size_t i = 0; i < _scalar_flux.size(); ++i) {
-    //     std::cout << "FSR " << i << ": ";
-    //     for (size_t g = 0; g < _scalar_flux[i].size(); ++g) {
-    //         std::cout << _scalar_flux[i][g] << " ";
-    //     }
-    //     std::cout << std::endl;
-    // }
 
     _old_angflux = _angflux;
     Kokkos::Profiling::popRegion();

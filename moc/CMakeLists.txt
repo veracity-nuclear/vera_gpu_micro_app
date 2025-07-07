@@ -30,6 +30,7 @@ set(TEST_EXECUTABLES
     test_serial_moc_1region_1angle
     test_serial_moc_4region_1angle
     test_serial_moc_1region_16angle
+    test_mixed_bcs
     test_serial_moc_pin
     test_kokkos_moc_pin_omp4
     test_kokkos_moc_pin_serial
@@ -39,6 +40,7 @@ set(TEST_EXECUTABLES
     heavy_test_serial_moc_mini-core
 )
 SET(TEST_LABELS
+    "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
