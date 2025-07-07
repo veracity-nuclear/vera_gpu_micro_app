@@ -330,12 +330,12 @@ void SerialMOC::sweep() {
             // Store the final segments' angular flux into the BCs
             for (size_t ig = 0; ig < _ng; ig++) {
                 refl_angle = reflect_angle(ray.angle());
-                if (ray._bc_index[RAY_START] != -1) {
+                if (ray._bc_index[RAY_END] != -1) {
                     _angflux[refl_angle].faces[ray._bc_face[RAY_END]]._angflux[ray._bc_index[RAY_END]][ipol][ig] =
                         _segflux[RAY_START][ray._fsrs.size()][ig];
                 }
                 refl_angle = reflect_angle(ray.angle());
-                if (ray._bc_index[RAY_END] != -1) {
+                if (ray._bc_index[RAY_START] != -1) {
                     _angflux[refl_angle].faces[ray._bc_face[RAY_START]]._angflux[ray._bc_index[RAY_START]][ipol][ig] =
                         _segflux[RAY_END][0][ig];
                 }
