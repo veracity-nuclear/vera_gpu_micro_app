@@ -380,7 +380,7 @@ void SerialMOC::update_source(const std::vector<double>& fissrc) {
 void SerialMOC::sweep() {
     Kokkos::Profiling::pushRegion("SerialMOC::Sweep");
     // Initialize old values and a few scratch values
-    int iseg1, iseg2, ireg, refl_angle, global_seg;
+    int iseg2, ireg, global_seg;
     double phid1, phid2;
 
     // Initialize the scalar flux to 0.0
@@ -390,11 +390,9 @@ void SerialMOC::sweep() {
         }
     }
 
-    // Sweep all the long rays
+    // Sweep all the long rays, polar angles, and energy groups
     for (int iray = 0; iray < _n_rays; iray++) {
         int nsegs = _ray_nsegs[iray + 1] - _ray_nsegs[iray];
-
-        // Sweep all the polar angles
         for (size_t ipol = 0; ipol < _npol; ipol++) {
             for (size_t ig = 0; ig < _ng; ig++) {
 
