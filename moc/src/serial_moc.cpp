@@ -6,7 +6,6 @@
 #include <highfive/highfive.hpp>
 #include <Kokkos_Core.hpp>
 #include "exp_table.hpp"
-#include "long_ray.hpp"
 #include "c5g7_library.hpp"
 
 SerialMOC::SerialMOC(const ArgumentParser& args) :
@@ -115,8 +114,8 @@ SerialMOC::SerialMOC(const ArgumentParser& args) :
 
     // Allocate segment flux array
     _max_segments = 0;
-    for (const auto& ray : _rays) {
-        _max_segments = std::max(_max_segments, ray._fsrs.size());
+    for (int i = 0; i < _n_rays; i++) {
+        _max_segments = std::max<int>(_max_segments, _ray_nsegs[i + 1] - _ray_nsegs[i]);
     }
     _segflux.resize(2);
     for (size_t j = 0; j < 2; j++) {
@@ -137,42 +136,95 @@ void SerialMOC::_read_rays() {
     auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
 
     // Count the rays
-    auto nrays = 0;
-    auto nangles = 0;
+    _n_rays = 0;
     for (size_t i = 0; i < domain.listObjectNames().size(); i++) {
         std::string objName = domain.listObjectNames()[i];
         if (objName.substr(0, 6) == "Angle_") {
             auto angleGroup = domain.getGroup(objName);
             for (const auto& rayName : angleGroup.listObjectNames()) {
                 if (rayName.substr(0, 8) == "LongRay_") {
-                    nrays++;
+                    _n_rays++;
                 }
             }
-            nangles++;
         }
     }
 
-    // Set up the rays
-    _rays.reserve(nrays);
-    nrays = 0;
+    // Convert the rays to a flattened format
+    _ray_nsegs.resize(_n_rays + 1);
+    _ray_bc_face_start.resize(_n_rays);
+    _ray_bc_face_end.resize(_n_rays);
+    _ray_bc_index_frwd_start.resize(_n_rays);
+    _ray_bc_index_frwd_end.resize(_n_rays);
+    _ray_bc_index_bkwd_start.resize(_n_rays);
+    _ray_bc_index_bkwd_end.resize(_n_rays);
+    _ray_angle_index.resize(_n_rays);
+    _ray_nsegs[0] = 0;
+
+    int iray = 0;
     for (const auto& objName : domain.listObjectNames()) {
         if (objName.substr(0, 6) == "Angle_") {
             HighFive::Group angleGroup = domain.getGroup(objName);
-
-            // Read the radians data from the angle group
-            auto radians = angleGroup.getDataSet("Radians").read<double>();
             auto angleIndex = std::stoi(objName.substr(8)) - 1;
             for (const auto& rayName : angleGroup.listObjectNames()) {
                 if (rayName.substr(0, 8) == "LongRay_") {
                     auto rayGroup = angleGroup.getGroup(rayName);
-                    _rays.push_back(LongRay(rayGroup, angleIndex, radians));
-                    nrays++;
+
+                    // Read ray data
+                    auto fsrs = rayGroup.getDataSet("FSRs").read<std::vector<int>>();
+                    auto segments = rayGroup.getDataSet("Segments").read<std::vector<double>>();
+                    auto bc_face = rayGroup.getDataSet("BC_face").read<std::vector<int>>();
+                    auto bc_index = rayGroup.getDataSet("BC_index").read<std::vector<int>>();
+
+                    // Store ray metadata
+                    _ray_angle_index[iray] = angleIndex;
+                    _ray_nsegs[iray + 1] = _ray_nsegs[iray] + fsrs.size();
+
+                    // Adjust BC data (convert from 1-based to 0-based indexing)
+                    _ray_bc_face_start[iray] = bc_face[RAY_START] - 1;
+                    _ray_bc_face_end[iray] = bc_face[RAY_END] - 1;
+                    _ray_bc_index_frwd_start[iray] = bc_index[RAY_START] - 1;
+                    _ray_bc_index_frwd_end[iray] = bc_index[RAY_END] - 1;
+                    _ray_bc_index_bkwd_start[iray] = bc_index[RAY_END] - 1;
+                    _ray_bc_index_bkwd_end[iray] = bc_index[RAY_START] - 1;
+
+                    iray++;
                 }
             }
         }
     }
+
+    // Allocate flattened segment data
+    _ray_fsrs.resize(_ray_nsegs[_n_rays]);
+    _ray_segments.resize(_ray_nsegs[_n_rays]);
+
+    // Fill flattened segment data
+    iray = 0;
+    for (const auto& objName : domain.listObjectNames()) {
+        if (objName.substr(0, 6) == "Angle_") {
+            HighFive::Group angleGroup = domain.getGroup(objName);
+            for (const auto& rayName : angleGroup.listObjectNames()) {
+                if (rayName.substr(0, 8) == "LongRay_") {
+                    auto rayGroup = angleGroup.getGroup(rayName);
+
+                    // Read segment data
+                    auto fsrs = rayGroup.getDataSet("FSRs").read<std::vector<int>>();
+                    auto segments = rayGroup.getDataSet("Segments").read<std::vector<double>>();
+
+                    // Store segment data in flattened arrays
+                    for (int iseg = 0; iseg < fsrs.size(); iseg++) {
+                        int global_seg = _ray_nsegs[iray] + iseg;
+                        _ray_fsrs[global_seg] = fsrs[iseg];
+                        _ray_segments[global_seg] = segments[iseg];
+                    }
+
+                    iray++;
+                }
+            }
+        }
+    }
+
     // Print a message with the number of rays and filename
-    std::cout << "Successfully set up " << nrays << " rays from file: " << _filename << std::endl;
+    std::cout << "Successfully set up " << _n_rays << " rays from file: " << _filename << std::endl;
 }
 
 // Get the total cross sections for each FSR from the library
@@ -277,61 +329,66 @@ void SerialMOC::sweep() {
         }
     }
 
-    // Sweep all the long rayse
-    for (const auto& ray : _rays) {
+    // Sweep all the long rays
+    for (int iray = 0; iray < _n_rays; iray++) {
+        int nsegs = _ray_nsegs[iray + 1] - _ray_nsegs[iray];
+
         // Sweep all the polar angles
         for (size_t ipol = 0; ipol < _npol; ipol++) {
 
             // Store the exponential arguments for this ray
-            for (size_t i = 0; i < ray._fsrs.size(); i++) {
+            for (size_t i = 0; i < nsegs; i++) {
+                int global_seg = _ray_nsegs[iray] + i;
                 for (size_t ig = 0; ig < _ng; ig++) {
-                    _exparg[i][ig] = _exp_table.expt(-_xstr[ray._fsrs[i] - 1][ig] * ray._segments[i] * _rsinpolang[ipol]);
+                    _exparg[i][ig] = _exp_table.expt(-_xstr[_ray_fsrs[global_seg] - 1][ig] * _ray_segments[global_seg] * _rsinpolang[ipol]);
                 }
             }
 
             // Initialize the ray flux with the angular flux BCs
             for (size_t ig = 0; ig < _ng; ig++) {
                 _segflux[0][0][ig] =
-                    ray._bc_index[0] == -1
+                    _ray_bc_index_frwd_start[iray] == -1
                     ? 0.0
-                    : _old_angflux[ray.angle()].faces[ray._bc_face[0]]._angflux[ray._bc_index[0]][ipol][ig];
-                _segflux[1][ray._fsrs.size()][ig] =
-                    ray._bc_index[1] == -1
+                    : _old_angflux[_ray_angle_index[iray]].faces[_ray_bc_face_start[iray]]._angflux[_ray_bc_index_frwd_start[iray]][ipol][ig];
+                _segflux[1][nsegs][ig] =
+                    _ray_bc_index_bkwd_start[iray] == -1
                     ? 0.0
-                    : _old_angflux[ray.angle()].faces[ray._bc_face[1]]._angflux[ray._bc_index[1]][ipol][ig];
+                    : _old_angflux[_ray_angle_index[iray]].faces[_ray_bc_face_end[iray]]._angflux[_ray_bc_index_bkwd_start[iray]][ipol][ig];
             }
 
             // Forward sweep
-            for (iseg = 0; iseg < ray._fsrs.size(); iseg++) {
-                ireg = ray._fsrs[iseg] - 1;
+            for (iseg = 0; iseg < nsegs; iseg++) {
+                int global_seg = _ray_nsegs[iray] + iseg;
+                ireg = _ray_fsrs[global_seg] - 1;
                 for (size_t ig = 0; ig < _ng; ig++) {
                     phid1 = _segflux[RAY_START][iseg][ig] - _source[ireg][ig];
                     phid1 *= _exparg[iseg][ig];
                     _segflux[RAY_START][iseg + 1][ig] = _segflux[RAY_START][iseg][ig] - phid1;
-                    _scalar_flux[ireg][ig] += phid1 * _angle_weights[ray.angle()][ipol];
+                    _scalar_flux[ireg][ig] += phid1 * _angle_weights[_ray_angle_index[iray]][ipol];
                 }
             }
             // Backward sweep
-            for (iseg = ray._fsrs.size(); iseg > 0; iseg--) {
-                ireg = ray._fsrs[iseg - 1] - 1;
+            for (iseg = nsegs; iseg > 0; iseg--) {
+                int global_seg = _ray_nsegs[iray] + iseg - 1;
+                ireg = _ray_fsrs[global_seg] - 1;
                 for (size_t ig = 0; ig < _ng; ig++) {
                     phid2 = _segflux[RAY_END][iseg][ig] - _source[ireg][ig];
                     phid2 *= _exparg[iseg - 1][ig];
                     _segflux[RAY_END][iseg - 1][ig] = _segflux[RAY_END][iseg][ig] - phid2;
-                    _scalar_flux[ireg][ig] += phid2 * _angle_weights[ray.angle()][ipol];
+                    _scalar_flux[ireg][ig] += phid2 * _angle_weights[_ray_angle_index[iray]][ipol];
                 }
             }
 
             // Store the final segments' angular flux into the BCs
             for (size_t ig = 0; ig < _ng; ig++) {
-                refl_angle = reflect_angle(ray.angle());
-                if (ray._bc_index[RAY_END] != -1) {
-                    _angflux[refl_angle].faces[ray._bc_face[RAY_END]]._angflux[ray._bc_index[RAY_END]][ipol][ig] =
-                        _segflux[RAY_START][ray._fsrs.size()][ig];
+                refl_angle = reflect_angle(_ray_angle_index[iray]);
+                if (_ray_bc_index_frwd_end[iray] != -1) {
+                    _angflux[refl_angle].faces[_ray_bc_face_end[iray]]._angflux[_ray_bc_index_frwd_end[iray]][ipol][ig] =
+                        _segflux[RAY_START][nsegs][ig];
                 }
-                refl_angle = reflect_angle(ray.angle());
-                if (ray._bc_index[RAY_START] != -1) {
-                    _angflux[refl_angle].faces[ray._bc_face[RAY_START]]._angflux[ray._bc_index[RAY_START]][ipol][ig] =
+                refl_angle = reflect_angle(_ray_angle_index[iray]);
+                if (_ray_bc_index_bkwd_end[iray] != -1) {
+                    _angflux[refl_angle].faces[_ray_bc_face_start[iray]]._angflux[_ray_bc_index_bkwd_end[iray]][ipol][ig] =
                         _segflux[RAY_END][0][ig];
                 }
             }

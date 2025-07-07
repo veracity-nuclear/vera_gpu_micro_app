@@ -4,7 +4,6 @@
 #include <highfive/highfive.hpp>
 #include "exp_table.hpp"
 #include "c5g7_library.hpp"
-#include "long_ray.hpp"
 #include "base_moc.hpp"
 #include "argument_parser.hpp"
 
@@ -48,7 +47,19 @@ class SerialMOC : public BaseMOC {
         std::vector<std::vector<double>> _xsnf;  // Nu-fission cross-sections for each FSR
         std::vector<std::vector<double>> _xsch;  // Chi for each FSR
         std::vector<std::vector<std::vector<double>>> _xssc;  // Scattering cross-sections for each FSR
-        std::vector<LongRay> _rays;  // Long rays for MOC
+        // Flattened ray data (similar to KokkosMOC)
+        int _n_rays;  // Number of rays
+        std::vector<int> _ray_nsegs;  // Number of segments for each ray (cumulative)
+        std::vector<int> _ray_bc_face_start;  // BC face at ray start
+        std::vector<int> _ray_bc_face_end;  // BC face at ray end
+        std::vector<int> _ray_bc_index_frwd_start;  // BC index for forward direction at start
+        std::vector<int> _ray_bc_index_frwd_end;  // BC index for forward direction at end
+        std::vector<int> _ray_bc_index_bkwd_start;  // BC index for backward direction at start
+        std::vector<int> _ray_bc_index_bkwd_end;  // BC index for backward direction at end
+        std::vector<int> _ray_angle_index;  // Angle index for each ray
+        std::vector<int> _ray_fsrs;  // Flattened FSR IDs for all segments
+        std::vector<double> _ray_segments;  // Flattened segment lengths for all segments
+        
         std::vector<double> _ray_spacing;
         std::vector<std::vector<double>> _angle_weights;  // Weights for each angle
         std::vector<double> _rsinpolang;  // Precomputed sin(polar angle) values for ray tracing
