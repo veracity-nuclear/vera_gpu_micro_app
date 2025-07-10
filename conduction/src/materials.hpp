@@ -65,6 +65,15 @@ public:
     double rho(double T) const override { throw std::runtime_error("Clad density not implemented"); }
 };
 
+class Gap : public SolidMaterial {
+public:
+    Gap() : SolidMaterial("Gap") {}
+    Gap(const std::string &name) : SolidMaterial(name) {}
+    double k(double T) const override { return 0.2; }
+    double Cp(double T) const override { throw std::runtime_error("Gap heat capacity not implemented"); }
+    double rho(double T) const override { throw std::runtime_error("Gap density not implemented"); }
+};
+
 class FuelMaterial : public SolidMaterial {
 public:
     FuelMaterial() : SolidMaterial("Fuel") {}
@@ -78,7 +87,15 @@ class UO2 : public FuelMaterial {
 public:
     UO2() : FuelMaterial("UO2") {}
     UO2(const std::string &name) : FuelMaterial(name) {}
+
+    // pure virtuals from SolidMaterial with default burnup/gadolinium
+    double k(double T) const override { return k(T, 0.0, 0.0); }
+    double Cp(double T) const override { return Cp(T, 0.0, 0.0); }
+    double rho(double T) const override { return rho(T, 0.0, 0.0); }
+
+    // methods w/ burnup and gadolinium dependence for full solver use
     double k(double T, double Bu, double gad) const override;
     double Cp(double T, double Bu, double gad) const override;
     double rho(double T, double Bu, double gad) const override { throw std::runtime_error("UO2 density not implemented"); }
 };
+
