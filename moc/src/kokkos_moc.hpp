@@ -7,6 +7,8 @@
 #include "base_moc.hpp"
 #include "argument_parser.hpp"
 
+static constexpr double fourpi = 4.0 * M_PI;
+
 template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
 class KokkosMOC : public BaseMOC {
     using layout = typename ExecutionSpace::array_layout;
@@ -65,12 +67,14 @@ class KokkosMOC : public BaseMOC {
     private:
         void _read_rays();  // Read rays from the HDF5 file
         void _convert_rays();  // Convert rays to flattened format
-        void _get_xstr(int starting_xsr);  // Read xstr from XS library
+        void _get_xstr(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xstr from XS library
+        void _get_xsnf(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xsnf from XS library
+        void _get_xsch(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xsch from XS library
+        void _get_xssc(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xssc from XS library
 
         // Input data
         std::string _filename;  // HDF5 file name
         HighFive::File _file; // HDF5 file object
-        const c5g7_library _library;  // Cross-section library object
         std::string _device;  // Name of the target Kokkos device
 
         // Sizes
@@ -83,8 +87,10 @@ class KokkosMOC : public BaseMOC {
         // Geometry host data
         double _plane_height;  // Height of the plane
         HViewDouble1D _h_fsr_vol;
-        std::vector<int> _fsr_mat_id;  // FSR material IDs
         HViewDouble2D _h_xstr;
+        HViewDouble2D _h_xsnf;
+        HViewDouble2D _h_xsch;
+        HViewDouble3D _h_xssc;
         std::vector<double> _ray_spacing;
         HViewDouble2D _h_angle_weights;
         HViewDouble1D _h_rsinpolang;
@@ -93,6 +99,9 @@ class KokkosMOC : public BaseMOC {
         // Geometry device data
         DViewDouble1D _d_fsr_vol;
         DViewDouble2D _d_xstr;
+        DViewDouble2D _d_xsnf;
+        DViewDouble2D _d_xsch;
+        DViewDouble3D _d_xssc;
         DViewDouble2D _d_angle_weights;
         DViewDouble1D _d_rsinpolang;
         DViewDouble2D _d_exp_table;
@@ -134,4 +143,5 @@ class KokkosMOC : public BaseMOC {
         DViewDouble2D _d_source;
         DViewDouble3D _d_angflux;
         DViewDouble3D _d_old_angflux;
+        DViewDouble3D _d_thread_scalar_flux;
 };

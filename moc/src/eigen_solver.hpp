@@ -2,12 +2,13 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include "argument_parser.hpp"
 #include "base_moc.hpp"
 
 class EigenSolver {
     public:
         // Build the solver; first argument is the HDF5 file name, second is the cross-section library name
-        EigenSolver(const std::vector<std::string> args, std::shared_ptr<BaseMOC> sweeper);
+        EigenSolver(const ArgumentParser& args, std::shared_ptr<BaseMOC> sweeper);
         // Run the eigenvalue iteration
         void solve();
         // Get the keff

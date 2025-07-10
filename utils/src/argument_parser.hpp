@@ -47,8 +47,6 @@ public:
     bool get_flag(const std::string& name) const;
     // Print the help message
     void print_help() const;
-    // Get a vector of arguments compatible with the original EigenSolver constructor
-    std::vector<std::string> get_args(const std::string& program_name) const;
 
 private:
     std::string program_name_;
