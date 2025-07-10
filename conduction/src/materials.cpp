@@ -1,34 +1,21 @@
 #include "materials.hpp"
 
-double Clad::k(double T) const {
-    if (T < 0.0) {
-        throw std::out_of_range("Temperature in Kelvin cannot be less than 0.0");
-    }
+/*
+Correlations for temperature-dependent properties are taken from the CTF v4.4 Manual
+https://info.ornl.gov/sites/publications/Files/Pub203334.pdf
 
-    return 7.51 + 2.09e-2 * T - 1.45e-5 * T * T + 7.67e-9 * T * T * T;
-}
+Materials are defined in alphabetical order.
+    - Helium
+    - UO2
+    - Zircaloy
+*/
 
-double Clad::Cp(double T) const {
-    static const std::vector<double> T_vals = {
-        300.0, 400.0, 640.0, 1090.0, 1093.0, 1113.0, 1133.0, 1153.0, 1173.0,
-        1193.0, 1213.0, 1233.0, 1248.0, 2098.0, 2099.0
-    };
-    static const std::vector<double> Cp_vals = {
-        281.0, 302.0, 331.0, 375.0, 502.0, 590.0, 615.0, 719.0, 816.0,
-        770.0, 619.0, 469.0, 356.0, 356.0, 356.0
-    };
-
-    if (T < T_vals.front() || T > T_vals.back()) {
-        throw std::out_of_range("Temperature must be within 300.0 and 2100.0 K for Clad heat capacity");
-    }
-
-    auto upper = std::upper_bound(T_vals.begin(), T_vals.end(), T);
-    size_t i = std::distance(T_vals.begin(), upper) - 1;
-
-    double T0 = T_vals[i], T1 = T_vals[i + 1];
-    double Cp0 = Cp_vals[i], Cp1 = Cp_vals[i + 1];
-
-    return Cp0 + (Cp1 - Cp0) * (T - T0) / (T1 - T0);
+double Helium::k(double T) const {
+    const double a = 1.314e-3; // in BTU/hr-ft-F
+    const double b = 0.668;
+    double T_R = T * 9.0 / 5.0; // Convert K to °R
+    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
+    return k * 1.730735;   // Convert to W/m-K
 }
 
 double UO2::k(double T, double Bu, double gad) const {
@@ -59,4 +46,35 @@ double UO2::Cp(double T, double Bu, double gad) const {
 
     return K1 * std::pow(theta, 2.0) * std::exp(theta / T) / (std::pow(T, 2.0) * (std::exp(theta / T) - 1.0)) \
         + K2 * T + OM / 2 * K3 * E_D / (R * std::pow(T, 2.0)) * std::exp(-E_D / (R * T));
+}
+
+double Zircaloy::k(double T) const {
+    if (T < 0.0) {
+        throw std::out_of_range("Temperature in Kelvin cannot be less than 0.0");
+    }
+
+    return 7.51 + 2.09e-2 * T - 1.45e-5 * T * T + 7.67e-9 * T * T * T;
+}
+
+double Zircaloy::Cp(double T) const {
+    static const std::vector<double> T_vals = {
+        300.0, 400.0, 640.0, 1090.0, 1093.0, 1113.0, 1133.0, 1153.0, 1173.0,
+        1193.0, 1213.0, 1233.0, 1248.0, 2098.0, 2099.0
+    };
+    static const std::vector<double> Cp_vals = {
+        281.0, 302.0, 331.0, 375.0, 502.0, 590.0, 615.0, 719.0, 816.0,
+        770.0, 619.0, 469.0, 356.0, 356.0, 356.0
+    };
+
+    if (T < T_vals.front() || T > T_vals.back()) {
+        throw std::out_of_range("Temperature must be within 300.0 and 2100.0 K for Clad heat capacity");
+    }
+
+    auto upper = std::upper_bound(T_vals.begin(), T_vals.end(), T);
+    size_t i = std::distance(T_vals.begin(), upper) - 1;
+
+    double T0 = T_vals[i], T1 = T_vals[i + 1];
+    double Cp0 = Cp_vals[i], Cp1 = Cp_vals[i + 1];
+
+    return Cp0 + (Cp1 - Cp0) * (T - T0) / (T1 - T0);
 }

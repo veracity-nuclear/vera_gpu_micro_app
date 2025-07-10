@@ -56,8 +56,8 @@ TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_3Regions) {
     };
     std::vector<std::shared_ptr<SolidMaterial>> materials = {
         std::make_shared<UO2>(),
-        std::make_shared<Gap>(),
-        std::make_shared<Clad>()
+        std::make_shared<Helium>(),
+        std::make_shared<Zircaloy>()
     };
 
     double qdot_fuel = 1000 / nodes[0].get_volume(); // W/m^3
@@ -78,8 +78,8 @@ TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_3Regions) {
     // T(r=r1) = T_outer + q * (R_gap + R_clad)
     // T(r=r2) = T_outer + q * R_clad
     // T(r=r3) = T_outer
-    double T_fuel_cl_analytical = 918.983798; // K
-    double T_fuel_outer_analytical = 745.462127; // K
+    double T_fuel_cl_analytical = 882.856055; // K
+    double T_fuel_outer_analytical = 715.018591; // K
     double T_clad_inner_analytical = 610.289235; // K
     double T_clad_outer_analytical = 600.000000; // K
 
@@ -89,8 +89,8 @@ TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_3Regions) {
     EXPECT_NEAR(T_clad_outer, T_clad_outer_analytical, 1e-6);
 
     EXPECT_EQ(avg_temps.size(), 3);
-    EXPECT_NEAR(avg_temps[0], 875.603380, 1e-6);
-    EXPECT_NEAR(avg_temps[1], 677.532680, 1e-6);
+    EXPECT_NEAR(avg_temps[0], 840.896689, 1e-6);
+    EXPECT_NEAR(avg_temps[1], 662.388162, 1e-6);
     EXPECT_NEAR(avg_temps[2], 604.980316, 1e-6);
 }
 

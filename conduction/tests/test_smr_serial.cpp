@@ -17,8 +17,8 @@ TEST(SMR_Serial, ConductionSolve) {
     };
     std::vector<std::shared_ptr<SolidMaterial>> materials = {
         std::make_shared<UO2>(),
-        std::make_shared<Gap>(),
-        std::make_shared<Clad>()
+        std::make_shared<Helium>(),
+        std::make_shared<Zircaloy>()
     };
     CylindricalSolver solver(nodes);
 
