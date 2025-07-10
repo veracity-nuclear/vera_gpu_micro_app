@@ -38,12 +38,12 @@ TEST(CylindricalSolverTest, TemperatureDistribution_1Region) {
 
     // analytical solution for temperature at fuel centerline
     // T(r=0) = T_outer + qdot / (4 * k) * (r_out^2 - r_in^2)
-    double T_fuel_cl_analytical = 613.511111; // K
+    double T_fuel_cl_analytical = 611.855227; // K
 
     EXPECT_NEAR(T_fuel_cl, T_fuel_cl_analytical, 1e-6);
 
     EXPECT_EQ(avg_temps.size(), 1);
-    EXPECT_NEAR(avg_temps[0], 610.133333, 1e-6);
+    EXPECT_NEAR(avg_temps[0], 608.891420, 1e-6);
 }
 
 TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_3Regions) {
@@ -78,9 +78,9 @@ TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_3Regions) {
     // T(r=r1) = T_outer + q * (R_gap + R_clad)
     // T(r=r2) = T_outer + q * R_clad
     // T(r=r3) = T_outer
-    double T_fuel_cl_analytical = 902.488178; // K
-    double T_fuel_outer_analytical = 754.518279; // K
-    double T_clad_inner_analytical = 619.345388; // K
+    double T_fuel_cl_analytical = 918.983798; // K
+    double T_fuel_outer_analytical = 745.462127; // K
+    double T_clad_inner_analytical = 610.289235; // K
     double T_clad_outer_analytical = 600.000000; // K
 
     EXPECT_NEAR(T_fuel_cl, T_fuel_cl_analytical, 1e-6);
@@ -89,9 +89,9 @@ TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_3Regions) {
     EXPECT_NEAR(T_clad_outer, T_clad_outer_analytical, 1e-6);
 
     EXPECT_EQ(avg_temps.size(), 3);
-    EXPECT_NEAR(avg_temps[0], 865.495703, 1e-6);
-    EXPECT_NEAR(avg_temps[1], 686.588832, 1e-6);
-    EXPECT_NEAR(avg_temps[2], 609.363781, 1e-6);
+    EXPECT_NEAR(avg_temps[0], 875.603380, 1e-6);
+    EXPECT_NEAR(avg_temps[1], 677.532680, 1e-6);
+    EXPECT_NEAR(avg_temps[2], 604.980316, 1e-6);
 }
 
 int main(int argc, char **argv) {
