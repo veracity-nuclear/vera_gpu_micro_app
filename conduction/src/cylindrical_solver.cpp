@@ -51,7 +51,6 @@ std::vector<double> CylindricalSolver::solve_temperatures(
     std::vector<double> volumes = get_volumes();
     double qtotal = std::inner_product(qdot.begin(), qdot.end(), volumes.begin(), 0.0);
 
-    double total_iterations = 0;
     std::vector<double> Tavg(nodes.size(), 0.0);
     std::vector<double> Tavg_prev(nodes.size(), 0.0);
     for (size_t iter = 0; iter < max_iterations; ++iter) {
@@ -104,7 +103,6 @@ std::vector<double> CylindricalSolver::solve_temperatures(
         }
         if (max_diff < tolerance) {
             is_solved = true;
-            total_iterations = iter + 1;
             break;
         }
         Tavg_prev = Tavg; // Update previous temperatures for next iteration

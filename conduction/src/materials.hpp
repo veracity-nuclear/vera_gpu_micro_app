@@ -6,6 +6,16 @@
 #include <vector>
 #include <algorithm>
 
+/*
+Correlations for temperature-dependent properties are taken from the CTF v4.4 Manual
+https://info.ornl.gov/sites/publications/Files/Pub203334.pdf
+
+Materials are defined in alphabetical order.
+    - Helium
+    - UO2
+    - Zircaloy
+*/
+
 /**
  * @brief Abstract base class representing a solid material with temperature-dependent properties.
  */

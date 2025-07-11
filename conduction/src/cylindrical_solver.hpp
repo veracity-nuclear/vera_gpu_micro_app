@@ -24,8 +24,6 @@ public:
 
 private:
     bool is_solved = false;
-    double T_outer;
-    std::vector<double> qdot;
     std::vector<CylinderNode> nodes;
     std::vector<double> interface_temps;
 };
