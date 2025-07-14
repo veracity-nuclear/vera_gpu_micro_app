@@ -50,7 +50,7 @@ double UO2::Cp(double T, double Bu, double gad) const {
     double K1 = 296.7, K2 = 2.43e-2, K3 = 8.745e7; // empirical constants for UO2 heat capacity [J/kg-K]
 
     return (
-        K1 * T * T * std::exp(theta / T) / (T * T * std::pow(std::exp(theta / T) - 1.0, 2.0)) +
+        K1 * theta * theta * std::exp(theta / T) / (T * T * std::pow(std::exp(theta / T) - 1.0, 2.0)) +
         K2 * T +
         0.5 * OM * K3 * E_D / (R * T * T) * std::exp(-E_D / (R * T))
     );
