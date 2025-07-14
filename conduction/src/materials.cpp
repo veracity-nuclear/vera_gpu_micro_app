@@ -30,8 +30,13 @@ double UO2::k(double T, double Bu, double gad) const {
     }
 
     double h = 1 / (1.0 + 396.0 * std::exp(-6380.0 / T));
-    double k_phonon = 1 / (0.0452 + 0.000246 * T + 0.00187 * Bu + 1.1599 * gad + (1.0 - 0.9 * std::exp(-0.04 * Bu)) \
-        * 0.038 * h * std::pow(Bu, 0.28));
+    double k_phonon = 1 / (
+        0.0452 +
+        0.000246 * T +
+        0.00187 * Bu +
+        1.1599 * gad +
+        (1.0 - 0.9 * std::exp(-0.04 * Bu)) * 0.038 * h * std::pow(Bu, 0.28)
+    );
     double k_electronic = 3.50e9 / std::pow(T, 2.0) * std::exp(-16361.0 / T);
 
     return k_phonon + k_electronic;
