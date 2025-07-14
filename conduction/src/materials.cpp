@@ -37,7 +37,7 @@ double UO2::k(double T, double Bu, double gad) const {
         1.1599 * gad +
         (1.0 - 0.9 * std::exp(-0.04 * Bu)) * 0.038 * h * std::pow(Bu, 0.28)
     );
-    double k_electronic = 3.50e9 / std::pow(T, 2.0) * std::exp(-16361.0 / T);
+    double k_electronic = 3.50e9 / (T * T) * std::exp(-16361.0 / T);
 
     return k_phonon + k_electronic;
 }
@@ -49,8 +49,11 @@ double UO2::Cp(double T, double Bu, double gad) const {
     double E_D = 1.577e5; // Debye energy [J/mol]
     double K1 = 296.7, K2 = 2.43e-2, K3 = 8.745e7; // empirical constants for UO2 heat capacity [J/kg-K]
 
-    return K1 * std::pow(theta, 2.0) * std::exp(theta / T) / (std::pow(T, 2.0) * (std::exp(theta / T) - 1.0)) \
-        + K2 * T + OM / 2 * K3 * E_D / (R * std::pow(T, 2.0)) * std::exp(-E_D / (R * T));
+    return (
+        K1 * T * T * std::exp(theta / T) / (T * T * std::pow(std::exp(theta / T) - 1.0, 2.0)) +
+        K2 * T +
+        0.5 * OM * K3 * E_D / (R * T * T) * std::exp(-E_D / (R * T))
+    );
 }
 
 double Zircaloy::k(double T) const {
