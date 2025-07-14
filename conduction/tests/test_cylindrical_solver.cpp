@@ -24,24 +24,26 @@ TEST(CylindricalSolverTest, TemperatureDistribution_1Region) {
     std::vector<CylinderNode> nodes = {
         CylinderNode(height, radii[0], radii[1])
     };
+    std::vector<std::shared_ptr<SolidMaterial>> materials = {
+        std::make_shared<UO2>()
+    };
 
     CylindricalSolver solver(nodes);
-    std::vector<double> k = {4.5};  // W/m-K
     std::vector<double> qdot = {3.8e6};  // W/m^3
     double T_outer = 600.0; // K
 
-    std::vector<double> temps = solver.solve_temperatures(qdot, k, T_outer);
-    double T_fuel_cl = temps[0];
+    std::vector<double> avg_temps = solver.solve_temperatures(qdot, materials, T_outer);
+    std::vector<double> interface_temps = solver.get_interface_temperatures();
+    double T_fuel_cl = interface_temps[0];
 
     // analytical solution for temperature at fuel centerline
     // T(r=0) = T_outer + qdot / (4 * k) * (r_out^2 - r_in^2)
-    double T_fuel_cl_analytical = 613.511111; // K
+    double T_fuel_cl_analytical = 611.855227; // K
 
     EXPECT_NEAR(T_fuel_cl, T_fuel_cl_analytical, 1e-6);
 
-    std::vector<double> Tavg = solver.get_average_temperatures();
-    EXPECT_EQ(Tavg.size(), 1);
-    EXPECT_NEAR(Tavg[0], 610.133333, 1e-6);
+    EXPECT_EQ(avg_temps.size(), 1);
+    EXPECT_NEAR(avg_temps[0], 608.891420, 1e-6);
 }
 
 TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_3Regions) {
@@ -52,28 +54,33 @@ TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_3Regions) {
         CylinderNode(height, radii[1], radii[2]),
         CylinderNode(height, radii[2], radii[3])
     };
+    std::vector<std::shared_ptr<SolidMaterial>> materials = {
+        std::make_shared<UO2>(),
+        std::make_shared<Helium>(),
+        std::make_shared<Zircaloy>()
+    };
 
     double qdot_fuel = 1000 / nodes[0].get_volume(); // W/m^3
 
     CylindricalSolver solver(nodes);
-    std::vector<double> k = {4.5, 0.2, 8.8};  // W/m-K
     std::vector<double> qdot = {qdot_fuel, 0.0, 0.0};  // W/m^3
     double T_outer = 600.0; // K
 
-    std::vector<double> temps = solver.solve_temperatures(qdot, k, T_outer);
-    double T_fuel_cl = temps[0];
-    double T_fuel_outer = temps[1];
-    double T_clad_inner = temps[2];
-    double T_clad_outer = temps[3];
+    std::vector<double> avg_temps = solver.solve_temperatures(qdot, materials, T_outer);
+    std::vector<double> interface_temps = solver.get_interface_temperatures();
+    double T_fuel_cl = interface_temps[0];
+    double T_fuel_outer = interface_temps[1];
+    double T_clad_inner = interface_temps[2];
+    double T_clad_outer = interface_temps[3];
 
     // analytical solution for temperature at fuel centerline
     // T(r=0.) = T_outer + q * (R_fuel + R_gap + R_clad)
     // T(r=r1) = T_outer + q * (R_gap + R_clad)
     // T(r=r2) = T_outer + q * R_clad
     // T(r=r3) = T_outer
-    double T_fuel_cl_analytical = 902.488178; // K
-    double T_fuel_outer_analytical = 754.518279; // K
-    double T_clad_inner_analytical = 619.345388; // K
+    double T_fuel_cl_analytical = 882.856055; // K
+    double T_fuel_outer_analytical = 715.018591; // K
+    double T_clad_inner_analytical = 610.289235; // K
     double T_clad_outer_analytical = 600.000000; // K
 
     EXPECT_NEAR(T_fuel_cl, T_fuel_cl_analytical, 1e-6);
@@ -81,11 +88,10 @@ TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_3Regions) {
     EXPECT_NEAR(T_clad_inner, T_clad_inner_analytical, 1e-6);
     EXPECT_NEAR(T_clad_outer, T_clad_outer_analytical, 1e-6);
 
-    std::vector<double> Tavg = solver.get_average_temperatures();
-    EXPECT_EQ(Tavg.size(), 3);
-    EXPECT_NEAR(Tavg[0], 865.495703, 1e-6);
-    EXPECT_NEAR(Tavg[1], 686.588832, 1e-6);
-    EXPECT_NEAR(Tavg[2], 609.363781, 1e-6);
+    EXPECT_EQ(avg_temps.size(), 3);
+    EXPECT_NEAR(avg_temps[0], 840.896689, 1e-6);
+    EXPECT_NEAR(avg_temps[1], 662.388162, 1e-6);
+    EXPECT_NEAR(avg_temps[2], 604.980316, 1e-6);
 }
 
 int main(int argc, char **argv) {

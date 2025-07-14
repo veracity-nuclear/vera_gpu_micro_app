@@ -15,9 +15,12 @@ TEST(SMR_Serial, ConductionSolve) {
         CylinderNode(height, radii[1], radii[2]),
         CylinderNode(height, radii[2], radii[3])
     };
+    std::vector<std::shared_ptr<SolidMaterial>> materials = {
+        std::make_shared<UO2>(),
+        std::make_shared<Helium>(),
+        std::make_shared<Zircaloy>()
+    };
     CylindricalSolver solver(nodes);
-
-    std::vector<double> k = {4.5, 0.2, 8.8};  // W/m-K
 
     std::vector<std::string> state_groups = {
         "/STATE_0001", "/STATE_0002", "/STATE_0003", "/STATE_0004", "/STATE_0005",
@@ -53,8 +56,7 @@ TEST(SMR_Serial, ConductionSolve) {
     for (size_t i = 0; i < N; ++i) {
         double T_outer = all_clad_surf_temps[i];
         qdot[i][0] = all_pin_powers[i] / nodes[0].get_volume(); // only node with fuel has heat gen
-        solver.solve_temperatures(qdot[i], k, T_outer);
-        std::vector<double> Tavg = solver.get_average_temperatures();
+        std::vector<double> Tavg = solver.solve_temperatures(qdot[i], materials, T_outer);
         EXPECT_GT(std::accumulate(Tavg.begin(), Tavg.end(), 0.0), 0.0); // use result to prevent compiler optimization
         EXPECT_EQ(Tavg.size(), nodes.size());
     }
