@@ -133,12 +133,6 @@ class KokkosMOC : public BaseMOC {
         DeviceRayView _d_ray_data;
         DeviceSegmentView _d_segment_data;
 
-        // Boundary condition data for angular flux mapping
-        HViewInt1D _h_ray_bc_index_frwd_start;
-        HViewInt1D _h_ray_bc_index_frwd_end;
-        HViewInt1D _h_ray_bc_index_bkwd_start;
-        HViewInt1D _h_ray_bc_index_bkwd_end;
-
         // Solution host data
         HViewDouble2D _h_scalar_flux;
         HViewDouble2D _h_source;
