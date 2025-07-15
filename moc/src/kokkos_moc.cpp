@@ -199,13 +199,17 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
             _h_ray_bc_index_bkwd_start(i),
             _h_ray_bc_index_bkwd_end(i)
         );
-    }
-
-    // Create device ray data structure
+    }    // Create device ray data structure
     auto h_ray_data = Kokkos::create_mirror_view(_d_ray_data);
     h_ray_data = Kokkos::View<DeviceRayData*, layout, Kokkos::HostSpace>("h_ray_data", _n_rays);
     _d_ray_data = DeviceRayView("d_ray_data", _n_rays);
-
+    
+    // Create device segment data structure  
+    int total_segments = _h_ray_nsegs(_n_rays);
+    auto h_segment_data = Kokkos::create_mirror_view(_d_segment_data);
+    h_segment_data = Kokkos::View<DeviceSegmentData*, layout, Kokkos::HostSpace>("h_segment_data", total_segments);
+    _d_segment_data = DeviceSegmentView("d_segment_data", total_segments);
+    
     for (int i = 0; i < _n_rays; i++) {
         h_ray_data(i).nsegs = _rays[i].nsegs();
         h_ray_data(i).angle = _rays[i].angle();
@@ -214,9 +218,18 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         h_ray_data(i).bc_frwd_end = _h_ray_bc_index_frwd_end(i);
         h_ray_data(i).bc_bkwd_start = _h_ray_bc_index_bkwd_start(i);
         h_ray_data(i).bc_bkwd_end = _h_ray_bc_index_bkwd_end(i);
+        
+        // Populate segment data for this ray
+        const auto& ray = _rays[i];
+        int seg_start = _h_ray_nsegs(i);
+        for (int iseg = 0; iseg < ray.nsegs(); iseg++) {
+            h_segment_data(seg_start + iseg).fsr_id = ray.fsr(iseg) - 1; // Convert to 0-based
+            h_segment_data(seg_start + iseg).length = ray.segment(iseg);
+        }
     }
-
+    
     Kokkos::deep_copy(_d_ray_data, h_ray_data);
+    Kokkos::deep_copy(_d_segment_data, h_segment_data);
 
     // Store the inverse polar angle sine
     _h_rsinpolang = HViewDouble1D("rsinpolang", _npol);
@@ -295,11 +308,6 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     _d_old_angflux = Kokkos::create_mirror(ExecutionSpace(), _h_old_angflux);
     Kokkos::deep_copy(_d_old_angflux, _h_old_angflux);
 
-    // Copy flattened ray data to device
-    _d_ray_angle_index = Kokkos::create_mirror_view_and_copy(MemorySpace(), _h_ray_angle_index);
-    _d_ray_fsrs = Kokkos::create_mirror_view_and_copy(MemorySpace(), _h_ray_fsrs);
-    _d_ray_segments = Kokkos::create_mirror_view_and_copy(MemorySpace(), _h_ray_segments);
-
     if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
         _d_thread_scalar_flux = DViewDouble3D("thread_scalar_flux", ExecutionSpace::concurrency(), _nfsr, _ng);
     }
@@ -347,29 +355,13 @@ void KokkosMOC<ExecutionSpace>::_read_rays() {
     }
 
     // Print a message with the number of rays and filename
-    std::cout << "Successfully set up " << _n_rays << " rays from file: " << _filename << std::endl;    // Create flattened arrays for device access
+    std::cout << "Successfully set up " << _n_rays << " rays from file: " << _filename << std::endl;    // Create ray segment count array for device access
     _h_ray_nsegs = HViewInt1D("ray_nsegs", _n_rays + 1);
-    _h_ray_angle_index = HViewInt1D("ray_angle_index", _n_rays);
 
-    // Calculate total segments and populate segment counts
+    // Calculate segment start indices
     _h_ray_nsegs(0) = 0;
     for (int iray = 0; iray < _n_rays; iray++) {
         _h_ray_nsegs(iray + 1) = _h_ray_nsegs(iray) + _rays[iray].nsegs();
-        _h_ray_angle_index(iray) = _rays[iray].angle();
-    }
-
-    int total_segments = _h_ray_nsegs(_n_rays);
-    _h_ray_fsrs = HViewInt1D("ray_fsrs", total_segments);
-    _h_ray_segments = HViewDouble1D("ray_segments", total_segments);
-
-    // Populate flattened FSR and segment arrays
-    for (int iray = 0; iray < _n_rays; iray++) {
-        const auto& ray = _rays[iray];
-        int seg_start = _h_ray_nsegs(iray);
-        for (int iseg = 0; iseg < ray.nsegs(); iseg++) {
-            _h_ray_fsrs(seg_start + iseg) = ray.fsr(iseg) - 1; // Convert to 0-based
-            _h_ray_segments(seg_start + iseg) = ray.segment(iseg);
-        }
     }
 
     Kokkos::Profiling::popRegion();
@@ -647,7 +639,7 @@ void KokkosMOC<ExecutionSpace>::sweep() {
             // Get ray data directly from DeviceRayData struct
             const auto& ray = _d_ray_data(iray);
             int nsegs = ray.nsegs;
-            int ray_angle = _d_ray_angle_index(iray);
+            int ray_angle = ray.angle;
             int seg_start = ray.seg_start;
 
             // Create temporary arrays for segment flux
@@ -658,8 +650,9 @@ void KokkosMOC<ExecutionSpace>::sweep() {
             for (int iseg = 0; iseg < nsegs; iseg++) {
                 // Forward segment sweep
                 int global_seg = seg_start + iseg;
-                int ireg = _d_ray_fsrs(global_seg);
-                double segment_length = _d_ray_segments(global_seg);
+                const auto& segment = _d_segment_data(global_seg);
+                int ireg = segment.fsr_id;
+                double segment_length = segment.length;
                 double exp_arg = -_d_xstr(ireg, ig) * segment_length * _d_rsinpolang(ipol);
                 double phid = (fsegflux - _d_source(ireg, ig)) * (1.0 - Kokkos::exp(exp_arg));
                 fsegflux -= phid;
@@ -676,8 +669,9 @@ void KokkosMOC<ExecutionSpace>::sweep() {
                 // Backward segment sweep
                 int bseg = nsegs - 1 - iseg;
                 global_seg = seg_start + bseg;
-                ireg = _d_ray_fsrs(global_seg);
-                segment_length = _d_ray_segments(global_seg);
+                const auto& bsegment = _d_segment_data(global_seg);
+                ireg = bsegment.fsr_id;
+                segment_length = bsegment.length;
                 exp_arg = -_d_xstr(ireg, ig) * segment_length * _d_rsinpolang(ipol);
                 phid = (bsegflux - _d_source(ireg, ig)) * (1.0 - Kokkos::exp(exp_arg));
                 bsegflux -= phid;

@@ -111,14 +111,13 @@ class KokkosMOC : public BaseMOC {
         int _max_segments;  // Maximum number of segments in any ray
         std::vector<KokkosLongRay<ExecutionSpace>> _rays;
 
-        // Flattened ray data for device access
+        // Ray segment count array (still needed for segment indexing)
         HViewInt1D _h_ray_nsegs;
-        HViewInt1D _h_ray_angle_index;
-        HViewInt1D _h_ray_fsrs;
-        HViewDouble1D _h_ray_segments;
-        DViewInt1D _d_ray_angle_index;
-        DViewInt1D _d_ray_fsrs;
-        DViewDouble1D _d_ray_segments;
+        // Device-compatible segment data structure
+        struct DeviceSegmentData {
+            int fsr_id;
+            double length;
+        };
 
         // Simple device-compatible ray access structure
         struct DeviceRayData {
@@ -132,7 +131,9 @@ class KokkosMOC : public BaseMOC {
         };
 
         using DeviceRayView = Kokkos::View<DeviceRayData*, layout, MemorySpace>;
+        using DeviceSegmentView = Kokkos::View<DeviceSegmentData*, layout, MemorySpace>;
         DeviceRayView _d_ray_data;
+        DeviceSegmentView _d_segment_data;
 
         // Boundary condition data for angular flux mapping
         HViewInt1D _h_ray_bc_index_frwd_start;
