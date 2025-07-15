@@ -537,32 +537,20 @@ void compute_exparg(int iray, int ig, int ipol,
                           const Kokkos::View<const double*, ExecutionSpace>& ray_segments,
                           const Kokkos::View<const int*, ExecutionSpace>& ray_nsegs)
 {
-    for (int iseg = ray_nsegs(iray); iseg < ray_nsegs(iray + 1); iseg++) {
-        int local_seg = iseg - ray_nsegs(iray);
-        double xval = -xstr(ray_fsrs(iseg), ig) * ray_segments(iseg);
-        int ix = static_cast<int>(Kokkos::floor(xval)) + 40000;  // Scale to table index
-        ix = Kokkos::fmax(ix, -40000);  // Clamp to table bounds
-        ix = Kokkos::fmin(ix, 40000);
-        exparg(local_seg) = expoa(ix, ipol) * xval + expob(ix, ipol);
+#ifdef KOKKOS_ENABLE_CUDA
+    if constexpr(!std::is_same_v<ExecutionSpace, Kokkos::Cuda>)
+#endif
+    {
+        for (int iseg = ray_nsegs(iray); iseg < ray_nsegs(iray + 1); iseg++) {
+            int local_seg = iseg - ray_nsegs(iray);
+            double xval = -xstr(ray_fsrs(iseg), ig) * ray_segments(iseg);
+            int ix = static_cast<int>(Kokkos::floor(xval)) + 40000;  // Scale to table index
+            ix = Kokkos::fmax(ix, -40000);  // Clamp to table bounds
+            ix = Kokkos::fmin(ix, 40000);
+            exparg(local_seg) = expoa(ix, ipol) * xval + expob(ix, ipol);
+        }
     }
 }
-
-#ifdef KOKKOS_ENABLE_CUDA
-template <>
-KOKKOS_INLINE_FUNCTION
-void compute_exparg<Kokkos::Cuda>(int iray, int ig, int ipol,
-                    const Kokkos::View<const double**, Kokkos::Cuda>& expoa,
-                    const Kokkos::View<const double**, Kokkos::Cuda>& expob,
-                    int n_intervals,
-                    Kokkos::View<double*, typename Kokkos::Cuda::scratch_memory_space>& exparg,
-                    const Kokkos::View<const double**, Kokkos::Cuda>& xstr,
-                    const Kokkos::View<const int*, Kokkos::Cuda>& ray_fsrs,
-                    const Kokkos::View<const double*, Kokkos::Cuda>& ray_segments,
-                    const Kokkos::View<const int*, Kokkos::Cuda>& ray_nsegs)
-{
-    return;
-}
-#endif
 
 template <typename ExecutionSpace>
 KOKKOS_INLINE_FUNCTION
