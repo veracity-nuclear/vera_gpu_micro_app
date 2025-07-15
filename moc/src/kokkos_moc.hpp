@@ -39,6 +39,23 @@ class KokkosMOC : public BaseMOC {
         // Configure team policy based on execution space
         Kokkos::TeamPolicy<ExecutionSpace> _configure_team_policy(int n_rays, int npol, int ng);
 
+        // Device-compatible segment data structure
+        struct DeviceSegmentData {
+            int fsr_id;
+            double length;
+        };
+
+        // Simple device-compatible ray access structure
+        struct DeviceRayData {
+            int nsegs;
+            int angle;
+            int seg_start;
+            int bc_frwd_start;
+            int bc_frwd_end;
+            int bc_bkwd_start;
+            int bc_bkwd_end;
+        };
+
         // Get the FSR volumes
         std::vector<double> fsr_vol() const override {
             std::vector<double> result(_nfsr);
@@ -110,23 +127,6 @@ class KokkosMOC : public BaseMOC {
         int _n_rays;  // Number of rays
         int _max_segments;  // Maximum number of segments in any ray
         std::vector<KokkosLongRay<ExecutionSpace>> _rays;
-
-        // Device-compatible segment data structure
-        struct DeviceSegmentData {
-            int fsr_id;
-            double length;
-        };
-
-        // Simple device-compatible ray access structure
-        struct DeviceRayData {
-            int nsegs;
-            int angle;
-            int seg_start;
-            int bc_frwd_start;
-            int bc_frwd_end;
-            int bc_bkwd_start;
-            int bc_bkwd_end;
-        };
 
         using DeviceRayView = Kokkos::View<DeviceRayData*, layout, MemorySpace>;
         using DeviceSegmentView = Kokkos::View<DeviceSegmentData*, layout, MemorySpace>;

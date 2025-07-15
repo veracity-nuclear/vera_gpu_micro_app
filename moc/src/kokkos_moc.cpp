@@ -517,21 +517,23 @@ void compute_exparg(int iray, int ig, int ipol,
                     int n_intervals, double rdx,
                     Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space>& exparg,
                     const Kokkos::View<const double**, ExecutionSpace>& xstr,
-                    const Kokkos::View<const int*, ExecutionSpace>& ray_fsrs,
-                    const Kokkos::View<const double*, ExecutionSpace>& ray_segments,
+                    const Kokkos::View<const typename KokkosMOC<ExecutionSpace>::DeviceRayData*, ExecutionSpace>& ray_data,
+                    const Kokkos::View<const typename KokkosMOC<ExecutionSpace>::DeviceSegmentData*, ExecutionSpace>& segment_data,
                     const Kokkos::View<const double*, ExecutionSpace>& rsinpolang,
-                    const Kokkos::View<const int*, ExecutionSpace>& ray_nsegs)
+                    int nsegs)
 {
-    for (int iseg = ray_nsegs(iray); iseg < ray_nsegs(iray + 1); iseg++) {
-        int local_seg = iseg - ray_nsegs(iray);
-        double val = -xstr(ray_fsrs(iseg), ig) * ray_segments(iseg) * rsinpolang(ipol);
+    const auto& ray = ray_data(iray);
+    int seg_start = ray.seg_start;
+    for (int iseg = 0; iseg < nsegs; iseg++) {
+        const auto& segment = segment_data(seg_start + iseg);
+        double val = -xstr(segment.fsr_id, ig) * segment.length * rsinpolang(ipol);
         int i = Kokkos::floor(val * rdx) + n_intervals + 1;
         if (i >= 0 && i < n_intervals + 1) {
-            exparg(local_seg) = exp_table(i, 0) * val + exp_table(i, 1);
+            exparg(iseg) = exp_table(i, 0) * val + exp_table(i, 1);
         } else if (val < -700.0) {
-            exparg(local_seg) = 1.0;
+            exparg(iseg) = 1.0;
         } else {
-            exparg(local_seg) = 1.0 - Kokkos::exp(val);
+            exparg(iseg) = 1.0 - Kokkos::exp(val);
         }
     }
 }
@@ -544,10 +546,10 @@ void compute_exparg<Kokkos::Cuda>(int iray, int ig, int ipol,
                     int n_intervals, double rdx,
                     Kokkos::View<double*, typename Kokkos::Cuda::scratch_memory_space>& exparg,
                     const Kokkos::View<const double**, Kokkos::Cuda>& xstr,
-                    const Kokkos::View<const int*, Kokkos::Cuda>& ray_fsrs,
-                    const Kokkos::View<const double*, Kokkos::Cuda>& ray_segments,
+                    const Kokkos::View<const typename KokkosMOC<Kokkos::Cuda>::DeviceRayData*, Kokkos::Cuda>& ray_data,
+                    const Kokkos::View<const typename KokkosMOC<Kokkos::Cuda>::DeviceSegmentData*, Kokkos::Cuda>& segment_data,
                     const Kokkos::View<const double*, Kokkos::Cuda>& rsinpolang,
-                    const Kokkos::View<const int*, Kokkos::Cuda>& ray_nsegs)
+                    int nsegs)
 {
     return;
 }
@@ -615,6 +617,7 @@ void tally_scalar_flux<Kokkos::OpenMP>(
 template <typename ExecutionSpace>
 void KokkosMOC<ExecutionSpace>::sweep() {
     Kokkos::Profiling::pushRegion("KokkosMOC::Sweep " + _device);
+    using ScratchViewDouble1D = Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space>;
 
     // Avoid implicit capture
     auto& ray_data = _d_ray_data;
@@ -622,83 +625,94 @@ void KokkosMOC<ExecutionSpace>::sweep() {
     auto& old_angflux = _d_old_angflux;
     auto& angflux = _d_angflux;
     auto& scalar_flux = _d_scalar_flux;
-    auto& thread_scalar_flux = _d_thread_scalar_flux;
     auto& source = _d_source;
+    auto n_rays = _n_rays;
+    auto npol = _npol;
+    auto ng = _ng;
     auto& xstr = _d_xstr;
     auto& fsr_vol = _d_fsr_vol;
     auto& rsinpolang = _d_rsinpolang;
     auto& angle_weights = _d_angle_weights;
+    auto& exp_table = _d_exp_table;
+    auto& n_exp_intervals = _n_exp_intervals;
+    auto& exp_rdx = _exp_rdx;
+    auto& thread_scalar_flux = _d_thread_scalar_flux;
 
     // Copy old angular flux
     Kokkos::deep_copy(_d_old_angflux, _h_old_angflux);
 
     // Initialize the scalar flux to 0.0
     Kokkos::deep_copy(_d_scalar_flux, 0.0);
-
     if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
         Kokkos::deep_copy(_d_thread_scalar_flux, 0.0);
     }
 
+    // Use the specialized team policy configuration
+    typedef typename Kokkos::TeamPolicy<ExecutionSpace>::member_type team_member;
+    auto policy = _configure_team_policy(n_rays, npol, ng);
+
+    // Add scratch space for exponential arguments
+    if (_device != "cuda") {
+        size_t scratch_size = ScratchViewDouble1D::shmem_size(_max_segments);
+        policy = policy.set_scratch_size(0, Kokkos::PerTeam(scratch_size));
+    }
+
     // Sweep all rays using parallel_for with ray index
-    Kokkos::parallel_for("MOC Sweep Rays",
-        Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<3>>({0, 0, 0}, {_n_rays, _npol, _ng}),
-        KOKKOS_LAMBDA(int iray, int ipol, int ig) {
+    Kokkos::parallel_for("MOC Sweep Rays", policy, KOKKOS_LAMBDA(const team_member& teamMember) {
+        int iray, ipol, ig;
 
-            // Get ray data directly from DeviceRayData struct
-            const auto& ray = ray_data(iray);
-            int nsegs = ray.nsegs;
-            int ray_angle = ray.angle;
-            int seg_start = ray.seg_start;
+        // Use the specialized helper to calculate indices - no branches!
+        RayIndexCalculator<ExecutionSpace>::calculate(
+            teamMember.league_rank(), teamMember.team_rank(),
+            npol, ng, iray, ipol, ig);
 
-            // Create temporary arrays for segment flux
-            double fsegflux = old_angflux(ray.bc_frwd_start, ipol, ig);
-            double bsegflux = old_angflux(ray.bc_bkwd_start, ipol, ig);
+        // Get ray data directly from DeviceRayData struct
+        const auto& ray = ray_data(iray);
+        int nsegs = ray.nsegs;
+        int ray_angle = ray.angle;
+        int seg_start = ray.seg_start;
 
-            // Forward and backward sweeps
-            for (int iseg = 0; iseg < nsegs; iseg++) {
-                // Forward segment sweep
-                int global_seg = seg_start + iseg;
-                const auto& segment = segment_data(global_seg);
-                int ireg = segment.fsr_id;
-                double segment_length = segment.length;
-                double exp_arg = -xstr(ireg, ig) * segment_length * rsinpolang(ipol);
-                double phid = (fsegflux - source(ireg, ig)) * (1.0 - Kokkos::exp(exp_arg));
-                fsegflux -= phid;
+        // Create thread-local exparg array for non-CUDA execution spaces using scratch space
+        ScratchViewDouble1D exparg(teamMember.team_scratch(0), nsegs);
+        compute_exparg<ExecutionSpace>(iray, ig, ipol, exp_table, n_exp_intervals, exp_rdx, exparg,
+                                       xstr, ray_data, segment_data, rsinpolang, ray.nsegs);
 
-                // Tally to scalar flux
-                if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
-                    thread_scalar_flux(omp_get_thread_num(), ireg, ig) +=
-                        phid * angle_weights(ray_angle, ipol);
-                } else {
-                    Kokkos::atomic_add(&scalar_flux(ireg, ig),
-                        phid * angle_weights(ray_angle, ipol));
-                }
+        // Create temporary arrays for segment flux
+        double fsegflux = old_angflux(ray.bc_frwd_start, ipol, ig);
+        double bsegflux = old_angflux(ray.bc_bkwd_start, ipol, ig);
 
-                // Backward segment sweep
-                int bseg = nsegs - 1 - iseg;
-                global_seg = seg_start + bseg;
-                const auto& bsegment = segment_data(global_seg);
-                ireg = bsegment.fsr_id;
-                segment_length = bsegment.length;
-                exp_arg = -xstr(ireg, ig) * segment_length * rsinpolang(ipol);
-                phid = (bsegflux - source(ireg, ig)) * (1.0 - Kokkos::exp(exp_arg));
-                bsegflux -= phid;
+        // Forward and backward sweeps
+        for (int iseg = 0; iseg < nsegs; iseg++) {
+            // Forward segment sweep
+            int global_seg = seg_start + iseg;
+            const auto& segment = segment_data(global_seg);
+            int ireg = segment.fsr_id;
+            double segment_length = segment.length;
+            double exp_arg = -xstr(ireg, ig) * segment_length * rsinpolang(ipol);
+            double phid = (fsegflux - source(ireg, ig)) *
+                eval_exp_arg<ExecutionSpace>(exparg, iseg, xstr(ireg, ig), segment_length, rsinpolang(ipol));
+            fsegflux -= phid;
+            tally_scalar_flux<ExecutionSpace>(scalar_flux, thread_scalar_flux, ireg, ig,
+                phid * angle_weights(ray_angle, ipol));
 
-                // Tally to scalar flux
-                if constexpr (std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
-                    thread_scalar_flux(omp_get_thread_num(), ireg, ig) +=
-                        phid * angle_weights(ray_angle, ipol);
-                } else {
-                    Kokkos::atomic_add(&scalar_flux(ireg, ig),
-                        phid * angle_weights(ray_angle, ipol));
-                }
-            }
-
-            // Store final segment flux back to angular flux arrays
-            angflux(ray.bc_frwd_end, ipol, ig) = fsegflux;
-            angflux(ray.bc_bkwd_end, ipol, ig) = bsegflux;
+            // Backward segment sweep
+            int bseg = nsegs - 1 - iseg;
+            global_seg = seg_start + bseg;
+            const auto& bsegment = segment_data(global_seg);
+            ireg = bsegment.fsr_id;
+            segment_length = bsegment.length;
+            exp_arg = -xstr(ireg, ig) * segment_length * rsinpolang(ipol);
+            phid = (bsegflux - source(ireg, ig)) *
+                eval_exp_arg<ExecutionSpace>(exparg, bseg, xstr(ireg, ig), segment_length, rsinpolang(ipol));
+            bsegflux -= phid;
+            tally_scalar_flux<ExecutionSpace>(scalar_flux, thread_scalar_flux, ireg, ig,
+                phid * angle_weights(ray_angle, ipol));
         }
-    );
+
+        // Store final segment flux back to angular flux arrays
+        angflux(ray.bc_frwd_end, ipol, ig) = fsegflux;
+        angflux(ray.bc_bkwd_end, ipol, ig) = bsegflux;
+    });
 
     // Reduction for OpenMP
     if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
