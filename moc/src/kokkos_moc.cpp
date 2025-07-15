@@ -545,7 +545,7 @@ void compute_exparg(int iray, int ig, int ipol,
             int local_seg = iseg - ray_nsegs(iray);
             double val = -xstr(ray_fsrs(iseg), ig) * ray_segments(iseg);
             int i = static_cast<int>(Kokkos::floor(val)) + 40000;  // Scale to table index
-            i = Kokkos::fmax(i, -40000);  // Clamp to table bounds
+            i = Kokkos::fmax(i, 0);  // Clamp to table bounds
             i = Kokkos::fmin(i, 40000);
             exparg(local_seg) = expoa(i, ipol) * val + expob(i, ipol);
         }
