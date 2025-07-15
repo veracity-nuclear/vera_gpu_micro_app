@@ -2,7 +2,6 @@
 #include <string>
 #include <vector>
 #include <highfive/highfive.hpp>
-#include "exp_table.hpp"
 #include "c5g7_library.hpp"
 #include "long_ray.hpp"
 #include "base_moc.hpp"
@@ -42,7 +41,6 @@ class SerialMOC : public BaseMOC {
         double _plane_height;  // Height of the plane
         std::string _filename;  // HDF5 file name
         HighFive::File _file; // HDF5 file object
-        const ExpTable _exp_table;  // Exponential table for calculations
         std::vector<std::vector<double>> _expoa;  // Inline exponential table slope coefficients
         std::vector<std::vector<double>> _expob;  // Inline exponential table intercept coefficients
         std::vector<double> _fsr_vol;  // FSR volumes

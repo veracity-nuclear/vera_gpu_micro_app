@@ -4,7 +4,6 @@ add_library(moc_lib
     src/serial_moc.cpp
     src/kokkos_moc.cpp
     src/c5g7_library.cpp
-    src/exp_table.cpp
 )
 
 target_link_libraries(moc_lib
@@ -26,7 +25,6 @@ enable_testing()
 include(../cmake/TestFunctions.cmake)
 
 set(TEST_EXECUTABLES
-    test_exp_table
     test_serial_moc_1region_1angle
     test_serial_moc_4region_1angle
     test_serial_moc_1region_16angle
@@ -40,7 +38,6 @@ set(TEST_EXECUTABLES
     heavy_test_serial_moc_mini-core
 )
 SET(TEST_LABELS
-    "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"

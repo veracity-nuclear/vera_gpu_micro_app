@@ -5,7 +5,6 @@
 #include <highfive/H5Easy.hpp>
 #include <highfive/highfive.hpp>
 #include <Kokkos_Core.hpp>
-#include "exp_table.hpp"
 #include "long_ray.hpp"
 #include "c5g7_library.hpp"
 
