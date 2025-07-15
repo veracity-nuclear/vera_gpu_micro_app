@@ -111,8 +111,6 @@ class KokkosMOC : public BaseMOC {
         int _max_segments;  // Maximum number of segments in any ray
         std::vector<KokkosLongRay<ExecutionSpace>> _rays;
 
-        // Ray segment count array (still needed for segment indexing)
-        HViewInt1D _h_ray_nsegs;
         // Device-compatible segment data structure
         struct DeviceSegmentData {
             int fsr_id;

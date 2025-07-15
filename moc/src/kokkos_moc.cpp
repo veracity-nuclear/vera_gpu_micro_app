@@ -204,8 +204,15 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     h_ray_data = Kokkos::View<DeviceRayData*, layout, Kokkos::HostSpace>("h_ray_data", _n_rays);
     _d_ray_data = DeviceRayView("d_ray_data", _n_rays);
     
+    // Calculate segment start indices locally
+    std::vector<int> ray_seg_starts(_n_rays + 1);
+    ray_seg_starts[0] = 0;
+    for (int iray = 0; iray < _n_rays; iray++) {
+        ray_seg_starts[iray + 1] = ray_seg_starts[iray] + _rays[iray].nsegs();
+    }
+    int total_segments = ray_seg_starts[_n_rays];
+    
     // Create device segment data structure  
-    int total_segments = _h_ray_nsegs(_n_rays);
     auto h_segment_data = Kokkos::create_mirror_view(_d_segment_data);
     h_segment_data = Kokkos::View<DeviceSegmentData*, layout, Kokkos::HostSpace>("h_segment_data", total_segments);
     _d_segment_data = DeviceSegmentView("d_segment_data", total_segments);
@@ -213,7 +220,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     for (int i = 0; i < _n_rays; i++) {
         h_ray_data(i).nsegs = _rays[i].nsegs();
         h_ray_data(i).angle = _rays[i].angle();
-        h_ray_data(i).seg_start = _h_ray_nsegs(i);
+        h_ray_data(i).seg_start = ray_seg_starts[i];
         h_ray_data(i).bc_frwd_start = _h_ray_bc_index_frwd_start(i);
         h_ray_data(i).bc_frwd_end = _h_ray_bc_index_frwd_end(i);
         h_ray_data(i).bc_bkwd_start = _h_ray_bc_index_bkwd_start(i);
@@ -221,7 +228,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         
         // Populate segment data for this ray
         const auto& ray = _rays[i];
-        int seg_start = _h_ray_nsegs(i);
+        int seg_start = ray_seg_starts[i];
         for (int iseg = 0; iseg < ray.nsegs(); iseg++) {
             h_segment_data(seg_start + iseg).fsr_id = ray.fsr(iseg) - 1; // Convert to 0-based
             h_segment_data(seg_start + iseg).length = ray.segment(iseg);
@@ -355,14 +362,7 @@ void KokkosMOC<ExecutionSpace>::_read_rays() {
     }
 
     // Print a message with the number of rays and filename
-    std::cout << "Successfully set up " << _n_rays << " rays from file: " << _filename << std::endl;    // Create ray segment count array for device access
-    _h_ray_nsegs = HViewInt1D("ray_nsegs", _n_rays + 1);
-
-    // Calculate segment start indices
-    _h_ray_nsegs(0) = 0;
-    for (int iray = 0; iray < _n_rays; iray++) {
-        _h_ray_nsegs(iray + 1) = _h_ray_nsegs(iray) + _rays[iray].nsegs();
-    }
+    std::cout << "Successfully set up " << _n_rays << " rays from file: " << _filename << std::endl;
 
     Kokkos::Profiling::popRegion();
 }
