@@ -551,14 +551,13 @@ void compute_exparg(int iray, int ig, int ipol,
 template <>
 KOKKOS_INLINE_FUNCTION
 void compute_exparg<Kokkos::Cuda>(int iray, int ig, int ipol,
-                    const Kokkos::View<const double**, ExecutionSpace>& expoa,
-                    const Kokkos::View<const double**, ExecutionSpace>& expob,
-                    int n_intervals, double rdx,
+                    const Kokkos::View<const double**, Kokkos::Cuda>& expoa,
+                    const Kokkos::View<const double**, Kokkos::Cuda>& expob,
+                    int n_intervals,
                     Kokkos::View<double*, typename Kokkos::Cuda::scratch_memory_space>& exparg,
                     const Kokkos::View<const double**, Kokkos::Cuda>& xstr,
                     const Kokkos::View<const int*, Kokkos::Cuda>& ray_fsrs,
                     const Kokkos::View<const double*, Kokkos::Cuda>& ray_segments,
-                    const Kokkos::View<const double*, Kokkos::Cuda>& rsinpolang,
                     const Kokkos::View<const int*, Kokkos::Cuda>& ray_nsegs)
 {
     return;
@@ -653,7 +652,6 @@ void KokkosMOC<ExecutionSpace>::sweep() {
     auto& old_angflux = _d_old_angflux;
     auto& max_segments = _max_segments;
     auto& n_exp_intervals = _n_exp_intervals;
-    auto& exp_rdx = _exp_rdx;
     auto& expoa = _d_expoa;
     auto& expob = _d_expob;
     auto& threaded_scalar_flux = _d_thread_scalar_flux;
@@ -689,22 +687,8 @@ void KokkosMOC<ExecutionSpace>::sweep() {
         ScratchViewDouble1D exparg(teamMember.team_scratch(0), nsegs);
 
         // Use inline exponential tables for Serial and OpenMP, regular tables for others
-#ifdef KOKKOS_ENABLE_SERIAL
-        if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Serial>) {
-            compute_exparg<ExecutionSpace>(iray, ig, ipol, expoa, expob, n_exp_intervals, exparg,
-                                                 xstr, ray_fsrs, ray_segments, ray_nsegs);
-        } else
-#endif
-#ifdef KOKKOS_ENABLE_OPENMP
-        if constexpr (std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
-            compute_exparg<ExecutionSpace>(iray, ig, ipol, expoa, expob, n_exp_intervals, exparg,
-                                                 xstr, ray_fsrs, ray_segments, ray_nsegs);
-        } else
-#endif
-        {
-            compute_exparg<ExecutionSpace>(iray, ig, ipol, expoa, expob, n_exp_intervals, exp_rdx, exparg,
-                                           xstr, ray_fsrs, ray_segments, rsinpolang, ray_nsegs);
-        }
+        compute_exparg<ExecutionSpace>(iray, ig, ipol, expoa, expob, n_exp_intervals, exparg,
+                                       xstr, ray_fsrs, ray_segments, ray_nsegs);
 
         int global_seg, ireg1, ireg2;
         int iseg2 = nsegs;
