@@ -6,6 +6,7 @@
 #include "c5g7_library.hpp"
 #include "base_moc.hpp"
 #include "argument_parser.hpp"
+#include "kokkos_long_ray.hpp"
 
 static constexpr double fourpi = 4.0 * M_PI;
 
@@ -66,7 +67,6 @@ class KokkosMOC : public BaseMOC {
 
     private:
         void _read_rays();  // Read rays from the HDF5 file
-        void _convert_rays();  // Convert rays to flattened format
         void _get_xstr(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xstr from XS library
         void _get_xsnf(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xsnf from XS library
         void _get_xsch(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xsch from XS library
@@ -106,31 +106,39 @@ class KokkosMOC : public BaseMOC {
         DViewDouble1D _d_rsinpolang;
         DViewDouble2D _d_exp_table;
 
-        // Ray host data
+        // Ray data
         int _n_rays;  // Number of rays
         int _max_segments;  // Maximum number of segments in any ray
+        std::vector<KokkosLongRay<ExecutionSpace>> _rays;
+
+        // Flattened ray data for device access
         HViewInt1D _h_ray_nsegs;
-        HViewInt1D _h_ray_bc_face_start;
-        HViewInt1D _h_ray_bc_face_end;
+        HViewInt1D _h_ray_angle_index;
+        HViewInt1D _h_ray_fsrs;
+        HViewDouble1D _h_ray_segments;
+        DViewInt1D _d_ray_angle_index;
+        DViewInt1D _d_ray_fsrs;
+        DViewDouble1D _d_ray_segments;
+
+        // Simple device-compatible ray access structure
+        struct DeviceRayData {
+            int nsegs;
+            int angle;
+            int seg_start;
+            int bc_frwd_start;
+            int bc_frwd_end;
+            int bc_bkwd_start;
+            int bc_bkwd_end;
+        };
+
+        using DeviceRayView = Kokkos::View<DeviceRayData*, layout, MemorySpace>;
+        DeviceRayView _d_ray_data;
+
+        // Boundary condition data for angular flux mapping
         HViewInt1D _h_ray_bc_index_frwd_start;
         HViewInt1D _h_ray_bc_index_frwd_end;
         HViewInt1D _h_ray_bc_index_bkwd_start;
         HViewInt1D _h_ray_bc_index_bkwd_end;
-        HViewInt1D _h_ray_angle_index;
-        HViewInt1D _h_ray_fsrs;
-        HViewDouble1D _h_ray_segments;
-
-        // Ray device data
-        DViewInt1D _d_ray_nsegs;
-        DViewInt1D _d_ray_bc_face_start;
-        DViewInt1D _d_ray_bc_face_end;
-        DViewInt1D _d_ray_bc_index_frwd_start;
-        DViewInt1D _d_ray_bc_index_frwd_end;
-        DViewInt1D _d_ray_bc_index_bkwd_start;
-        DViewInt1D _d_ray_bc_index_bkwd_end;
-        DViewInt1D _d_ray_angle_index;
-        DViewInt1D _d_ray_fsrs;
-        DViewDouble1D _d_ray_segments;
 
         // Solution host data
         HViewDouble2D _h_scalar_flux;
