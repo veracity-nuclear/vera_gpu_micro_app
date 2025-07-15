@@ -528,14 +528,14 @@ struct RayIndexCalculator<Kokkos::Cuda> {
 template <typename ExecutionSpace>
 KOKKOS_INLINE_FUNCTION
 void compute_exparg(int iray, int ig, int ipol,
-                          const Kokkos::View<const double**, ExecutionSpace>& expoa,
-                          const Kokkos::View<const double**, ExecutionSpace>& expob,
-                          int n_intervals,
-                          Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space>& exparg,
-                          const Kokkos::View<const double**, ExecutionSpace>& xstr,
-                          const Kokkos::View<const int*, ExecutionSpace>& ray_fsrs,
-                          const Kokkos::View<const double*, ExecutionSpace>& ray_segments,
-                          const Kokkos::View<const int*, ExecutionSpace>& ray_nsegs)
+                    const Kokkos::View<const double**, ExecutionSpace>& expoa,
+                    const Kokkos::View<const double**, ExecutionSpace>& expob,
+                    int n_intervals,
+                    Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space>& exparg,
+                    const Kokkos::View<const double**, ExecutionSpace>& xstr,
+                    const Kokkos::View<const int*, ExecutionSpace>& ray_fsrs,
+                    const Kokkos::View<const double*, ExecutionSpace>& ray_segments,
+                    const Kokkos::View<const int*, ExecutionSpace>& ray_nsegs)
 {
 #ifdef KOKKOS_ENABLE_CUDA
     if constexpr(!std::is_same_v<ExecutionSpace, Kokkos::Cuda>)
@@ -543,11 +543,11 @@ void compute_exparg(int iray, int ig, int ipol,
     {
         for (int iseg = ray_nsegs(iray); iseg < ray_nsegs(iray + 1); iseg++) {
             int local_seg = iseg - ray_nsegs(iray);
-            double xval = -xstr(ray_fsrs(iseg), ig) * ray_segments(iseg);
-            int ix = static_cast<int>(Kokkos::floor(xval)) + 40000;  // Scale to table index
-            ix = Kokkos::fmax(ix, -40000);  // Clamp to table bounds
-            ix = Kokkos::fmin(ix, 40000);
-            exparg(local_seg) = expoa(ix, ipol) * xval + expob(ix, ipol);
+            double val = -xstr(ray_fsrs(iseg), ig) * ray_segments(iseg);
+            int i = static_cast<int>(Kokkos::floor(val)) + 40000;  // Scale to table index
+            i = Kokkos::fmax(i, -40000);  // Clamp to table bounds
+            i = Kokkos::fmin(i, 40000);
+            exparg(local_seg) = expoa(i, ipol) * val + expob(i, ipol);
         }
     }
 }

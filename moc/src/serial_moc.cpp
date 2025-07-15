@@ -349,11 +349,11 @@ void SerialMOC::sweep() {
             // Store the exponential arguments for this ray
             for (size_t i = 0; i < ray._fsrs.size(); i++) {
                 for (size_t ig = 0; ig < _ng; ig++) {
-                    double xval = -_xstr[ray._fsrs[i] - 1][ig] * ray._segments[i];
-                    int ix = static_cast<int>(std::floor(xval)) + 40000;
-                    ix = std::max(ix, -40000);  // Clamp to table bounds
+                    double val = -_xstr[ray._fsrs[i] - 1][ig] * ray._segments[i];
+                    int ix = static_cast<int>(std::floor(val)) + 40000;
+                    ix = std::max(ix, 0);  // Clamp to table bounds
                     ix = std::min(ix, 40000);
-                    _exparg[i][ig] = _expoa[ix][ipol] * xval + _expob[ix][ipol];
+                    _exparg[i][ig] = _expoa[ix][ipol] * val + _expob[ix][ipol];
                 }
             }
 
