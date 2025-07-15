@@ -1,6 +1,7 @@
 add_library(conduction_lib
-    src/main.cpp
     src/cylindrical_solver.cpp
+    src/main.cpp
+    src/materials.cpp
 )
 
 target_link_libraries(conduction_lib

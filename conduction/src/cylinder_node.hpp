@@ -45,6 +45,13 @@ public:
     double get_inner_area() const { return 2 * PI * r_in * h; }
     double get_outer_area() const { return 2 * PI * r_out * h; }
     double get_volume() const { return PI * h * (r_out * r_out - r_in * r_in); }
+    double get_temperature() const { return temperature; }
+    void set_temperature(double temp) {
+        if (temp < 0.0) {
+            throw std::out_of_range("Temperature in Kelvin cannot be less than 0.0");
+        }
+        temperature = temp;
+    }
 
     double calculate_thermal_resistance(double k) const {
         if (r_in == 0) {
@@ -57,4 +64,5 @@ private:
     double h;
     double r_in;
     double r_out;
+    double temperature = 600.0; // Temperature in Kelvin, to be set by the solver
 };
