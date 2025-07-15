@@ -22,9 +22,6 @@ class KokkosMOC : public BaseMOC {
     using DViewDouble2D = Kokkos::View<double**, layout, MemorySpace>;
     using DViewDouble3D = Kokkos::View<double***, layout, MemorySpace>;
 
-    // Friend declaration for googletest
-    friend class BasicTest_test_kokkos_exp_table_Test;
-
     public:
         // Constructor
         KokkosMOC(const ArgumentParser& args);
@@ -94,7 +91,8 @@ class KokkosMOC : public BaseMOC {
         std::vector<double> _ray_spacing;
         HViewDouble2D _h_angle_weights;
         HViewDouble1D _h_rsinpolang;
-        HViewDouble2D _h_exp_table;
+        HViewDouble2D _h_expoa;  // Inline exponential table slope coefficients
+        HViewDouble2D _h_expob;  // Inline exponential table intercept coefficients
 
         // Geometry device data
         DViewDouble1D _d_fsr_vol;
@@ -104,7 +102,8 @@ class KokkosMOC : public BaseMOC {
         DViewDouble3D _d_xssc;
         DViewDouble2D _d_angle_weights;
         DViewDouble1D _d_rsinpolang;
-        DViewDouble2D _d_exp_table;
+        DViewDouble2D _d_expoa;  // Inline exponential table slope coefficients
+        DViewDouble2D _d_expob;  // Inline exponential table intercept coefficients
 
         // Ray host data
         int _n_rays;  // Number of rays
