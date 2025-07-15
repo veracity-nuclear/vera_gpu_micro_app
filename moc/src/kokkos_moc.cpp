@@ -28,55 +28,59 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     }
     _plane_height = _file.getDataSet("/MOC_Ray_Data/Domain_00001/plane_height").read<double>();
 
+    // Read mapping data
+    auto xsrToFsrMap = _file.getDataSet("/MOC_Ray_Data/Domain_00001/XSRtoFSR_Map").read<std::vector<int>>();
+    auto starting_xsr = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Starting XSR").read<int>();
+
+    // Adjust xsrToFsrMap by subtracting starting_xsr from each element
+    for (auto& xsr : xsrToFsrMap) {
+        xsr -= starting_xsr;
+    }
+
+    // Read the material IDs
+    auto tmp_mat_id = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xsr_mat_id").read<std::vector<double>>();
+    std::vector<int> xsr_mat_id;
+    xsr_mat_id.reserve(tmp_mat_id.size());
+    for (const auto& id : tmp_mat_id) {
+        xsr_mat_id.push_back(static_cast<int>(id) - 1);
+    }
+
+    // Calculate the FSR material IDs
+    std::vector<int> fsr_mat_id(_nfsr);
+    int ixsr = 0;
+    for (int i = 0; i < _nfsr; i++) {
+        if (i == xsrToFsrMap[ixsr]) {
+            ixsr++;
+        }
+        fsr_mat_id[i] = xsr_mat_id[ixsr - 1];
+    }
+
     // Get XS
     if (args.get_positional(0) == args.get_positional(1)) {
         auto xstr = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xstr").read<std::vector<std::vector<double>>>();
         auto xsnf = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xsnf").read<std::vector<std::vector<double>>>();
         auto xsch = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xsch").read<std::vector<std::vector<double>>>();
         auto xssc = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xssc").read<std::vector<std::vector<std::vector<double>>>>();
-    	_ng = xstr[0].size();
-	    _h_xstr = HViewDouble2D("xstr", _nfsr, _ng);
-    	_h_xsnf = HViewDouble2D("xsnf", _nfsr, _ng);
-	    _h_xsch = HViewDouble2D("xsch", _nfsr, _ng);
-    	_h_xssc = HViewDouble3D("xssc", _nfsr, _ng, _ng);
-	    for (int i = 0; i < _nfsr; i++) {
-            for (int to = 0; to < _ng; to++) {
-                _h_xstr(i, to) = xstr[i][to];
-                _h_xsnf(i, to) = xsnf[i][to];
-                _h_xsch(i, to) = xsch[i][to];
-                for (int from = 0; from < _ng; from++) {
-                    _h_xssc(i, to, from) = xssc[i][to][from];
-                }
-            }
-        }
-    } else {
-        // Read mapping data
-        auto xsrToFsrMap = _file.getDataSet("/MOC_Ray_Data/Domain_00001/XSRtoFSR_Map").read<std::vector<int>>();
-        auto starting_xsr = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Starting XSR").read<int>();
-
-        // Adjust xsrToFsrMap by subtracting starting_xsr from each element
-        for (auto& xsr : xsrToFsrMap) {
-            xsr -= starting_xsr;
-        }
-
-        // Read the material IDs
-        auto tmp_mat_id = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xsr_mat_id").read<std::vector<double>>();
-        std::vector<int> xsr_mat_id;
-        xsr_mat_id.reserve(tmp_mat_id.size());
-        for (const auto& id : tmp_mat_id) {
-            xsr_mat_id.push_back(static_cast<int>(id) - 1);
-        }
-
-        // Calculate the FSR material IDs
-        std::vector<int> fsr_mat_id(_nfsr);
+        _ng = xstr[0].size();
+        _h_xstr = HViewDouble2D("xstr", _nfsr, _ng);
+        _h_xsnf = HViewDouble2D("xsnf", _nfsr, _ng);
+        _h_xsch = HViewDouble2D("xsch", _nfsr, _ng);
+        _h_xssc = HViewDouble3D("xssc", _nfsr, _ng, _ng);
         int ixsr = 0;
         for (int i = 0; i < _nfsr; i++) {
             if (i == xsrToFsrMap[ixsr]) {
                 ixsr++;
             }
-            fsr_mat_id[i] = xsr_mat_id[ixsr - 1];
+            for (int to = 0; to < _ng; to++) {
+                _h_xstr(i, to) = xstr[ixsr - 1][to];
+                _h_xsnf(i, to) = xsnf[ixsr - 1][to];
+                _h_xsch(i, to) = xsch[ixsr - 1][to];
+                for (int from = 0; from < _ng; from++) {
+                    _h_xssc(i, to, from) = xssc[ixsr - 1][to][from];
+                }
+            }
         }
-
+    } else {
         auto library = c5g7_library(args.get_positional(1));
         _ng = library.get_num_groups();
         _get_xstr(_nfsr, fsr_mat_id, library);
