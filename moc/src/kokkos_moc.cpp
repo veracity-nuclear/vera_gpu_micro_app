@@ -238,6 +238,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
                 // Linear interpolation coefficients: y = m*x + b
                 _h_expoa(i, ipol) = (y2_scaled - y1_scaled) / dx;  // slope
                 _h_expob(i, ipol) = y1_scaled - _h_expoa(i, ipol) * x1;  // intercept
+                _h_expoa(i, ipol) *= 0.001;  // Scale for pre-scaled segment lengths
             }
         }
 
@@ -245,6 +246,11 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         Kokkos::deep_copy(_d_expoa, _h_expoa);
         _d_expob = Kokkos::create_mirror(ExecutionSpace(), _h_expob);
         Kokkos::deep_copy(_d_expob, _h_expob);
+
+        // Scale segment lengths by 1000.0 to avoid repeated multiplication in sweep
+        for (size_t i = 0; i < _h_ray_segments.size(); i++) {
+            _h_ray_segments(i) *= 1000.0;
+        }
     }
     Kokkos::Profiling::popRegion();
 
@@ -530,7 +536,7 @@ void compute_exparg(int iray, int ig, int ipol,
     for (int iseg = ray_nsegs(iray); iseg < ray_nsegs(iray + 1); iseg++) {
         int local_seg = iseg - ray_nsegs(iray);
         double xval = -xstr(ray_fsrs(iseg), ig) * ray_segments(iseg);
-        int ix = static_cast<int>(Kokkos::floor(xval * 1000.0)) + 40000;  // Scale to table index
+        int ix = static_cast<int>(Kokkos::floor(xval)) + 40000;  // Scale to table index
         ix = Kokkos::fmax(ix, -40000);  // Clamp to table bounds
         ix = Kokkos::fmin(ix, 40000);
         exparg(local_seg) = expoa(ix, ipol) * xval + expob(ix, ipol);

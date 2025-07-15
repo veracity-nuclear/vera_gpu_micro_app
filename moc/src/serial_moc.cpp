@@ -162,6 +162,14 @@ SerialMOC::SerialMOC(const ArgumentParser& args) :
             // Linear interpolation coefficients: y = m*x + b
             _expoa[i][ipol] = (y2_scaled - y1_scaled) / dx;  // slope
             _expob[i][ipol] = y1_scaled - _expoa[i][ipol] * x1;  // intercept
+            _expoa[i][ipol] *= 0.001;
+        }
+    }
+
+    // Scale segment lengths by 1000.0 to avoid repeated multiplication in sweep
+    for (auto& ray : _rays) {
+        for (auto& segment : ray._segments) {
+            segment *= 1000.0;
         }
     }
 }
@@ -319,7 +327,7 @@ void SerialMOC::sweep() {
             for (size_t i = 0; i < ray._fsrs.size(); i++) {
                 for (size_t ig = 0; ig < _ng; ig++) {
                     double xval = -_xstr[ray._fsrs[i] - 1][ig] * ray._segments[i];
-                    int ix = static_cast<int>(std::floor(xval * 1000.0)) + 40000;  // Scale to table index
+                    int ix = static_cast<int>(std::floor(xval)) + 40000;
                     ix = std::max(ix, -40000);  // Clamp to table bounds
                     ix = std::min(ix, 40000);
                     _exparg[i][ig] = _expoa[ix][ipol] * xval + _expob[ix][ipol];
