@@ -43,6 +43,8 @@ class SerialMOC : public BaseMOC {
         std::string _filename;  // HDF5 file name
         HighFive::File _file; // HDF5 file object
         const ExpTable _exp_table;  // Exponential table for calculations
+        std::vector<std::vector<double>> _expoa;  // Inline exponential table slope coefficients
+        std::vector<std::vector<double>> _expob;  // Inline exponential table intercept coefficients
         std::vector<double> _fsr_vol;  // FSR volumes
         std::vector<std::vector<double>> _xstr;  // Transport cross-sections for each FSR
         std::vector<std::vector<double>> _xsnf;  // Nu-fission cross-sections for each FSR

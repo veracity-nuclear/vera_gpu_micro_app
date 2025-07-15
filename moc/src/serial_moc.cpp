@@ -131,6 +131,40 @@ SerialMOC::SerialMOC(const ArgumentParser& args) :
     for (size_t i = 0; i < _max_segments + 1; i++) {
         _exparg[i].resize(_ng, 0.0);
     }
+
+    // Initialize inline exponential tables
+    // Set up tables similar to MPACT: polar angle dependent linear interpolation
+    // Table covers range [-40, 0] with 40000 intervals
+    int n_intervals = 40000;
+    double min_val = -40.0;
+    double max_val = 0.0;
+    double dx = (max_val - min_val) / n_intervals;
+
+    _expoa.resize(n_intervals + 1);
+    _expob.resize(n_intervals + 1);
+
+    for (int i = 0; i <= n_intervals; i++) {
+        _expoa[i].resize(_npol);
+        _expob[i].resize(_npol);
+
+        double x1 = min_val + i * dx;
+        double x2 = x1 + dx;
+        double y1 = 1.0 - std::exp(x1);
+        double y2 = 1.0 - std::exp(x2);
+
+        for (int ipol = 0; ipol < _npol; ipol++) {
+            // Scale by polar angle sine factor like MPACT does
+            double rpol = _rsinpolang[ipol];
+            double x1_scaled = x1 * rpol;
+            double x2_scaled = x2 * rpol;
+            double y1_scaled = 1.0 - std::exp(x1_scaled);
+            double y2_scaled = 1.0 - std::exp(x2_scaled);
+
+            // Linear interpolation coefficients: y = m*x + b
+            _expoa[i][ipol] = (y2_scaled - y1_scaled) / dx;  // slope
+            _expob[i][ipol] = y1_scaled - _expoa[i][ipol] * x1;  // intercept
+        }
+    }
 }
 
 void SerialMOC::_read_rays() {
@@ -285,7 +319,11 @@ void SerialMOC::sweep() {
             // Store the exponential arguments for this ray
             for (size_t i = 0; i < ray._fsrs.size(); i++) {
                 for (size_t ig = 0; ig < _ng; ig++) {
-                    _exparg[i][ig] = _exp_table.expt(-_xstr[ray._fsrs[i] - 1][ig] * ray._segments[i] * _rsinpolang[ipol]);
+                    double xval = -_xstr[ray._fsrs[i] - 1][ig] * ray._segments[i];
+                    int ix = static_cast<int>(std::floor(xval * 1000.0)) + 40000;  // Scale to table index
+                    ix = std::max(ix, -40000);  // Clamp to table bounds
+                    ix = std::min(ix, 40000);
+                    _exparg[i][ig] = _expoa[ix][ipol] * xval + _expob[ix][ipol];
                 }
             }
 
