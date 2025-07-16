@@ -28,7 +28,7 @@ public:
 
 private:
     bool is_solved = false;
-    std::shared_ptr<Fluid> gap_fluid = std::make_shared<Helium>("He");; // Fluid for gap conductance model (default to Helium)
+    std::shared_ptr<Fluid> gap_fluid = std::make_shared<Helium>("He"); // Fluid for gap conductance model (default to Helium)
     std::vector<std::shared_ptr<CylinderNode>> nodes;
     std::vector<std::shared_ptr<Solid>> materials;
     std::vector<double> interface_temps;
