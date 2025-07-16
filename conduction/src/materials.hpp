@@ -17,20 +17,20 @@ Materials are defined in alphabetical order.
 */
 
 /**
- * @brief Abstract base class representing a solid material with temperature-dependent properties.
+ * @brief Base class for all materials.
  */
-class SolidMaterial {
+class Material {
 public:
     /**
-     * @brief Default constructor for SolidMaterial.
+     * @brief Default constructor for Material.
      * @param name Name of the material.
-    */
-    explicit SolidMaterial(const std::string& name) : name(name) {}
+     */
+    explicit Material(const std::string& name) : name(name) {}
 
     /**
-     * @brief Virtual destructor for SolidMaterial.
+     * @brief Virtual destructor for Material.
      */
-    virtual ~SolidMaterial() = default;
+    virtual ~Material() = default;
 
     /**
      * @brief Get the temperature-dependent thermal conductivity.
@@ -66,22 +66,55 @@ protected:
     std::string name;
 };
 
+/**
+ * @brief Abstract base class representing a solid material with temperature-dependent properties.
+ */
+class Solid : public Material {
+public:
+    /**
+     * @brief Default constructor for Solid.
+     * @param name Name of the material.
+    */
+    explicit Solid(const std::string& name) : Material(name) {}
+
+    /**
+     * @brief Get the linear strain.
+     * @param T Temperature in Kelvin.
+     * @param T_prev Previous temperature in Kelvin.
+     * @return Strain in m/m.
+     */
+    virtual double strain(double T, double T_prev) const { return 0.0; }
+};
+
+
+/**
+ * @brief Abstract base class for fluid materials with temperature-dependent properties.
+ */
+class Fluid : public Material {
+public:
+    /**
+     * @brief Default constructor for Fluid.
+     * @param name Name of the material.
+     */
+    explicit Fluid(const std::string &name) : Material(name) {}
+};
+
 
 /**
  * @brief Abstract base class for fuel materials with additional burnup and gadolinium dependence.
  */
-class FuelMaterial : public SolidMaterial {
+class Fuel : public Solid {
 public:
     /**
-     * @brief Default constructor for FuelMaterial.
+     * @brief Default constructor for Fuel.
      */
-    explicit FuelMaterial() : SolidMaterial("Fuel") {}
+    explicit Fuel() : Solid("Fuel") {}
 
     /**
-     * @brief Constructor for FuelMaterial with a custom name.
+     * @brief Constructor for Fuel with a custom name.
      * @param name Name of the material.
      */
-    explicit FuelMaterial(const std::string &name) : SolidMaterial(name) {}
+    explicit Fuel(const std::string &name) : Solid(name) {}
 
     /**
      * @brief Get the temperature-dependent thermal conductivity.
@@ -130,18 +163,18 @@ public:
 /**
  * @brief Helium material properties from the CTF manual.
  */
-class Helium : public SolidMaterial {
+class Helium : public Fluid {
 public:
     /**
      * @brief Default constructor for Helium.
      */
-    explicit Helium() : SolidMaterial("Helium") {}
+    explicit Helium() : Fluid("Helium") {}
 
     /**
      * @brief Constructor for Helium with a custom name.
      * @param name Name of the material.
      */
-    explicit Helium(const std::string &name) : SolidMaterial(name) {}
+    explicit Helium(const std::string &name) : Fluid(name) {}
 
     /**
      * @brief Get the temperature-dependent thermal conductivity.
@@ -169,18 +202,18 @@ public:
 /**
  * @brief Uranium Dioxide (UO2) fuel material properties from CTF manual.
  */
-class UO2 : public FuelMaterial {
+class UO2 : public Fuel {
 public:
     /**
      * @brief Default constructor for UO2.
      */
-    explicit UO2() : FuelMaterial("UO2") {}
+    explicit UO2() : Fuel("UO2") {}
 
     /**
      * @brief Constructor for UO2 with a custom name.
      * @param name Name of the material.
      */
-    explicit UO2(const std::string &name) : FuelMaterial(name) {}
+    explicit UO2(const std::string &name) : Fuel(name) {}
 
     /**
      * @brief Get the temperature-dependent thermal conductivity.
@@ -208,24 +241,32 @@ public:
      * @return Density in kg/m³.
      */
     double rho(double T, double Bu, double gad) const override { throw std::runtime_error("UO2 density not implemented"); }
+
+    /**
+     * @brief Get the linear strain.
+     * @param T Temperature in Kelvin.
+     * @param T_prev Previous temperature in Kelvin.
+     * @return Strain in m/m.
+     */
+    double strain(double T, double T_prev) const override { return 1e-5 * (T - T_prev); }
 };
 
 
 /**
  * @brief Zircaloy (Zr2/4) material properties from CTF manual.
  */
-class Zircaloy : public SolidMaterial {
+class Zircaloy : public Solid {
 public:
     /**
      * @brief Default constructor for Zircaloy.
      */
-    Zircaloy() : SolidMaterial("Zr2/4") {}
+    Zircaloy() : Solid("Zr2/4") {}
 
     /**
      * @brief Constructor for Zircaloy with a custom name.
      * @param name Name of the material.
      */
-    Zircaloy(const std::string &name) : SolidMaterial(name) {}
+    Zircaloy(const std::string &name) : Solid(name) {}
 
     /**
      * @brief Get the temperature-dependent thermal conductivity.
@@ -247,5 +288,13 @@ public:
      * @return Density in kg/m³.
      */
     double rho(double T) const override { throw std::runtime_error("Zircaloy density not implemented"); }
+
+    /**
+     * @brief Get the linear strain.
+     * @param T Temperature in Kelvin.
+     * @param T_prev Previous temperature in Kelvin.
+     * @return Strain in m/m.
+     */
+    double strain(double T, double T_prev) const override;
 };
 
