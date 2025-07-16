@@ -9,7 +9,7 @@
 class CylinderNode {
 public:
     CylinderNode(double height, double inner_radius, double outer_radius)
-        : h(height), r_in(inner_radius), r_out(outer_radius) {
+        : h(height), r_in(inner_radius), r_out(outer_radius), r_in_initial(inner_radius), r_out_initial(outer_radius), temperature(600.0) {
             if (height <= 0) {
                 throw std::invalid_argument("Height must be positive for CylinderNode");
             }
@@ -42,6 +42,9 @@ public:
         h = height;
     }
 
+    double get_initial_inner_radius() const { return r_in_initial; }
+    double get_initial_outer_radius() const { return r_out_initial; }
+
     double get_inner_area() const { return 2 * PI * r_in * h; }
     double get_outer_area() const { return 2 * PI * r_out * h; }
     double get_volume() const { return PI * h * (r_out * r_out - r_in * r_in); }
@@ -64,5 +67,7 @@ private:
     double h;
     double r_in;
     double r_out;
-    double temperature = 600.0; // Temperature in Kelvin, to be set by the solver
+    double r_in_initial;
+    double r_out_initial;
+    double temperature; // Temperature in Kelvin, to be set by the solver
 };

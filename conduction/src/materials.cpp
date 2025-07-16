@@ -86,3 +86,26 @@ double Zircaloy::Cp(double T) const {
 
     return Cp0 + (Cp1 - Cp0) * (T - T0) / (T1 - T0);
 }
+
+double Zircaloy::strain(double T, double T_prev) const {
+    if (T < 300.0) {
+        throw std::out_of_range("Temperature in Kelvin cannot be less than 300.0");
+
+    // alpha phase
+    } else if (T <= 1073.0) {
+        return 6.72e-6 * T - 2.07e-3;
+
+    // transition zone
+    } else if (T < 1273.0) {
+        // Use recursive calls to get alpha at the endpoints
+        double alpha = 6.72e-6 * 1073.0 - 2.07e-3;
+        double beta = 9.70e-6 * 1273.0 - 9.45e-3;
+
+        // Interpolate for the range 1073 to 1273 K (this is an approximation)
+        return alpha + (beta - alpha) * (T - 1073.0) / (1273.0 - 1073.0);
+
+    // beta phase
+    } else {
+        return 9.70e-6 * T - 9.45e-3; // valid for T < T_melting
+    }
+}
