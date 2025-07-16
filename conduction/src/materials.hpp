@@ -5,6 +5,8 @@
 #include <cmath>
 #include <vector>
 #include <algorithm>
+#include <memory>
+#include "cylinder_node.hpp"
 
 /*
 Correlations for temperature-dependent properties are taken from the CTF v4.4 Manual
@@ -78,12 +80,14 @@ public:
     explicit Solid(const std::string& name) : Material(name) {}
 
     /**
-     * @brief Get the linear strain.
-     * @param T Temperature in Kelvin.
-     * @param T_prev Previous temperature in Kelvin.
-     * @return Strain in m/m.
+     * @brief Update the radii of a CylinderNode based on temperature.
+     * @param node CylinderNode to update.
+     * @param T Current temperature in Kelvin.
+     * @param T_prev Temperature from the previous calculation in Kelvin.
+     * @note This method currently only accounts for thermal expansion. Relocation due to cracking,
+     *  fuel burnup-induced swelling, clad burnup-induced creep, and clad elastic expansion are not considered.
      */
-    virtual double strain(double T, double T_prev) const { return 0.0; }
+    virtual void update_node_radii(std::shared_ptr<CylinderNode> node, double T, double T_prev) const = 0;
 };
 
 
@@ -243,12 +247,14 @@ public:
     double rho(double T, double Bu, double gad) const override { throw std::runtime_error("UO2 density not implemented"); }
 
     /**
-     * @brief Get the linear strain.
-     * @param T Temperature in Kelvin.
+     * @brief Update the radii of a CylinderNode based on temperature.
+     * @param node CylinderNode to update.
+     * @param T Current temperature in Kelvin.
      * @param T_prev Previous temperature in Kelvin.
-     * @return Strain in m/m.
+     * @note This method currently only accounts for thermal expansion. Relocation due to cracking,
+     *  fuel burnup-induced swelling, clad burnup-induced creep, and clad elastic expansion are not considered.
      */
-    double strain(double T, double T_prev) const override { return 1e-5 * (T - T_prev); }
+    void update_node_radii(std::shared_ptr<CylinderNode> node, double T, double T_prev) const override;
 };
 
 
@@ -290,11 +296,13 @@ public:
     double rho(double T) const override { throw std::runtime_error("Zircaloy density not implemented"); }
 
     /**
-     * @brief Get the linear strain.
-     * @param T Temperature in Kelvin.
+     * @brief Update the radii of a CylinderNode based on temperature.
+     * @param node CylinderNode to update.
+     * @param T Current temperature in Kelvin.
      * @param T_prev Previous temperature in Kelvin.
-     * @return Strain in m/m.
+     * @note This method currently only accounts for thermal expansion. Relocation due to cracking,
+     *  fuel burnup-induced swelling, clad burnup-induced creep, and clad elastic expansion are not considered.
      */
-    double strain(double T, double T_prev) const override;
+    void update_node_radii(std::shared_ptr<CylinderNode> node, double T, double T_prev) const override;
 };
 

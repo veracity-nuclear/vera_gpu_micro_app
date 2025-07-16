@@ -1,13 +1,9 @@
 #include "cylindrical_solver.hpp"
-#include <limits>  // if not already included
-
-auto is_invalid = [](double x) {
-    return std::isnan(x) || std::isinf(x);
-};
 
 CylindricalSolver::CylindricalSolver(
     std::vector<std::shared_ptr<CylinderNode>> &nodes,
-    const std::vector<std::shared_ptr<Solid>> &materials
+    const std::vector<std::shared_ptr<Solid>> &materials,
+    double T_initial
 ) : nodes(nodes), materials(materials) {
 
     for (size_t i = 0; i < nodes.size() - 1; ++i) {
@@ -17,14 +13,12 @@ CylindricalSolver::CylindricalSolver(
     }
 
     interface_temps.clear();
-    interface_to_node_map.clear();
     node_to_interface_indices.clear();
 
     size_t interface_index = 0;
 
-    // 🔹 Centerline: inner surface of fuel pellet
-    interface_temps.push_back(600.0);
-    interface_to_node_map.emplace_back(-1, 0);  // No node to the left of centerline
+    // innermost surface
+    interface_temps.push_back(T_initial);
     size_t left_interface = interface_index++;
 
     for (size_t i = 0; i < nodes.size() - 1; ++i) {
@@ -32,20 +26,17 @@ CylindricalSolver::CylindricalSolver(
         double r_next_inner = nodes[i + 1]->get_inner_radius();
 
         if (std::abs(r_outer - r_next_inner) > 1e-8) {
-            // 🔹 Gap detected → two separate interface temps
-            interface_temps.push_back(600.0); // outer of node[i]
-            interface_to_node_map.emplace_back(i, -1); // right interface of node[i]
+            // Gap detected; two separate interface temps
+            interface_temps.push_back(T_initial); // outer of node[i]
             size_t right_interface = interface_index++;
 
             node_to_interface_indices.emplace_back(left_interface, right_interface);
 
-            interface_temps.push_back(600.0); // inner of node[i+1]
-            interface_to_node_map.emplace_back(-1, i + 1); // left interface of node[i+1]
+            interface_temps.push_back(T_initial); // inner of node[i+1]
             left_interface = interface_index++; // for next loop
         } else {
-            // 🔹 Solid-solid contact → shared interface
-            interface_temps.push_back(600.0); // shared between node[i] and node[i+1]
-            interface_to_node_map.emplace_back(i, i + 1);
+            // Solid-solid contact; shared interface (no gap)
+            interface_temps.push_back(T_initial); // shared between node[i] and node[i+1]
             size_t right_interface = interface_index++;
 
             node_to_interface_indices.emplace_back(left_interface, right_interface);
@@ -53,12 +44,16 @@ CylindricalSolver::CylindricalSolver(
         }
     }
 
-    // 🔹 Last node (e.g., clad outer surface)
-    interface_temps.push_back(0.0);
-    interface_to_node_map.emplace_back(nodes.size() - 1, -1);
+    // Last node (e.g., clad outer surface)
+    interface_temps.push_back(T_initial);
     size_t right_interface = interface_index++;
 
     node_to_interface_indices.emplace_back(left_interface, right_interface);
+
+    // Set initial temperatures for all nodes
+    for (const auto &node : nodes) {
+        node->set_temperature(T_initial);
+    }
 }
 
 std::shared_ptr<CylinderNode> CylindricalSolver::get_node(const size_t index) {
@@ -109,16 +104,7 @@ std::vector<double> CylindricalSolver::solve(
             std::shared_ptr<CylinderNode> node = nodes[i];
             std::shared_ptr<Solid> material = materials[i];
 
-            double strain = material->strain(Tavg[i], Tavg_prev[i]);
-
-            bool is_fuel = std::dynamic_pointer_cast<Fuel>(material) != nullptr;
-            if (is_fuel) {
-                node->set_inner_radius(node->get_inner_radius() * (1.0 + strain));
-                node->set_outer_radius(node->get_outer_radius() * (1.0 + strain));
-            } else {
-                node->set_inner_radius(node->get_initial_inner_radius() * (1.0 + strain));
-                node->set_outer_radius(node->get_initial_outer_radius() * (1.0 + strain));
-            }
+            material->update_node_radii(node, Tavg[i], Tavg_prev[i]);
         }
 
         // Check convergence
@@ -152,36 +138,38 @@ std::vector<double> CylindricalSolver::_Tsolve(
     std::vector<double> Tavg(nodes.size(), 0.0);
     std::vector<double> Tavg_prev(nodes.size(), 0.0);
     for (size_t iter = 0; iter < max_iterations; ++iter) {
+
         // Calculate thermal conductivity for each node
         std::vector<double> k(N);
         for (size_t i = 0; i < N; ++i) {
             k[i] = materials[i]->k(nodes[i]->get_temperature());
         }
 
+        // Calculate temperatures at cylinder node surfaces
         interface_temps[interface_temps.size() - 1] = T_outer;
         double R_total = 0.0;
 
-        for (size_t i = interface_temps.size(); i-- > 0;) {
-            double R = 0.0;
-            auto [left_node, right_node] = interface_to_node_map[i];
+        for (size_t i = nodes.size(); i-- > 0;) {
+            auto [idx_left, idx_right] = node_to_interface_indices[i];
 
-            if (left_node == -1 && right_node >= 0) {
-                // Left boundary (e.g., centerline)
-                interface_temps[i] = T_outer + qtotal * R_total;
+            interface_temps[idx_right] = T_outer + qtotal * R_total;
+            R_total += nodes[i]->calculate_thermal_resistance(k[i]); // W/m-K
+            interface_temps[idx_left] = T_outer + qtotal * R_total;
+
+            if (i == 0) { continue; } // Skip the first node (no gap before the first node)
+
+            // calculate gap width between this node and the next inward node
+            double gap_width = nodes[i]->get_inner_radius() - nodes[i - 1]->get_outer_radius();
+            if (gap_width > 0.0) {
+                // Assume Helium is the fill gas in the gap for now
+                double k_gap = gap_fluid->k(interface_temps[idx_right]); // W/m-K
+
+                // Gap conductance
+                double H_gap = k_gap / gap_width; // W/m^2-K
+
+                // Add gap resistance to total resistance for the next node
+                R_total += 1 / (H_gap * nodes[i]->get_inner_area()); // W/m-K
             }
-
-            if (left_node >= 0 && right_node >= 0) {
-                // Assume this is a GAP between two solids (fuel/clad)
-                R = 0.0;
-            } else if (left_node >= 0) {
-                // Internal to a node
-                R = nodes[left_node]->calculate_thermal_resistance(k[left_node]);
-            } else if (right_node >= 0) {
-                R = nodes[right_node]->calculate_thermal_resistance(k[right_node]);
-            }
-
-            R_total += R;
-            interface_temps[i] = T_outer + qtotal * R_total;
         }
 
         // Calculate node average temperatures
@@ -214,28 +202,19 @@ std::vector<double> CylindricalSolver::_Tsolve(
 
                 // Evaluate T at average radius
                 Tavg[i] = -(qdot[i] / (4.0 * k[i])) * R_avg * R_avg + C1 * std::log(R_avg) + C2;
-                if (is_invalid(Tavg[i])) {
-                    std::cerr << "NaN detected at node " << i << " with Tavg = " << Tavg[i]
-                            << ", R_inner = " << R_inner << ", R_outer = " << R_outer
-                            << ", qdot = " << qdot[i] << ", k = " << k[i] << std::endl;
-                    throw std::runtime_error("Invalid temperature calculation at node " + std::to_string(i));
-                }
             }
             nodes[i]->set_temperature(Tavg[i]); // Update node temperature
         }
+
         // Check convergence
         double max_diff = 0.0;
         for (size_t i = 0; i < N; ++i) {
             max_diff = std::max(max_diff, std::abs(Tavg[i] - Tavg_prev[i]));
         }
         if (max_diff < tolerance) {
-            is_solved = true;
             break;
         }
         Tavg_prev = Tavg; // Update previous temperatures for next iteration
-    }
-    if (!is_solved) {
-        throw std::runtime_error("Cylindrical solver did not converge");
     }
     return Tavg;
 }
