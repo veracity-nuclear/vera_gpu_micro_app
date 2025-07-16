@@ -10,9 +10,11 @@ class CylindricalSolver {
 public:
     CylindricalSolver(
         std::vector<std::shared_ptr<CylinderNode>> &nodes,
-        const std::vector<std::shared_ptr<Solid>> &materials
+        const std::vector<std::shared_ptr<Solid>> &materials,
+        double T_initial = 600.0 // Default initial temperature in Kelvin
     );
     double get_number_of_nodes() const { return nodes.size(); }
+    void set_gap_fluid(const std::shared_ptr<Fluid> &fluid) { gap_fluid = fluid; }
     std::shared_ptr<CylinderNode> get_node(const size_t index);
     std::vector<double> get_volumes() const;
     std::vector<double> get_interface_temperatures() const;
@@ -26,15 +28,10 @@ public:
 
 private:
     bool is_solved = false;
+    std::shared_ptr<Fluid> gap_fluid = std::make_shared<Helium>("He");; // Fluid for gap conductance model (default to Helium)
     std::vector<std::shared_ptr<CylinderNode>> nodes;
     std::vector<std::shared_ptr<Solid>> materials;
     std::vector<double> interface_temps;
-
-    // Each pair is (left_node_index, right_node_index)
-    // - If either is -1, it's a boundary
-    std::vector<std::pair<int, int>> interface_to_node_map;
-
-    // For each node, store (left_interface_idx, right_interface_idx)
     std::vector<std::pair<size_t, size_t>> node_to_interface_indices;
 
     std::vector<double> _Tsolve(

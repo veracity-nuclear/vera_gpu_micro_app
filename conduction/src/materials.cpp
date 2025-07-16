@@ -56,6 +56,16 @@ double UO2::Cp(double T, double Bu, double gad) const {
     );
 }
 
+void UO2::update_node_radii(std::shared_ptr<CylinderNode> node, double T, double T_prev) const {
+    if (T < 0.0 || T_prev < 0.0) {
+        throw std::out_of_range("Temperature in Kelvin cannot be less than 0.0");
+    }
+
+    double strain = 1e-5 * (T - T_prev);
+    node->set_inner_radius(node->get_inner_radius() * (1.0 + strain));
+    node->set_outer_radius(node->get_outer_radius() * (1.0 + strain));
+}
+
 double Zircaloy::k(double T) const {
     if (T < 0.0) {
         throw std::out_of_range("Temperature in Kelvin cannot be less than 0.0");
@@ -87,25 +97,33 @@ double Zircaloy::Cp(double T) const {
     return Cp0 + (Cp1 - Cp0) * (T - T0) / (T1 - T0);
 }
 
-double Zircaloy::strain(double T, double T_prev) const {
-    if (T < 300.0) {
-        throw std::out_of_range("Temperature in Kelvin cannot be less than 300.0");
+void Zircaloy::update_node_radii(std::shared_ptr<CylinderNode> node, double T, double T_prev) const {
+    if (T < 0.0 || T_prev < 0.0) {
+        throw std::out_of_range("Temperature in Kelvin cannot be less than 0.0");
+    }
+
+    double total_strain;
 
     // alpha phase
-    } else if (T <= 1073.0) {
-        return 6.72e-6 * T - 2.07e-3;
+    if (T <= 1073.0) {
+        total_strain = 6.72e-6 * T - 2.07e-3;
+    }
 
     // transition zone
-    } else if (T < 1273.0) {
+    else if (T < 1273.0) {
         // Use recursive calls to get alpha at the endpoints
         double alpha = 6.72e-6 * 1073.0 - 2.07e-3;
         double beta = 9.70e-6 * 1273.0 - 9.45e-3;
 
         // Interpolate for the range 1073 to 1273 K (this is an approximation)
-        return alpha + (beta - alpha) * (T - 1073.0) / (1273.0 - 1073.0);
+        total_strain = alpha + (beta - alpha) * (T - 1073.0) / (1273.0 - 1073.0);
 
     // beta phase
     } else {
-        return 9.70e-6 * T - 9.45e-3; // valid for T < T_melting
+        total_strain = 9.70e-6 * T - 9.45e-3; // valid for T < T_melting
     }
+
+    // Update the node radii based on the calculated strain
+    node->set_inner_radius(node->get_initial_inner_radius() * (1.0 + total_strain));
+    node->set_outer_radius(node->get_initial_outer_radius() * (1.0 + total_strain));
 }
