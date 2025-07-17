@@ -97,7 +97,7 @@ std::vector<double> CylindricalSolver::solve(
 
     // Loop with dynamic gap conductance model until convergence
     for (size_t iter = 0; iter < max_iterations; ++iter) {
-        Tavg = _Tsolve(qdot, T_outer, tolerance, max_iterations);
+        Tavg = internal_Tsolve(qdot, T_outer, tolerance, max_iterations);
 
         // Update radius values in the nodes based on the new calculated avg temperatures
         for (size_t i = 0; i < nodes.size(); ++i) {
@@ -124,7 +124,7 @@ std::vector<double> CylindricalSolver::solve(
     return Tavg;
 }
 
-std::vector<double> CylindricalSolver::_Tsolve(
+std::vector<double> CylindricalSolver::internal_Tsolve(
     const std::vector<double>& qdot,
     double T_outer,
     double tolerance,

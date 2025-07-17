@@ -34,7 +34,7 @@ private:
     std::vector<double> interface_temps;
     std::vector<std::pair<size_t, size_t>> node_to_interface_indices;
 
-    std::vector<double> _Tsolve(
+    std::vector<double> internal_Tsolve(
         const std::vector<double> &qdot,
         double T_outer,
         double tolerance,
