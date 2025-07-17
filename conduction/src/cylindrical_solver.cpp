@@ -179,8 +179,6 @@ std::vector<double> CylindricalSolver::_Tsolve(
             double R_inner = nodes[i]->get_inner_radius();
             double R_outer = nodes[i]->get_outer_radius();
             double R_avg = (R_inner + R_outer) * 0.5;
-            // double T_inner = interface_temps[i];
-            // double T_outer = interface_temps[i + 1];
 
             size_t idx_left = node_to_interface_indices[i].first;
             size_t idx_right = node_to_interface_indices[i].second;
