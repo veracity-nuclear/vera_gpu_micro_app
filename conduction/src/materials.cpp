@@ -18,6 +18,46 @@ double Helium::k(double T) const {
     return k * 1.730735;   // Convert to W/m-K
 }
 
+double Xenon::k(double T) const {
+    const double a = 1.395e-5; // in BTU/hr-ft-F
+    const double b = 0.872;
+    double T_R = T * 9.0 / 5.0; // Convert K to °R
+    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
+    return k * 1.730735;   // Convert to W/m-K
+}
+
+double Argon::k(double T) const {
+    const double a = 1.31e-3; // in BTU/hr-ft-F
+    const double b = 0.701;
+    double T_R = T * 9.0 / 5.0; // Convert K to °R
+    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
+    return k * 1.730735;   // Convert to W/m-K
+}
+
+double Krypton::k(double T) const {
+    const double a = 1.588e-5; // in BTU/hr-ft-F
+    const double b = 0.92331;
+    double T_R = T * 9.0 / 5.0; // Convert K to °R
+    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
+    return k * 1.730735;   // Convert to W/m-K
+}
+
+double Hydrogen::k(double T) const {
+    const double a = 5.834e-4; // in BTU/hr-ft-F
+    const double b = 0.8213;
+    double T_R = T * 9.0 / 5.0; // Convert K to °R
+    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
+    return k * 1.730735;   // Convert to W/m-K
+}
+
+double Nitrogen::k(double T) const {
+    const double a = 7.35e-5; // in BTU/hr-ft-F
+    const double b = 0.846;
+    double T_R = T * 9.0 / 5.0; // Convert K to °R
+    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
+    return k * 1.730735;   // Convert to W/m-K
+}
+
 double UO2::k(double T, double Bu, double gad) const {
     if (T < 300.0 || T > 3000.0) {
         throw std::out_of_range("Temperature must be within 300.0 and 3000.0 K for UO2 thermal conductivity");
@@ -56,7 +96,7 @@ double UO2::Cp(double T, double Bu, double gad) const {
     );
 }
 
-void UO2::update_node_radii(std::shared_ptr<CylinderNode> node, double T, double T_prev) const {
+void UO2::update_node_radii(const std::shared_ptr<CylinderNode>& node, double T, double T_prev) const {
     if (T < 0.0 || T_prev < 0.0) {
         throw std::out_of_range("Temperature in Kelvin cannot be less than 0.0");
     }
@@ -97,7 +137,7 @@ double Zircaloy::Cp(double T) const {
     return Cp0 + (Cp1 - Cp0) * (T - T0) / (T1 - T0);
 }
 
-void Zircaloy::update_node_radii(std::shared_ptr<CylinderNode> node, double T, double T_prev) const {
+void Zircaloy::update_node_radii(const std::shared_ptr<CylinderNode>& node, double T, double T_prev) const {
     if (T < 0.0 || T_prev < 0.0) {
         throw std::out_of_range("Temperature in Kelvin cannot be less than 0.0");
     }
