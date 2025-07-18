@@ -158,13 +158,11 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     h_ray_data = Kokkos::View<DeviceRayData*, layout, Kokkos::HostSpace>("h_ray_data", _n_rays);
     _d_ray_data = DeviceRayView("d_ray_data", _n_rays);
 
-    // Calculate segment start indices locally
-    std::vector<int> ray_seg_starts(_n_rays + 1);
-    ray_seg_starts[0] = 0;
-    for (int iray = 0; iray < _n_rays; iray++) {
-        ray_seg_starts[iray + 1] = ray_seg_starts[iray] + _rays[iray].nsegs();
+    // Calculate total segments needed
+    int total_segments = 0;
+    for (const auto& ray : _rays) {
+        total_segments += ray.nsegs();
     }
-    int total_segments = ray_seg_starts[_n_rays];
 
     // Create device segment data structure
     auto h_segment_data = Kokkos::create_mirror_view(_d_segment_data);
@@ -172,6 +170,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     _d_segment_data = DeviceSegmentView("d_segment_data", total_segments);
 
     // Calculate BC indices and populate ray/segment data directly
+    int seg_offset = 0;
     for (size_t i = 0; i < _n_rays; i++) {
         const auto& ray = _rays[i];
         int ang = ray.angle();
@@ -210,10 +209,16 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
             }
         }
 
-        // Populate ray data directly with calculated BC indices
+        // Populate segment data for this ray
+        for (int iseg = 0; iseg < ray.nsegs(); iseg++) {
+            h_segment_data(seg_offset + iseg).fsr_id = ray.fsr(iseg) - 1; // Convert to 0-based
+            h_segment_data(seg_offset + iseg).length = ray.segment(iseg);
+        }
+
+        // Populate ray data with raw pointer to segments
         h_ray_data(i).nsegs = ray.nsegs();
         h_ray_data(i).angle = ray.angle();
-        h_ray_data(i).seg_start = ray_seg_starts[i];
+        h_ray_data(i).segments = nullptr; // Will be set after device copy
         h_ray_data(i).bc_frwd_start = bc_frwd_start;
         h_ray_data(i).bc_frwd_end = bc_frwd_end;
         h_ray_data(i).bc_bkwd_start = bc_bkwd_start;
@@ -222,16 +227,20 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         // Set the processed BC indices in the ray object
         _rays[i].set_angflux_bc_indices(bc_frwd_start, bc_frwd_end, bc_bkwd_start, bc_bkwd_end);
 
-        // Populate segment data for this ray
-        int seg_start = ray_seg_starts[i];
-        for (int iseg = 0; iseg < ray.nsegs(); iseg++) {
-            h_segment_data(seg_start + iseg).fsr_id = ray.fsr(iseg) - 1; // Convert to 0-based
-            h_segment_data(seg_start + iseg).length = ray.segment(iseg);
-        }
+        seg_offset += ray.nsegs();
+    }
+
+    // Copy segment data to device
+    Kokkos::deep_copy(_d_segment_data, h_segment_data);
+
+    // Set up device pointers after copying to device
+    seg_offset = 0;
+    for (size_t i = 0; i < _n_rays; i++) {
+        h_ray_data(i).segments = _d_segment_data.data() + seg_offset;
+        seg_offset += _rays[i].nsegs();
     }
 
     Kokkos::deep_copy(_d_ray_data, h_ray_data);
-    Kokkos::deep_copy(_d_segment_data, h_segment_data);
 
     // Store the inverse polar angle sine
     _h_rsinpolang = HViewDouble1D("rsinpolang", _npol);
@@ -518,14 +527,13 @@ void compute_exparg(int iray, int ig, int ipol,
                     Kokkos::View<double*, typename ExecutionSpace::scratch_memory_space>& exparg,
                     const Kokkos::View<const double**, ExecutionSpace>& xstr,
                     const Kokkos::View<const typename KokkosMOC<ExecutionSpace>::DeviceRayData*, ExecutionSpace>& ray_data,
-                    const Kokkos::View<const typename KokkosMOC<ExecutionSpace>::DeviceSegmentData*, ExecutionSpace>& segment_data,
                     const Kokkos::View<const double*, ExecutionSpace>& rsinpolang,
                     int nsegs)
 {
     const auto& ray = ray_data(iray);
-    int seg_start = ray.seg_start;
+    const auto* segments = ray.segments;
     for (int iseg = 0; iseg < nsegs; iseg++) {
-        const auto& segment = segment_data(seg_start + iseg);
+        const auto& segment = segments[iseg];
         double val = -xstr(segment.fsr_id, ig) * segment.length * rsinpolang(ipol);
         int i = Kokkos::floor(val * rdx) + n_intervals + 1;
         if (i >= 0 && i < n_intervals + 1) {
@@ -547,7 +555,6 @@ void compute_exparg<Kokkos::Cuda>(int iray, int ig, int ipol,
                     Kokkos::View<double*, typename Kokkos::Cuda::scratch_memory_space>& exparg,
                     const Kokkos::View<const double**, Kokkos::Cuda>& xstr,
                     const Kokkos::View<const typename KokkosMOC<Kokkos::Cuda>::DeviceRayData*, Kokkos::Cuda>& ray_data,
-                    const Kokkos::View<const typename KokkosMOC<Kokkos::Cuda>::DeviceSegmentData*, Kokkos::Cuda>& segment_data,
                     const Kokkos::View<const double*, Kokkos::Cuda>& rsinpolang,
                     int nsegs)
 {
@@ -668,14 +675,14 @@ void KokkosMOC<ExecutionSpace>::sweep() {
 
         // Get ray data directly from DeviceRayData struct
         const auto& ray = ray_data(iray);
+        const auto* segments = ray.segments;
         int nsegs = ray.nsegs;
         int ray_angle = ray.angle;
-        int seg_start = ray.seg_start;
 
         // Create thread-local exparg array for non-CUDA execution spaces using scratch space
         ScratchViewDouble1D exparg(teamMember.team_scratch(0), nsegs);
         compute_exparg<ExecutionSpace>(iray, ig, ipol, exp_table, n_exp_intervals, exp_rdx, exparg,
-                                       xstr, ray_data, segment_data, rsinpolang, ray.nsegs);
+                                       xstr, ray_data, rsinpolang, ray.nsegs);
 
         // Create temporary arrays for segment flux
         double fsegflux = old_angflux(ray.bc_frwd_start, ipol, ig);
@@ -684,8 +691,7 @@ void KokkosMOC<ExecutionSpace>::sweep() {
         // Forward and backward sweeps
         for (int iseg = 0; iseg < nsegs; iseg++) {
             // Forward segment sweep
-            int global_seg = seg_start + iseg;
-            const auto& segment = segment_data(global_seg);
+            const auto& segment = segments[iseg];
             int ireg = segment.fsr_id;
             double segment_length = segment.length;
             double exp_arg = -xstr(ireg, ig) * segment_length * rsinpolang(ipol);
@@ -697,8 +703,7 @@ void KokkosMOC<ExecutionSpace>::sweep() {
 
             // Backward segment sweep
             int bseg = nsegs - 1 - iseg;
-            global_seg = seg_start + bseg;
-            const auto& bsegment = segment_data(global_seg);
+            const auto& bsegment = segments[bseg];
             ireg = bsegment.fsr_id;
             segment_length = bsegment.length;
             exp_arg = -xstr(ireg, ig) * segment_length * rsinpolang(ipol);
