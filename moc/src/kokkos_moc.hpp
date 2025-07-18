@@ -49,7 +49,7 @@ class KokkosMOC : public BaseMOC {
         struct DeviceRayData {
             int nsegs;
             int angle;
-            DeviceSegmentData* segments;
+            int seg_start;
             int bc_frwd_start;
             int bc_frwd_end;
             int bc_bkwd_start;
