@@ -120,7 +120,7 @@ class KokkosMOC : public BaseMOC {
         HViewInt1D _h_ray_bc_index_bkwd_end;
         HViewInt1D _h_ray_angle_index;
         HViewInt1D _h_ray_fsrs;
-        HViewDouble1D _h_ray_segments;
+        HViewReal1D _h_ray_segments;
 
         // Ray device data
         DViewInt1D _d_ray_nsegs;
@@ -132,7 +132,7 @@ class KokkosMOC : public BaseMOC {
         DViewInt1D _d_ray_bc_index_bkwd_end;
         DViewInt1D _d_ray_angle_index;
         DViewInt1D _d_ray_fsrs;
-        DViewDouble1D _d_ray_segments;
+        DViewReal1D _d_ray_segments;
 
         // Solution host data
         HViewDouble2D _h_scalar_flux;

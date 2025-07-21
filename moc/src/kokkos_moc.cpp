@@ -336,7 +336,7 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
     }
 
     _h_ray_fsrs = HViewInt1D("ray_fsrs", _h_ray_nsegs(_n_rays));
-    _h_ray_segments = HViewDouble1D("ray_segments", _h_ray_nsegs(_n_rays));
+    _h_ray_segments = HViewReal1D("ray_segments", _h_ray_nsegs(_n_rays));
     iray = 0;
     for (const auto& objName : domain.listObjectNames()) {
         if (objName.substr(0, 6) == "Angle_") {
@@ -650,14 +650,14 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
         // Create thread-local exparg array for non-CUDA execution spaces using scratch space
         ScratchViewReal1D exparg(teamMember.team_scratch(0), nsegs);
         compute_exparg<ExecutionSpace, RealType>(iray, ig, ipol, exp_table, n_exp_intervals, exp_rdx, exparg,
-                                       xstr, ray_fsrs, segment_data, rsinpolang, ray.nsegs);
+                                       xstr, ray_fsrs, ray_segments, rsinpolang, ray_nsegs);
 
         int global_seg, ireg1, ireg2;
         int iseg2 = nsegs;
         double phid;
         // Create temporary arrays for segment flux
-        RealType fsegflux = old_angflux(ray.bc_frwd_start, ipol, ig);
-        RealType bsegflux = old_angflux(ray.bc_bkwd_start, ipol, ig);
+        RealType fsegflux = old_angflux(ray_bc_index_frwd_start(iray), ipol, ig);
+        RealType bsegflux = old_angflux(ray_bc_index_bkwd_start(iray), ipol, ig);
 
         // Rest of the sweep implementation remains the same
         for (int iseg1 = 0; iseg1 < nsegs; iseg1++) {
@@ -683,7 +683,7 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
                    eval_exp_arg<ExecutionSpace, RealType>(exparg, iseg2 - 1, xstr(ireg2, ig),
                                                 ray_segments(global_seg), rsinpolang(ipol));
             bsegflux -= phid;
-            tally_scalar_flux<ExecutionSpace, RealType>(exparg, iseg2 - 1, xstr(ireg2, ig),
+            tally_scalar_flux<ExecutionSpace, RealType>(
                 scalar_flux,
                 threaded_scalar_flux,
                 ireg2,
