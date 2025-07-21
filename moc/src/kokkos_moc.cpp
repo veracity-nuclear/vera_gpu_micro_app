@@ -7,8 +7,8 @@
 #include <highfive/highfive.hpp>
 #include "c5g7_library.hpp"
 
-template <typename ExecutionSpace>
-KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
+template <typename ExecutionSpace, typename RealType>
+KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
     _filename(args.get_positional(0)),
     _file(HighFive::File(_filename, HighFive::File::ReadOnly)),
     _device(args.get_option("device"))
@@ -21,12 +21,12 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     {
         auto fsr_vol = _file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read<std::vector<double>>();
         _nfsr = fsr_vol.size();
-        _h_fsr_vol = HViewFloat1D("fsr_vol", _nfsr);
+        _h_fsr_vol = HViewReal1D("fsr_vol", _nfsr);
         for (int i = 0; i < _nfsr; i++) {
-            _h_fsr_vol(i) = static_cast<float>(fsr_vol[i]);
+            _h_fsr_vol(i) = static_cast<RealType>(fsr_vol[i]);
         }
     }
-    _plane_height = static_cast<float>(_file.getDataSet("/MOC_Ray_Data/Domain_00001/plane_height").read<double>());
+    _plane_height = static_cast<RealType>(_file.getDataSet("/MOC_Ray_Data/Domain_00001/plane_height").read<double>());
 
     // Read mapping data
     auto xsrToFsrMap = _file.getDataSet("/MOC_Ray_Data/Domain_00001/XSRtoFSR_Map").read<std::vector<int>>();
@@ -62,21 +62,21 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         auto xsch = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xsch").read<std::vector<std::vector<double>>>();
         auto xssc = _file.getDataSet("/MOC_Ray_Data/Domain_00001/Solution_Data/xssc").read<std::vector<std::vector<std::vector<double>>>>();
         _ng = xstr[0].size();
-        _h_xstr = HViewFloat2D("xstr", _nfsr, _ng);
-        _h_xsnf = HViewFloat2D("xsnf", _nfsr, _ng);
-        _h_xsch = HViewFloat2D("xsch", _nfsr, _ng);
-        _h_xssc = HViewFloat3D("xssc", _nfsr, _ng, _ng);
+        _h_xstr = HViewReal2D("xstr", _nfsr, _ng);
+        _h_xsnf = HViewReal2D("xsnf", _nfsr, _ng);
+        _h_xsch = HViewReal2D("xsch", _nfsr, _ng);
+        _h_xssc = HViewReal3D("xssc", _nfsr, _ng, _ng);
         int ixsr = 0;
         for (int i = 0; i < _nfsr; i++) {
             if (i == xsrToFsrMap[ixsr]) {
                 ixsr++;
             }
             for (int to = 0; to < _ng; to++) {
-                _h_xstr(i, to) = static_cast<float>(xstr[ixsr - 1][to]);
-                _h_xsnf(i, to) = static_cast<float>(xsnf[ixsr - 1][to]);
-                _h_xsch(i, to) = static_cast<float>(xsch[ixsr - 1][to]);
+                _h_xstr(i, to) = static_cast<RealType>(xstr[ixsr - 1][to]);
+                _h_xsnf(i, to) = static_cast<RealType>(xsnf[ixsr - 1][to]);
+                _h_xsch(i, to) = static_cast<RealType>(xsch[ixsr - 1][to]);
                 for (int from = 0; from < _ng; from++) {
-                    _h_xssc(i, to, from) = static_cast<float>(xssc[ixsr - 1][to][from]);
+                    _h_xssc(i, to, from) = static_cast<RealType>(xssc[ixsr - 1][to][from]);
                 }
             }
         }
@@ -91,9 +91,9 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
 
     // Allocate scalar flux and source array
     _h_scalar_flux = HViewDouble2D("scalar_flux", _nfsr, _ng);
-    _h_source = HViewFloat2D("source", _nfsr, _ng);
+    _h_source = HViewReal2D("source", _nfsr, _ng);
     Kokkos::deep_copy(_h_scalar_flux, 1.0);
-    Kokkos::deep_copy(_h_source, 1.0f);
+    Kokkos::deep_copy(_h_source, static_cast<RealType>(1.0));
 
     // Read ray spacings and angular flux BC dimensions
     auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
@@ -111,7 +111,7 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         if (objName.substr(0, 6) == "Angle_") {
             HighFive::Group angleGroup = domain.getGroup(objName);
             // Read ray spacing
-            _ray_spacing.push_back(static_cast<float>(angleGroup.getDataSet("spacing").read<double>()));  // Read the BC sizes
+            _ray_spacing.push_back(static_cast<RealType>(angleGroup.getDataSet("spacing").read<double>()));  // Read the BC sizes
             int iazi = std::stoi(objName.substr(8)) - 1;
             std::vector<int> bc_size = angleGroup.getDataSet("BC_size").read<std::vector<int>>();
             bc_sizes.push_back(bc_size);
@@ -187,9 +187,9 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     }
 
     // Store the inverse polar angle sine
-    _h_rsinpolang = HViewFloat1D("rsinpolang", _npol);
+    _h_rsinpolang = HViewReal1D("rsinpolang", _npol);
     for (int ipol = 0; ipol < _npol; ipol++) {
-        _h_rsinpolang(ipol) = static_cast<float>(1.0 / std::sin(polar_angles[ipol]));
+        _h_rsinpolang(ipol) = static_cast<RealType>(1.0 / std::sin(polar_angles[ipol]));
     }
 
     // Count maximum segments across all rays
@@ -200,10 +200,10 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     Kokkos::deep_copy(_h_old_angflux, _h_angflux);
 
     // Build angle weights
-    _h_angle_weights = HViewFloat2D("angle_weights", nazi, _npol);
+    _h_angle_weights = HViewReal2D("angle_weights", nazi, _npol);
     for (int iazi = 0; iazi < nazi; iazi++) {
         for (int ipol = 0; ipol < _npol; ipol++) {
-            _h_angle_weights(iazi, ipol) = static_cast<float>(_ray_spacing[iazi] * azi_weights[iazi] * polar_weights[ipol]
+            _h_angle_weights(iazi, ipol) = static_cast<RealType>(_ray_spacing[iazi] * azi_weights[iazi] * polar_weights[ipol]
                 * M_PI * std::sin(polar_angles[ipol]));
         }
     }
@@ -222,16 +222,16 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
         _n_exp_intervals = 40000;
         double min_val = -40.0;
         double max_val = 0.0;
-        _exp_rdx = static_cast<float>(_n_exp_intervals / (max_val - min_val));
+        _exp_rdx = static_cast<RealType>(_n_exp_intervals / (max_val - min_val));
         double dx = 1.0 / _exp_rdx;
-        _h_exp_table = HViewFloat2D("exp_table", _n_exp_intervals + 1, 2);
+        _h_exp_table = HViewReal2D("exp_table", _n_exp_intervals + 1, 2);
         double x1 = min_val;
         double y1 = 1.0 - Kokkos::exp(x1);
         for (size_t i = 0; i < _n_exp_intervals + 1; i++) {
             double x2 = x1 + dx;
             double y2 = 1.0 - Kokkos::exp(x2);
-            _h_exp_table(i, 0) = static_cast<float>((y2 - y1) * _exp_rdx);
-            _h_exp_table(i, 1) = static_cast<float>(y1 - _h_exp_table(i, 0) * x1);
+            _h_exp_table(i, 0) = static_cast<RealType>((y2 - y1) * _exp_rdx);
+            _h_exp_table(i, 1) = static_cast<RealType>(y1 - _h_exp_table(i, 0) * x1);
             x1 = x2;
             y1 = y2;
         }
@@ -274,14 +274,14 @@ KokkosMOC<ExecutionSpace>::KokkosMOC(const ArgumentParser& args) :
     Kokkos::deep_copy(_d_old_angflux, _h_old_angflux);
 
     if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
-        _d_thread_scalar_flux = DViewFloat3D("thread_scalar_flux", ExecutionSpace::concurrency(), _nfsr, _ng);
+        _d_thread_scalar_flux = DViewReal3D("thread_scalar_flux", ExecutionSpace::concurrency(), _nfsr, _ng);
     }
     Kokkos::Profiling::popRegion();
 }
 
 // Implement other methods with template prefix
-template <typename ExecutionSpace>
-void KokkosMOC<ExecutionSpace>::_read_rays() {
+template <typename ExecutionSpace, typename RealType>
+void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
     Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC _read_rays " + _device);
     auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
 
@@ -359,73 +359,73 @@ void KokkosMOC<ExecutionSpace>::_read_rays() {
 }
 
 // Get the total cross sections for each FSR from the library
-template <typename ExecutionSpace>
-void KokkosMOC<ExecutionSpace>::_get_xstr(
+template <typename ExecutionSpace, typename RealType>
+void KokkosMOC<ExecutionSpace, RealType>::_get_xstr(
     const int num_fsr,
     const std::vector<int>& fsr_mat_id,
     const c5g7_library& library
 ) {
-    _h_xstr = HViewFloat2D("xstr", num_fsr, library.get_num_groups());
+    _h_xstr = HViewReal2D("xstr", num_fsr, library.get_num_groups());
     for (auto i = 0; i < fsr_mat_id.size(); i++) {
         auto transport_xs = library.total(fsr_mat_id[i]);
         for (int g = 0; g < library.get_num_groups(); g++) {
-            _h_xstr(i, g) = static_cast<float>(transport_xs[g]);
+            _h_xstr(i, g) = static_cast<RealType>(transport_xs[g]);
         }
     }
 }
 
 // Get the nu-fission cross sections for each FSR from the library
-template <typename ExecutionSpace>
-void KokkosMOC<ExecutionSpace>::_get_xsnf(
+template <typename ExecutionSpace, typename RealType>
+void KokkosMOC<ExecutionSpace, RealType>::_get_xsnf(
     const int num_fsr,
     const std::vector<int>& fsr_mat_id,
     const c5g7_library& library
 ) {
-    _h_xsnf = HViewFloat2D("xsnf", num_fsr, library.get_num_groups());
+    _h_xsnf = HViewReal2D("xsnf", num_fsr, library.get_num_groups());
     for (auto i = 0; i < fsr_mat_id.size(); i++) {
         auto nufiss_xs = library.nufiss(fsr_mat_id[i]);
         for (int g = 0; g < library.get_num_groups(); g++) {
-            _h_xsnf(i, g) = static_cast<float>(nufiss_xs[g]);
+            _h_xsnf(i, g) = static_cast<RealType>(nufiss_xs[g]);
         }
     }
 }
 
 // Get the chi for each FSR from the library
-template <typename ExecutionSpace>
-void KokkosMOC<ExecutionSpace>::_get_xsch(
+template <typename ExecutionSpace, typename RealType>
+void KokkosMOC<ExecutionSpace, RealType>::_get_xsch(
     const int num_fsr,
     const std::vector<int>& fsr_mat_id,
     const c5g7_library& library
 ) {
-    _h_xsch = HViewFloat2D("xsch", num_fsr, library.get_num_groups());
+    _h_xsch = HViewReal2D("xsch", num_fsr, library.get_num_groups());
     for (auto i = 0; i < fsr_mat_id.size(); i++) {
         auto chi = library.chi(fsr_mat_id[i]);
         for (int g = 0; g < library.get_num_groups(); g++) {
-            _h_xsch(i, g) = static_cast<float>(chi[g]);
+            _h_xsch(i, g) = static_cast<RealType>(chi[g]);
         }
     }
 }
 
 // Get the scattering cross sections for each FSR from the library
-template <typename ExecutionSpace>
-void KokkosMOC<ExecutionSpace>::_get_xssc(
+template <typename ExecutionSpace, typename RealType>
+void KokkosMOC<ExecutionSpace, RealType>::_get_xssc(
     const int num_fsr,
     const std::vector<int>& fsr_mat_id,
     const c5g7_library& library
 ) {
-    _h_xssc = HViewFloat3D("xssc", num_fsr, library.get_num_groups(), library.get_num_groups());
+    _h_xssc = HViewReal3D("xssc", num_fsr, library.get_num_groups(), library.get_num_groups());
     for (auto i = 0; i < fsr_mat_id.size(); i++) {
         for (int g = 0; g < library.get_num_groups(); g++) {
             for (int g2 = 0; g2 < library.get_num_groups(); g2++) {
-                _h_xssc(i, g, g2) = static_cast<float>(library.scat(fsr_mat_id[i], g, g2));
+                _h_xssc(i, g, g2) = static_cast<RealType>(library.scat(fsr_mat_id[i], g, g2));
             }
         }
     }
 }
 
 // Build the fission source term for each FSR based on the scalar flux and nu-fission cross sections
-template <typename ExecutionSpace>
-std::vector<double> KokkosMOC<ExecutionSpace>::fission_source(const double keff) const {
+template <typename ExecutionSpace, typename RealType>
+std::vector<double> KokkosMOC<ExecutionSpace, RealType>::fission_source(const double keff) const {
     Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC fission source " + _device);
     std::vector<double> fissrc(_nfsr, 0.0);
     for (size_t i = 0; i < _nfsr; i++) {
@@ -438,8 +438,8 @@ std::vector<double> KokkosMOC<ExecutionSpace>::fission_source(const double keff)
 }
 
 // Build the total source term for each FSR based on the fission source and scattering cross sections
-template <typename ExecutionSpace>
-void KokkosMOC<ExecutionSpace>::update_source(const std::vector<double>& fissrc) {
+template <typename ExecutionSpace, typename RealType>
+void KokkosMOC<ExecutionSpace, RealType>::update_source(const std::vector<double>& fissrc) {
     Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC update source " + _device);
     int _nfsr = _h_scalar_flux.extent(0);
     int ng = _h_scalar_flux.extent(1);
@@ -461,16 +461,16 @@ void KokkosMOC<ExecutionSpace>::update_source(const std::vector<double>& fissrc)
 }
 
 // General template implementation (fallback)
-template <typename ExecutionSpace>
-Kokkos::TeamPolicy<ExecutionSpace> KokkosMOC<ExecutionSpace>::_configure_team_policy(int n_rays, int npol, int ng) {
+template <typename ExecutionSpace, typename RealType>
+Kokkos::TeamPolicy<ExecutionSpace> KokkosMOC<ExecutionSpace, RealType>::_configure_team_policy(int n_rays, int npol, int ng) {
     // Default implementation for any unspecialized execution space
     const int n_teams = static_cast<long int>(n_rays) *  npol * ng;
     return Kokkos::TeamPolicy<ExecutionSpace>(n_teams, 1, 1);
 }
 
 #ifdef KOKKOS_ENABLE_CUDA
-template <>
-Kokkos::TeamPolicy<Kokkos::Cuda> KokkosMOC<Kokkos::Cuda>::_configure_team_policy(int n_rays, int npol, int ng) {
+template <typename RealType>
+Kokkos::TeamPolicy<Kokkos::Cuda> KokkosMOC<Kokkos::Cuda, RealType>::_configure_team_policy(int n_rays, int npol, int ng) {
     const int n_teams = static_cast<long int>(n_rays);
     const int team_size = npol * ng;
     return Kokkos::TeamPolicy<Kokkos::Cuda>(n_teams, team_size, 1);
@@ -506,21 +506,21 @@ struct RayIndexCalculator<Kokkos::Cuda> {
 };
 #endif
 
-template <typename ExecutionSpace>
+template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
 void compute_exparg(int iray, int ig, int ipol,
-                    const Kokkos::View<const float**, ExecutionSpace>& exp_table,
-                    int n_intervals, float rdx,
-                    Kokkos::View<float*, typename ExecutionSpace::scratch_memory_space>& exparg,
-                    const Kokkos::View<const float**, ExecutionSpace>& xstr,
+                    const Kokkos::View<const RealType**, ExecutionSpace>& exp_table,
+                    int n_intervals, RealType rdx,
+                    Kokkos::View<RealType*, typename ExecutionSpace::scratch_memory_space>& exparg,
+                    const Kokkos::View<const RealType**, ExecutionSpace>& xstr,
                     const Kokkos::View<const int*, ExecutionSpace>& ray_fsrs,
-                    const Kokkos::View<const float*, ExecutionSpace>& ray_segments,
-                    const Kokkos::View<const float*, ExecutionSpace>& rsinpolang,
+                    const Kokkos::View<const RealType*, ExecutionSpace>& ray_segments,
+                    const Kokkos::View<const RealType*, ExecutionSpace>& rsinpolang,
                     const Kokkos::View<const int*, ExecutionSpace>& ray_nsegs)
 {
     for (int iseg = ray_nsegs(iray); iseg < ray_nsegs(iray + 1); iseg++) {
         int local_seg = iseg - ray_nsegs(iray);
-        float val = -xstr(ray_fsrs(iseg), ig) * ray_segments(iseg) * rsinpolang(ipol);
+        RealType val = -xstr(ray_fsrs(iseg), ig) * ray_segments(iseg) * rsinpolang(ipol);
         int i = Kokkos::floor(val * rdx) + n_intervals + 1;
         if (i >= 0 && i < n_intervals + 1) {
             exparg(local_seg) = exp_table(i, 0) * val + exp_table(i, 1);
@@ -533,85 +533,64 @@ void compute_exparg(int iray, int ig, int ipol,
 }
 
 #ifdef KOKKOS_ENABLE_CUDA
-template <>
+template <typename RealType>
 KOKKOS_INLINE_FUNCTION
 void compute_exparg<Kokkos::Cuda>(int iray, int ig, int ipol,
-                    const Kokkos::View<const float**, Kokkos::Cuda>& exp_table,
-                    int n_intervals, float rdx,
-                    Kokkos::View<float*, typename Kokkos::Cuda::scratch_memory_space>& exparg,
-                    const Kokkos::View<const float**, Kokkos::Cuda>& xstr,
+                    const Kokkos::View<const RealType**, Kokkos::Cuda>& exp_table,
+                    int n_intervals, RealType rdx,
+                    Kokkos::View<RealType*, typename Kokkos::Cuda::scratch_memory_space>& exparg,
+                    const Kokkos::View<const RealType**, Kokkos::Cuda>& xstr,
                     const Kokkos::View<const int*, Kokkos::Cuda>& ray_fsrs,
-                    const Kokkos::View<const float*, Kokkos::Cuda>& ray_segments,
-                    const Kokkos::View<const float*, Kokkos::Cuda>& rsinpolang,
+                    const Kokkos::View<const RealType*, Kokkos::Cuda>& ray_segments,
+                    const Kokkos::View<const RealType*, Kokkos::Cuda>& rsinpolang,
                     const Kokkos::View<const int*, Kokkos::Cuda>& ray_nsegs)
 {
     return;
 }
 #endif
 
-template <typename ExecutionSpace>
+template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
-float eval_exp_arg(const Kokkos::View<float*, typename ExecutionSpace::scratch_memory_space>& exparg,
-                    const int iseg, const float xstr, const float ray_segment, const float rsinpolang)
+RealType eval_exp_arg(const Kokkos::View<RealType*, typename ExecutionSpace::scratch_memory_space>& exparg,
+                    const int iseg, const RealType xstr, const RealType ray_segment, const RealType rsinpolang)
 {
     return exparg(iseg);
 }
 
 #ifdef KOKKOS_ENABLE_CUDA
-template <>
+template <typename RealType>
 KOKKOS_INLINE_FUNCTION
-float eval_exp_arg<Kokkos::Cuda>(const Kokkos::View<float*, typename Kokkos::Cuda::scratch_memory_space>& exparg,
-                    const int iseg, const float xstr, const float ray_segment, const float rsinpolang)
+RealType eval_exp_arg<Kokkos::Cuda, RealType>(const Kokkos::View<RealType*, typename Kokkos::Cuda::scratch_memory_space>& exparg,
+                    const int iseg, const RealType xstr, const RealType ray_segment, const RealType rsinpolang)
 {
-    return 1.0f - Kokkos::exp(-xstr * ray_segment * rsinpolang);
+    return static_cast<RealType>(1.0) - Kokkos::exp(-xstr * ray_segment * rsinpolang);
 }
 #endif
 
-template <typename ExecutionSpace>
+template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
 void tally_scalar_flux(
     Kokkos::View<double**, typename ExecutionSpace::array_layout, typename ExecutionSpace::memory_space> flux,
-    Kokkos::View<float***, typename ExecutionSpace::array_layout, typename ExecutionSpace::memory_space> threaded_flux,
+    Kokkos::View<RealType***, typename ExecutionSpace::array_layout, typename ExecutionSpace::memory_space> threaded_flux,
     const int ireg,
     const int ig,
     const double contribution
 ) {
-    Kokkos::atomic_add(&flux(ireg, ig), contribution);
-}
-
-#ifdef KOKKOS_ENABLE_SERIAL
-template <>
-KOKKOS_INLINE_FUNCTION
-void tally_scalar_flux<Kokkos::Serial>(
-    Kokkos::View<double**, typename Kokkos::Serial::array_layout, typename Kokkos::Serial::memory_space> flux,
-    Kokkos::View<float***, typename Kokkos::Serial::array_layout, typename Kokkos::Serial::memory_space> threaded_flux,
-    const int ireg,
-    const int ig,
-    const double contribution
-) {
-    flux(ireg, ig) += contribution;
-}
-#endif
-
 #ifdef KOKKOS_ENABLE_OPENMP
-template <>
-KOKKOS_INLINE_FUNCTION
-void tally_scalar_flux<Kokkos::OpenMP>(
-    Kokkos::View<double**, typename Kokkos::OpenMP::array_layout, typename Kokkos::OpenMP::memory_space> flux,
-    Kokkos::View<float***, typename Kokkos::OpenMP::array_layout, typename Kokkos::OpenMP::memory_space> threaded_flux,
-    const int ireg,
-    const int ig,
-    const double contribution
-) {
-    threaded_flux(omp_get_thread_num(), ireg, ig) += static_cast<float>(contribution);
-}
+    if constexpr (std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
+        threaded_flux(omp_get_thread_num(), ireg, ig) += static_cast<RealType>(contribution);
+    } else
 #endif
+    {
+        Kokkos::atomic_add(&flux(ireg, ig), contribution);
+    }
+}
 
 // Unified implementation of sweep
-template <typename ExecutionSpace>
-void KokkosMOC<ExecutionSpace>::sweep() {
+template <typename ExecutionSpace, typename RealType>
+void KokkosMOC<ExecutionSpace, RealType>::sweep() {
     Kokkos::Profiling::pushRegion("KokkosMOC::Sweep " + _device);
-    using ScratchViewFloat1D = Kokkos::View<float*, typename ExecutionSpace::scratch_memory_space>;
+    using ScratchViewReal1D = Kokkos::View<RealType*, typename ExecutionSpace::scratch_memory_space>;
     Kokkos::deep_copy(_d_old_angflux, _h_old_angflux);
 
     auto& scalar_flux = _d_scalar_flux;
@@ -653,7 +632,7 @@ void KokkosMOC<ExecutionSpace>::sweep() {
 
     // Add scratch space for exponential arguments
     if (_device != "cuda") {
-        size_t scratch_size = ScratchViewFloat1D::shmem_size(_max_segments);
+        size_t scratch_size = ScratchViewReal1D::shmem_size(_max_segments);
         policy = policy.set_scratch_size(0, Kokkos::PerTeam(scratch_size));
     }
 
@@ -669,16 +648,16 @@ void KokkosMOC<ExecutionSpace>::sweep() {
         int nsegs = ray_nsegs(iray + 1) - ray_nsegs(iray);
 
         // Create thread-local exparg array for non-CUDA execution spaces using scratch space
-        ScratchViewFloat1D exparg(teamMember.team_scratch(0), nsegs);
-        compute_exparg<ExecutionSpace>(iray, ig, ipol, exp_table, n_exp_intervals, exp_rdx, exparg,
-                                       xstr, ray_fsrs, ray_segments, rsinpolang, ray_nsegs);
+        ScratchViewReal1D exparg(teamMember.team_scratch(0), nsegs);
+        compute_exparg<ExecutionSpace, RealType>(iray, ig, ipol, exp_table, n_exp_intervals, exp_rdx, exparg,
+                                       xstr, ray_fsrs, segment_data, rsinpolang, ray.nsegs);
 
         int global_seg, ireg1, ireg2;
         int iseg2 = nsegs;
         double phid;
         // Create temporary arrays for segment flux
-        float fsegflux = old_angflux(ray.bc_frwd_start, ipol, ig);
-        float bsegflux = old_angflux(ray.bc_bkwd_start, ipol, ig);
+        RealType fsegflux = old_angflux(ray.bc_frwd_start, ipol, ig);
+        RealType bsegflux = old_angflux(ray.bc_bkwd_start, ipol, ig);
 
         // Rest of the sweep implementation remains the same
         for (int iseg1 = 0; iseg1 < nsegs; iseg1++) {
@@ -686,10 +665,10 @@ void KokkosMOC<ExecutionSpace>::sweep() {
             global_seg = ray_nsegs(iray) + iseg1;
             ireg1 = ray_fsrs(global_seg);
             phid = (fsegflux - source(ireg1, ig)) *
-                   eval_exp_arg<ExecutionSpace>(exparg, iseg1, xstr(ireg1, ig),
+                   eval_exp_arg<ExecutionSpace, RealType>(exparg, iseg1, xstr(ireg1, ig),
                                                 ray_segments(global_seg), rsinpolang(ipol));
             fsegflux -= phid;
-            tally_scalar_flux<ExecutionSpace>(
+            tally_scalar_flux<ExecutionSpace, RealType>(
                 scalar_flux,
                 threaded_scalar_flux,
                 ireg1,
@@ -701,10 +680,10 @@ void KokkosMOC<ExecutionSpace>::sweep() {
             global_seg = ray_nsegs(iray) + iseg2 - 1;
             ireg2 = ray_fsrs(global_seg);
             phid = (bsegflux - source(ireg2, ig)) *
-                   eval_exp_arg<ExecutionSpace>(exparg, iseg2 - 1, xstr(ireg2, ig),
+                   eval_exp_arg<ExecutionSpace, RealType>(exparg, iseg2 - 1, xstr(ireg2, ig),
                                                 ray_segments(global_seg), rsinpolang(ipol));
             bsegflux -= phid;
-            tally_scalar_flux<ExecutionSpace>(
+            tally_scalar_flux<ExecutionSpace, RealType>(exparg, iseg2 - 1, xstr(ireg2, ig),
                 scalar_flux,
                 threaded_scalar_flux,
                 ireg2,
@@ -744,13 +723,16 @@ void KokkosMOC<ExecutionSpace>::sweep() {
 
 // Explicit template instantiations
 #ifdef KOKKOS_ENABLE_SERIAL
-template class KokkosMOC<Kokkos::Serial>;
+template class KokkosMOC<Kokkos::Serial, float>;
+template class KokkosMOC<Kokkos::Serial, double>;
 #endif
 
 #ifdef KOKKOS_ENABLE_OPENMP
-template class KokkosMOC<Kokkos::OpenMP>;
+template class KokkosMOC<Kokkos::OpenMP, float>;
+template class KokkosMOC<Kokkos::OpenMP, double>;
 #endif
 
 #ifdef KOKKOS_ENABLE_CUDA
-template class KokkosMOC<Kokkos::Cuda>;
+template class KokkosMOC<Kokkos::Cuda, float>;
+template class KokkosMOC<Kokkos::Cuda, double>;
 #endif

@@ -9,24 +9,20 @@
 
 static constexpr double fourpi = 4.0 * M_PI;
 
-template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace, typename RealType = float>
 class KokkosMOC : public BaseMOC {
     using layout = typename ExecutionSpace::array_layout;
     using MemorySpace = typename ExecutionSpace::memory_space;
     using HViewInt1D = Kokkos::View<int*, layout, Kokkos::HostSpace>;
-    using HViewDouble1D = Kokkos::View<double*, layout, Kokkos::HostSpace>;
     using HViewDouble2D = Kokkos::View<double**, layout, Kokkos::HostSpace>;
-    using HViewDouble3D = Kokkos::View<double***, layout, Kokkos::HostSpace>;
-    using HViewFloat1D = Kokkos::View<float*, layout, Kokkos::HostSpace>;
-    using HViewFloat2D = Kokkos::View<float**, layout, Kokkos::HostSpace>;
-    using HViewFloat3D = Kokkos::View<float***, layout, Kokkos::HostSpace>;
+    using HViewReal1D = Kokkos::View<RealType*, layout, Kokkos::HostSpace>;
+    using HViewReal2D = Kokkos::View<RealType**, layout, Kokkos::HostSpace>;
+    using HViewReal3D = Kokkos::View<RealType***, layout, Kokkos::HostSpace>;
     using DViewInt1D = Kokkos::View<int*, layout, MemorySpace>;
-    using DViewDouble1D = Kokkos::View<double*, layout, MemorySpace>;
     using DViewDouble2D = Kokkos::View<double**, layout, MemorySpace>;
-    using DViewDouble3D = Kokkos::View<double***, layout, MemorySpace>;
-    using DViewFloat1D = Kokkos::View<float*, layout, MemorySpace>;
-    using DViewFloat2D = Kokkos::View<float**, layout, MemorySpace>;
-    using DViewFloat3D = Kokkos::View<float***, layout, MemorySpace>;
+    using DViewReal1D = Kokkos::View<RealType*, layout, MemorySpace>;
+    using DViewReal2D = Kokkos::View<RealType**, layout, MemorySpace>;
+    using DViewReal3D = Kokkos::View<RealType***, layout, MemorySpace>;
 
     // Friend declaration for googletest
     friend class BasicTest_test_kokkos_exp_table_Test;
@@ -88,29 +84,29 @@ class KokkosMOC : public BaseMOC {
         int _npol;  // Number of polar angles
         int _ng;  // Number of energy groups
         int _n_exp_intervals;  // Number of exponential table intervals
-        float _exp_rdx;  // Exponential table inverse spacing
+        RealType _exp_rdx;  // Exponential table inverse spacing
 
         // Geometry host data
-        float _plane_height;  // Height of the plane
-        HViewFloat1D _h_fsr_vol;
-        HViewFloat2D _h_xstr;
-        HViewFloat2D _h_xsnf;
-        HViewFloat2D _h_xsch;
-        HViewFloat3D _h_xssc;
-        std::vector<float> _ray_spacing;
-        HViewFloat2D _h_angle_weights;
-        HViewFloat1D _h_rsinpolang;
-        HViewFloat2D _h_exp_table;
+        RealType _plane_height;  // Height of the plane
+        HViewReal1D _h_fsr_vol;
+        HViewReal2D _h_xstr;
+        HViewReal2D _h_xsnf;
+        HViewReal2D _h_xsch;
+        HViewReal3D _h_xssc;
+        std::vector<RealType> _ray_spacing;
+        HViewReal2D _h_angle_weights;
+        HViewReal1D _h_rsinpolang;
+        HViewReal2D _h_exp_table;
 
         // Geometry device data
-        DViewFloat1D _d_fsr_vol;
-        DViewFloat2D _d_xstr;
-        DViewFloat2D _d_xsnf;
-        DViewFloat2D _d_xsch;
-        DViewFloat3D _d_xssc;
-        DViewFloat2D _d_angle_weights;
-        DViewFloat1D _d_rsinpolang;
-        DViewFloat2D _d_exp_table;
+        DViewReal1D _d_fsr_vol;
+        DViewReal2D _d_xstr;
+        DViewReal2D _d_xsnf;
+        DViewReal2D _d_xsch;
+        DViewReal3D _d_xssc;
+        DViewReal2D _d_angle_weights;
+        DViewReal1D _d_rsinpolang;
+        DViewReal2D _d_exp_table;
 
         // Ray host data
         int _n_rays;  // Number of rays
@@ -140,14 +136,14 @@ class KokkosMOC : public BaseMOC {
 
         // Solution host data
         HViewDouble2D _h_scalar_flux;
-        HViewFloat2D _h_source;
-        HViewFloat3D _h_angflux;
-        HViewFloat3D _h_old_angflux;
+        HViewReal2D _h_source;
+        HViewReal3D _h_angflux;
+        HViewReal3D _h_old_angflux;
 
         // Solution device data
         DViewDouble2D _d_scalar_flux;
-        DViewFloat2D _d_source;
-        DViewFloat3D _d_angflux;
-        DViewFloat3D _d_old_angflux;
-        DViewFloat3D _d_thread_scalar_flux;
+        DViewReal2D _d_source;
+        DViewReal3D _d_angflux;
+        DViewReal3D _d_old_angflux;
+        DViewReal3D _d_thread_scalar_flux;
 };
