@@ -122,6 +122,8 @@ int main(int argc, char* argv[]) {
     // Set up the sweeper
     std::shared_ptr<BaseMOC> sweeper;
     std::string device_type = parser.get_option("device");
+    std::string precision = parser.get_option("precision");
+    std::cout << "Creating sweeper type " << sweeper_type << " targeting device " << device_type << " and " << precision << " precision" << std::endl;
 
     if (sweeper_type == "kokkos") {
         if (device_type == "serial") {
