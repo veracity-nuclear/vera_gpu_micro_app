@@ -22,6 +22,18 @@ std::shared_ptr<BaseMOC> create_kokkos_moc_with_precision(const ArgumentParser& 
     }
 }
 
+// Helper function to create SerialMOC with specified precision
+std::shared_ptr<BaseMOC> create_serial_moc_with_precision(const ArgumentParser& parser) {
+    std::string precision = parser.get_option("precision");
+    if (precision == "single") {
+        return std::make_shared<SerialMOC<float>>(parser);
+    } else if (precision == "double") {
+        return std::make_shared<SerialMOC<double>>(parser);
+    } else {
+        throw std::runtime_error("Unsupported precision: " + precision);
+    }
+}
+
 int main(int argc, char* argv[]) {
   Kokkos::initialize(argc, argv);
   {
@@ -154,7 +166,7 @@ int main(int argc, char* argv[]) {
             throw std::runtime_error("Unsupported Kokkos execution space: " + device_type);
         }
     } else if (sweeper_type == "serial") {
-        sweeper = std::make_shared<SerialMOC>(parser);
+        sweeper = create_serial_moc_with_precision(parser);
     }
 
     // Pass by reference to EigenSolver

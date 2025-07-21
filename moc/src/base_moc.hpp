@@ -29,6 +29,31 @@ class AngFluxBCFace
         };
 };
 
+// Templated version for precision control
+template <typename RealType>
+class AngFluxBCFaceT
+{
+    public:
+        // A 3D vector to hold the angular flux values, indexed by boundary condition, polar angle, and group
+        std::vector<std::vector<std::vector<RealType>>> _angflux;
+        // Default constructor
+        AngFluxBCFaceT() = default;
+        // Constructor that initializes the angular flux to 0.0 with a specified size
+        AngFluxBCFaceT(int nbc, int npol, int ng) {_resize_angflux(nbc, npol, ng, static_cast<RealType>(0.0));};
+        // Constructor that initializes the angular flux to a value with a specified size
+        AngFluxBCFaceT(int nbc, int npol, int ng, RealType val) {_resize_angflux(nbc, npol, ng, val);};
+    private:
+        void _resize_angflux(int nbc, int npol, int ng, RealType val) {
+            _angflux.resize(nbc);
+            for (size_t i = 0; i < nbc; i++) {
+                _angflux[i].resize(npol);
+                for (size_t j = 0; j < npol; j++) {
+                    _angflux[i][j].resize(ng, val);
+                }
+            }
+        };
+};
+
 // Defines the angular flux boundary condition for a single azimuthal angle
 class AngFluxBCAngle
 {
@@ -39,6 +64,21 @@ class AngFluxBCAngle
         AngFluxBCAngle() = default;
         // Constructor that initializes the faces vector with a specified number of faces
         AngFluxBCAngle(int nfaces) {
+           faces.resize(nfaces);
+        };
+};
+
+// Templated version for precision control
+template <typename RealType>
+class AngFluxBCAngleT
+{
+    public:
+        // A vector of faces, each containing the angular flux for that face
+        std::vector<AngFluxBCFaceT<RealType>> faces;
+        // Default constructor
+        AngFluxBCAngleT() = default;
+        // Constructor that initializes the faces vector with a specified number of faces
+        AngFluxBCAngleT(int nfaces) {
            faces.resize(nfaces);
         };
 };
