@@ -9,6 +9,19 @@
 #include "kokkos_moc.hpp"
 #include "eigen_solver.hpp"
 
+// Helper template function to create KokkosMOC with specified precision
+template<typename ExecutionSpace>
+std::shared_ptr<BaseMOC> create_kokkos_moc_with_precision(const ArgumentParser& parser) {
+    std::string precision = parser.get_option("precision");
+    if (precision == "single") {
+        return std::make_shared<KokkosMOC<ExecutionSpace, float>>(parser);
+    } else if (precision == "double") {
+        return std::make_shared<KokkosMOC<ExecutionSpace, double>>(parser);
+    } else {
+        throw std::runtime_error("Unsupported precision: " + precision);
+    }
+}
+
 int main(int argc, char* argv[]) {
   Kokkos::initialize(argc, argv);
   {
@@ -98,6 +111,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Verbose: " << (parser.get_flag("verbose") ? "true" : "false") << std::endl;
         std::cout << "Sweeper: " << parser.get_option("sweeper") << std::endl;
         std::cout << "Device: " << parser.get_option("device") << std::endl;
+        std::cout << "Precision: " << parser.get_option("precision") << std::endl;
     } else {
         if (sweeper_type == "kokkos") {
             std::string device = parser.get_option("device");
@@ -112,7 +126,7 @@ int main(int argc, char* argv[]) {
     if (sweeper_type == "kokkos") {
         if (device_type == "serial") {
             #ifdef KOKKOS_ENABLE_SERIAL
-            sweeper = std::make_shared<KokkosMOC<Kokkos::Serial>>(parser);
+            sweeper = create_kokkos_moc_with_precision<Kokkos::Serial>(parser);
             #else
             std::cerr << "Serial execution space not enabled in Kokkos!" << std::endl;
             Kokkos::finalize();
@@ -120,7 +134,7 @@ int main(int argc, char* argv[]) {
             #endif
         } else if (device_type == "openmp") {
             #ifdef KOKKOS_ENABLE_OPENMP
-            sweeper = std::make_shared<KokkosMOC<Kokkos::OpenMP>>(parser);
+            sweeper = create_kokkos_moc_with_precision<Kokkos::OpenMP>(parser);
             #else
             std::cerr << "OpenMP execution space not enabled in Kokkos!" << std::endl;
             Kokkos::finalize();
@@ -128,7 +142,7 @@ int main(int argc, char* argv[]) {
             #endif
         } else if (device_type == "cuda") {
             #ifdef KOKKOS_ENABLE_CUDA
-            sweeper = std::make_shared<KokkosMOC<Kokkos::Cuda>>(parser);
+            sweeper = create_kokkos_moc_with_precision<Kokkos::Cuda>(parser);
             #else
             std::cerr << "CUDA execution space not enabled in Kokkos!" << std::endl;
             Kokkos::finalize();
