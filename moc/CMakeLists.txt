@@ -32,11 +32,15 @@ set(TEST_EXECUTABLES
     test_serial_moc_1region_16angle
     test_mixed_bcs
     test_serial_moc_pin
-    test_kokkos_moc_pin_omp4
-    test_kokkos_moc_pin_serial
+    test_kokkos_moc_pin_omp4_single
+    test_kokkos_moc_pin_serial_single
+    test_kokkos_moc_pin_omp4_double
+    test_kokkos_moc_pin_serial_double
     test_serial_moc_7x7
-    test_kokkos_moc_7x7_serial
-    test_kokkos_moc_7x7_omp4
+    test_kokkos_moc_7x7_serial_single
+    test_kokkos_moc_7x7_omp4_single
+    test_kokkos_moc_7x7_serial_double
+    test_kokkos_moc_7x7_omp4_double
     heavy_test_serial_moc_mini-core
 )
 SET(TEST_LABELS
@@ -48,6 +52,10 @@ SET(TEST_LABELS
     "CONTINUOUS\;HEAVY"
     "CONTINUOUS\;HEAVY"
     "CONTINUOUS\;HEAVY"
+    "CONTINUOUS\;HEAVY"
+    "CONTINUOUS\;HEAVY"
+    "HEAVY"
+    "HEAVY"
     "HEAVY"
     "HEAVY"
     "HEAVY"
