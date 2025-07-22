@@ -37,9 +37,6 @@ class KokkosMOC : public BaseMOC {
         // Unified implementation of MOC sweep for any execution space
         void _impl_sweep();
 
-        // Configure team policy based on execution space
-        Kokkos::TeamPolicy<ExecutionSpace> _configure_team_policy(int n_rays, int npol, int ng);
-
         // Get the FSR volumes
         std::vector<double> fsr_vol() const override {
             std::vector<double> result(_nfsr);
