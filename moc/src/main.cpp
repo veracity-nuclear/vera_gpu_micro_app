@@ -12,7 +12,6 @@
 int main(int argc, char* argv[]) {
   Kokkos::initialize(argc, argv);
   {
-
     // Create argument parser with pre-configured arguments
     ArgumentParser parser = ArgumentParser::vera_gpu_moc_parser(argv[0]);
 
@@ -20,10 +19,9 @@ int main(int argc, char* argv[]) {
     if (!parser.parse(argc, argv)) {
         Kokkos::finalize();
         return 1;
-
     }
 
-    // Get the verbosity
+    // Get the verbosity and print execution spaces if needed
     bool verbose = parser.get_flag("verbose");
 
     {
@@ -107,24 +105,48 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Get a vector of arguments compatible with the original EigenSolver constructor
-    std::vector<std::string> solver_args = parser.get_args(argv[0]);
-
     // Set up the sweeper
     std::shared_ptr<BaseMOC> sweeper;
+    std::string device_type = parser.get_option("device");
+
     if (sweeper_type == "kokkos") {
-      sweeper = std::make_shared<KokkosMOC>(parser);
+        if (device_type == "serial") {
+            #ifdef KOKKOS_ENABLE_SERIAL
+            sweeper = std::make_shared<KokkosMOC<Kokkos::Serial>>(parser);
+            #else
+            std::cerr << "Serial execution space not enabled in Kokkos!" << std::endl;
+            Kokkos::finalize();
+            return 1;
+            #endif
+        } else if (device_type == "openmp") {
+            #ifdef KOKKOS_ENABLE_OPENMP
+            sweeper = std::make_shared<KokkosMOC<Kokkos::OpenMP>>(parser);
+            #else
+            std::cerr << "OpenMP execution space not enabled in Kokkos!" << std::endl;
+            Kokkos::finalize();
+            return 1;
+            #endif
+        } else if (device_type == "cuda") {
+            #ifdef KOKKOS_ENABLE_CUDA
+            sweeper = std::make_shared<KokkosMOC<Kokkos::Cuda>>(parser);
+            #else
+            std::cerr << "CUDA execution space not enabled in Kokkos!" << std::endl;
+            Kokkos::finalize();
+            return 1;
+            #endif
+        } else {
+            throw std::runtime_error("Unsupported Kokkos execution space: " + device_type);
+        }
     } else if (sweeper_type == "serial") {
-      sweeper = std::make_shared<SerialMOC>(parser);
+        sweeper = std::make_shared<SerialMOC>(parser);
     }
 
     // Pass by reference to EigenSolver
-    EigenSolver eigen_solver(solver_args, sweeper);
+    EigenSolver eigen_solver(parser, sweeper);
 
     // Use the eigen_solver
     eigen_solver.solve();
     std::cout << "Final keff: " << eigen_solver.keff() << std::endl;
-
   }
   Kokkos::finalize();
   return 0;

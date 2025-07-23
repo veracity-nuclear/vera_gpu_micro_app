@@ -6,7 +6,7 @@ ExpTable::ExpTable() {
     _exp_table.resize(_n_intervals + 1, {0.0, 0.0});
     double x1 = _min_val;
     double y1 = 1.0 - std::exp(x1);
-    for (int i = 0; i < _n_intervals + 1; ++i) {
+    for (int i = 0; i < _n_intervals + 1; i++) {
         double x2 = x1 + dx;
         double y2 = 1.0 - std::exp(x2);
         _exp_table[i][0] = (y2 - y1) * _rdx;
