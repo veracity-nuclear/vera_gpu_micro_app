@@ -70,8 +70,8 @@ SerialMOC::SerialMOC(const ArgumentParser& args) :
             _xssc[i].resize(_ng);
             for (int to = 0; to < _ng; to++) {
                 _xstr[i][to] = xstr[ixsr - 1][to];
-                _xsnf[i][to] = xstr[ixsr - 1][to];
-                _xsch[i][to] = xstr[ixsr - 1][to];
+                _xsnf[i][to] = xsnf[ixsr - 1][to];
+                _xsch[i][to] = xsch[ixsr - 1][to];
                 _xssc[i][to].resize(_ng);
                 for (int from = 0; from < _ng; from++) {
                     _xssc[i][to][from] = xssc[ixsr - 1][to][from];
