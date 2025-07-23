@@ -191,7 +191,7 @@ TEST(surf2CellToCell2Surf, test)
     Kokkos::deep_copy(d_surf2CellView, h_surf2CellView);
 
     cmfdData.surf2Cell = d_surf2CellView;
-    cmfdData.buildCellToPosSurfMapping();
+    cmfdData.buildCellToSurfsMapping();
 
     auto h_cell2PosSurf = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), cmfdData.cell2PosSurf);
     for (size_t i = 0; i < cmfdData.nCells; ++i) {

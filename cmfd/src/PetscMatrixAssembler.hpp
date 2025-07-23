@@ -134,13 +134,13 @@ struct COOMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExecu
 };
 
 // Uses Kokkos views to assemble a matrix in PETSc (CSR Format)
-struct KokkosMatrixAssembler : public PetscMatrixAssembler<>
+struct CSRMatrixAssembler : public PetscMatrixAssembler<>
 {
     using AssemblySpace = Kokkos::DefaultExecutionSpace;
-    using AssemblyMemorySpace = Kokkos::DefaultExecutionSpace::memory_space;
+    using AssemblyMemorySpace = AssemblySpace::memory_space;
 
-    KokkosMatrixAssembler() = default;
-    KokkosMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
+    CSRMatrixAssembler() = default;
+    CSRMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
         : PetscMatrixAssembler<AssemblySpace>(CMFDCoarseMesh) {
             PetscCallCXXAbort(PETSC_COMM_SELF, _assembleM());
         }

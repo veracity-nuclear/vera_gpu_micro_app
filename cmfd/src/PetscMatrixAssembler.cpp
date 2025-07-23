@@ -397,14 +397,14 @@ PetscErrorCode COOMatrixAssembler::_assembleM()
         // Don't want to access self->cmfdData in the lambda, so copy it to a reference
         auto& _cmfdData = cmfdData;
 
-        // Assume each row has maxNNZInRow non-zero entries
+        // (#26) Assume each row has maxNNZInRow non-zero entries
         PetscInt maxNNZEntries = maxNNZInRow * matSize + cmfdData.nPosLeakageSurfs * cmfdData.nGroups;
 
         // Maybe these get assembled on the GPU, copied to the host for MatSetValuesCOO
         // Maybe this changes based on where the matrix is assembled, or does Kokkos handle that?
-        Kokkos::View<PetscInt *, AssemblyMemorySpace> rowIndices("rowIndicesKokkos", maxNNZEntries);
-        Kokkos::View<PetscInt *, AssemblyMemorySpace> colIndices("colIndicesKokkos", maxNNZEntries);
-        Kokkos::View<PetscScalar *, AssemblyMemorySpace> values("valuesKokkos", maxNNZEntries);
+        Kokkos::View<PetscInt *, AssemblyMemorySpace> rowIndices("rowIndicesCOO", maxNNZEntries);
+        Kokkos::View<PetscInt *, AssemblyMemorySpace> colIndices("colIndicesCOO", maxNNZEntries);
+        Kokkos::View<PetscScalar *, AssemblyMemorySpace> values("valuesCOO", maxNNZEntries);
 
         {
             Kokkos::parallel_for("COOMatrixAssembler2: ScatterXS", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<3>>({0, 0, 0}, {cmfdData.nGroups, cmfdData.nGroups, cmfdData.nCells}),
@@ -478,7 +478,7 @@ PetscErrorCode COOMatrixAssembler::_assembleM()
 
             // TODO: This is also not tightly nested and could be optimized
             Kokkos::parallel_for("COOMatrixAssembler2: OutLeakage", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<2>>({0, 0}, {cmfdData.nGroups, cmfdData.nPosLeakageSurfs}),
-            KOKKOS_LAMBDA(const PetscInt groupIdx, const PetscInt nthPosLeakageSurf)
+                KOKKOS_LAMBDA(const PetscInt groupIdx, const PetscInt nthPosLeakageSurf)
             {
                 const PetscInt posSurfIdx = _cmfdData.posLeakageSurfs(nthPosLeakageSurf);
                 const PetscInt negCellIdx = _cmfdData.surf2Cell(posSurfIdx, 1);
@@ -494,11 +494,10 @@ PetscErrorCode COOMatrixAssembler::_assembleM()
                     colIndices(locationIn1D) = negCellMatIdx;
                     values(locationIn1D) = dhat + dtilde;
                 }
-
-            }
-        );
+            });
     }
 
+        Kokkos::fence();
         PetscCall(MatSetPreallocationCOO(MMat, maxNNZEntries, rowIndices.data(), colIndices.data()));
         PetscCall(MatSetValuesCOO(MMat, values.data(), ADD_VALUES));
     }
@@ -510,7 +509,7 @@ PetscErrorCode COOMatrixAssembler::_assembleFission(const FluxView& flux)
 {
     auto& _cmfdData = cmfdData;
 
-    // TODO: Assuming no zeros in the vector. We can optimize based on chi to get the sparsity pattern.
+    // TODO (#26): Assuming no zeros in the vector. We can optimize based on chi to get the sparsity pattern.
     const PetscInt nnz = nRows;
     Kokkos::View<PetscInt *, AssemblyMemorySpace> rowIndices("rowIndicesKokkos", nnz);
     Kokkos::View<PetscScalar *, AssemblyMemorySpace> values("VecValuesKokkos", nnz);
@@ -558,8 +557,213 @@ PetscErrorCode COOMatrixAssembler::_assembleFission(const FluxView& flux)
     }
 
     PetscFunctionBeginUser;
+    Kokkos::fence();
     PetscCall(VecSetPreallocationCOO(fissionVec, nnz, rowIndices.data()));
     PetscCall(VecSetValuesCOO(fissionVec, values.data(), INSERT_VALUES));
 
     return PETSC_SUCCESS;
+}
+
+PetscErrorCode CSRMatrixAssembler::_assembleM()
+{
+    // Don't want to access self->cmfdData in the lambda, so copy it to a reference
+    auto& _cmfdData = cmfdData;
+
+    // See the comment in COOMatrixAssembler::_assembleM() for a similar description of the layout.
+    // In COO, we store i, j, and values in three 1D vectors of length nnz.
+    // In CSR, we store the column index and values in two 1D vectors of length nnz
+    // and the index in the values vector where each row starts in 1D vector of length nRows + 1
+    // (the last entry is the total number of non-zero entries in the matrix).
+    // The biggest difference is that in CSR, we don't have the luxury of using INSERT_VALUES,
+    // (which is used in COO to handle multiple entries to the same index), so we have to
+    // deal with race conditions ourselves.
+    //
+    // Extra info: In COO, the three vectors didn't have to be in a specific order, but we made
+    // them almost ordered by row (in reality, by cell, so -- are in the wrong "row" in the 1D vector).
+    // In CSR, the order of column indices in a row isn't important, but all values and columns must be
+    // grouped by row.
+
+    // We use a slightly different layout. See COO's _assembleM() for the notation.
+    //                                  |-------- Scatter --------| | Leakage +- | | Leakage -+ |
+    // "Row"0 (Cell 0, ScatterFrom 0): [ScatterTo0, ... ScatterToN, +-0, +-1, +-2, -+0, -+1, -+2,
+    // "Row"1 (Cell 0, ScatterFrom 1): [ScatterTo0, ... ScatterToN, +-0, +-1, +-2, -+0, -+1, -+2,
+    //
+    // Some notes:
+    // - Rather than organizing the values by surface, we organize them by +- and -+.
+    // - ++ and -- leakage (including out leakage) need to be added to the diagonals of the scatter
+    //      submatrices (in our 1D vector) before we hand off to PETSc.
+    // - The -+ leakage terms aren't stored on the iteration of "row 0" (the positive cell),
+    //      but rather in the iteration in which "row0" is the negative cell.
+
+    static constexpr size_t additionalEntriesPerSurf = 2;
+
+    // On each row we have
+    const PetscInt maxNNZInRow = cmfdData.nGroups + MAX_POS_SURF_PER_CELL * additionalEntriesPerSurf;
+    const PetscInt matSize = cmfdData.nCells * cmfdData.nGroups; // row or col
+    const PetscInt numNonZero = matSize * maxNNZInRow;
+
+    // Specifying the memory space to AssemblyMemorySpace upsets PETSc,
+    // even though AssemblyMemorySpace should end up being the same as the
+    // default memory space. This is almost certainly a soft bug in PETSc.
+    Kokkos::View<PetscInt *> rowIndices("rowIndicesKokkos", matSize + 1);
+    Kokkos::View<PetscInt *> colIndices("colIndicesKokkos", numNonZero);
+    Kokkos::View<PetscScalar *> values("valuesCOO", numNonZero);
+
+    // Scatter XS and Removal XS won't conflict
+    // Leakage terms will conflict on the ++ and -- terms.
+    // There are a few options to handle this:
+    // - Do atomics on ++ and -- terms
+    // - Do ++, +-, and -+ terms and store --. Fence and then do -- terms atomically
+    // - ... I'm sure there are more options.
+    static constexpr int method = 1;
+
+    { // Kokkos scope
+
+        // TODO (#26): We specify the number of non-zero entries per row as the same for all rows.
+        // This makes figuring out the row indices vector trivial
+        Kokkos::parallel_for("CSRMatrixAssembler: RowIndices", Kokkos::RangePolicy<AssemblySpace>(0, matSize + 1),
+            KOKKOS_LAMBDA(const PetscInt rowIdx)
+        {
+            // The first entry is always 0, the last entry is the total number of non-zero entries
+            if (rowIdx == 0) { rowIndices(rowIdx) = 0; }
+            else if (rowIdx == matSize) { rowIndices(rowIdx) = numNonZero; }
+            else { rowIndices(rowIdx) = rowIdx * maxNNZInRow; }
+        });
+
+        // This is basically verbatim from the COOMatrixAssembler without the row index
+        Kokkos::parallel_for("CSRMatrixAssembler: ScatterXS", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<3>>({0, 0, 0}, {_cmfdData.nGroups, _cmfdData.nGroups, _cmfdData.nCells}),
+            KOKKOS_LAMBDA(const PetscInt scatterToIdx, const PetscInt scatterFromIdx, const PetscInt cellIdx)
+        {
+            // Don't need diagonal entries here because we use removal xs
+            // Else, we would have to have another entry for the diagonal
+            if (scatterToIdx != scatterFromIdx)
+            {
+                const size_t rowIdxInMat = cellIdx * _cmfdData.nGroups + scatterFromIdx;
+                const size_t locationIn1D = rowIdxInMat * maxNNZInRow + scatterToIdx;
+
+                colIndices(locationIn1D) = cellIdx * _cmfdData.nGroups + scatterToIdx;
+                values(locationIn1D) = -1 * _cmfdData.scatteringXS(scatterToIdx, scatterFromIdx, cellIdx) * _cmfdData.volume(cellIdx);
+            }
+        });
+
+        // This is also verbatim from the COOMatrixAssembler without the row index
+        Kokkos::parallel_for("CSRMatrixAssembler: RemovalXS", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<2>>({0, 0}, {_cmfdData.nGroups, _cmfdData.nCells}),
+            KOKKOS_LAMBDA(const PetscInt groupIdx, const PetscInt cellIdx)
+        {
+            // groupIdx is both from and to since removal includes self scattering
+            const size_t rowIdxInMat = cellIdx * _cmfdData.nGroups + groupIdx;
+            const size_t locationIn1D = rowIdxInMat * maxNNZInRow + groupIdx;
+
+            colIndices(locationIn1D) = rowIdxInMat; // diagonal
+            values(locationIn1D) = _cmfdData.removalXS(groupIdx, cellIdx) * _cmfdData.volume(cellIdx);
+        });
+
+        // There are potential race conditions between the above kernel and the following kernels
+        // as they both write to the diagonal of the matrix.
+        Kokkos::fence(); // We could just make the values set above atomic. I'm not sure which is better.
+
+        // METHOD 1: Use atomics on ++ and -- terms as they can refer to the same cell
+        // on different iterations of the loop.
+        if constexpr(method == 1)
+        {
+            const PetscInt nGroups = _cmfdData.nGroups;
+            Kokkos::parallel_for("CSRMatrixAssembler1: InLeakage", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<3>>({0, 0, 0}, {_cmfdData.nGroups, _cmfdData.nCells, MAX_POS_SURF_PER_CELL}),
+                KOKKOS_LAMBDA(const PetscInt groupIdx, const PetscInt posCellIdx, const PetscInt posSurfPosition)
+            {
+                // posSurfPosition is 0, 1, or 2 as we expect each cell to have three positive surfaces (MAX_POS_SURF_PER_CELL)
+
+                // We are only on the diagonal of each block matrix,
+                // so groupIdx could be from or to, but we use it to find the "row" (scatter from).
+
+                // TODO (kind of in line with #26): Cells on the boundary don't have less than three surfaces with a non-boundary cell,
+                // but we currently store zeros in the +- and -+ values. These zeros could be removed.
+
+                const PetscInt posSurfIdx = _cmfdData.cell2PosSurf(posCellIdx, posSurfPosition);
+                if (posSurfIdx >= 0) // -1 is invalid surface
+                {
+                    const PetscScalar dhat = _cmfdData.dHat(groupIdx, posSurfIdx);
+                    const PetscScalar dtilde = _cmfdData.dTilde(groupIdx, posSurfIdx);
+
+                    const PetscInt posCellMatIdx = posCellIdx * _cmfdData.nGroups + groupIdx;
+                    const PetscInt posRowBeginIn1D = posCellMatIdx * maxNNZInRow;
+
+                    // ++ (in pos cell row, pos cell column)
+                    const PetscInt posDiagIn1D = posRowBeginIn1D + groupIdx;
+                    Kokkos::atomic_add(&values(posDiagIn1D), -1 * dhat + dtilde);
+
+                    const PetscInt negCellIdx = _cmfdData.surf2Cell(posSurfIdx, 1);
+                    if (negCellIdx >= 0)
+                    {
+                        const PetscInt negCellMatIdx = negCellIdx * _cmfdData.nGroups + groupIdx;
+                        const PetscInt negRowBeginIn1D = negCellMatIdx * maxNNZInRow;
+
+                        // +- (in pos cell row, neg cell column)
+                        const PetscInt posNegIn1D = posRowBeginIn1D + _cmfdData.nGroups + posSurfPosition;
+                        colIndices(posNegIn1D) = negCellMatIdx;
+                        values(posNegIn1D) = -1 * dhat - dtilde;
+
+                        // Get the "position" (0, 1, or 2) of the surface for the negative cell
+                        // TODO: There are several ways to find the correct spot for -+ (precalculate the negative surface positions,
+                        // maybe move -+ into a different kernel), but this works for now and can be optimized later.
+                        // Note, if this is refactored, _cmfdData.cell2NegSurf can probably be removed.
+                        PetscInt negSurfPosition = -1;
+                        for (PetscInt testNegSurfPosition = 0; testNegSurfPosition < MAX_POS_SURF_PER_CELL; ++testNegSurfPosition)
+                        {
+                            if (_cmfdData.cell2NegSurf(negCellIdx, testNegSurfPosition) == posSurfIdx)
+                            {
+                                negSurfPosition = testNegSurfPosition;
+                                break;
+                            }
+                        }
+
+                        // -+ (in neg cell row, pos cell column)
+                        const PetscInt negPosIn1D = negRowBeginIn1D + nGroups + MAX_POS_SURF_PER_CELL + negSurfPosition;
+                        colIndices(negPosIn1D) = posCellMatIdx;
+                        values(negPosIn1D) = dhat - dtilde;
+
+                        // -- (in neg cell row, neg cell column)
+                        const size_t negDiagIn1D = negRowBeginIn1D + groupIdx;
+                        Kokkos::atomic_add(&values(negDiagIn1D), dhat + dtilde);
+                    }
+                }
+            });
+        }
+
+        Kokkos::parallel_for("CSRMatrixAssembler1: OutLeakage", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<2>>({0, 0}, {cmfdData.nGroups, cmfdData.nPosLeakageSurfs}),
+            KOKKOS_LAMBDA(const PetscInt groupIdx, const PetscInt nthPosLeakageSurf)
+        {
+            const PetscInt posSurfIdx = _cmfdData.posLeakageSurfs(nthPosLeakageSurf);
+            const PetscInt negCellIdx = _cmfdData.surf2Cell(posSurfIdx, 1);
+
+            if (negCellIdx >= 0)
+            {
+                const PetscInt negCellMatIdx = (negCellIdx)*_cmfdData.nGroups + groupIdx;
+                const PetscScalar dhat = _cmfdData.dHat(groupIdx, posSurfIdx);
+                const PetscScalar dtilde = _cmfdData.dTilde(groupIdx, posSurfIdx);
+
+                const PetscInt negDiagIn1D = (negCellMatIdx * maxNNZInRow) + groupIdx;
+
+                // The posLeakage surfaces may not be unique so we use atomics
+                Kokkos::atomic_add(&values(negDiagIn1D), dhat + dtilde);
+            }
+        });
+
+    } // Kokkos scope ends
+
+    PetscFunctionBeginUser;
+    // TODO (#26): The null allows you to specify the number of non-zero entries per row.
+    // This will improve memory/performance if implemented
+    PetscCall(MatCreateSeqAIJKokkos(PETSC_COMM_WORLD, matSize, matSize, numNonZero, NULL, &MMat));
+
+    // Actually put the values into the matrix
+    Kokkos::fence();
+    PetscCall(MatCreateSeqAIJKokkosWithKokkosViews(PETSC_COMM_SELF, matSize, matSize, rowIndices, colIndices, values, &MMat));
+
+    return PETSC_SUCCESS;
+}
+
+PetscErrorCode CSRMatrixAssembler::_assembleFission(const FluxView& flux)
+{
+    // TODO
+    return PETSC_ERR_SUP;
 }

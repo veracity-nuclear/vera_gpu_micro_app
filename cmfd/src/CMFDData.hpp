@@ -82,7 +82,7 @@ struct CMFDData
     using View1D = Kokkos::View<PetscScalar *, MemorySpace>;
     using View2D = Kokkos::View<PetscScalar **, MemorySpace>;
     using ViewSurfToCell = Kokkos::View<PetscInt *[2], MemorySpace>;
-    using ViewCellToPosSurf = Kokkos::View<PetscInt *[MAX_POS_SURF_PER_CELL], MemorySpace>;
+    using ViewCellToSurfs = Kokkos::View<PetscInt *[MAX_POS_SURF_PER_CELL], MemorySpace>;
     using View3D = Kokkos::View<PetscScalar ***, MemorySpace>;
 
     size_t nCells{}, nSurfaces{}, nGroups{}, nPosLeakageSurfs{};
@@ -98,8 +98,9 @@ struct CMFDData
     ViewSurfToCell surf2Cell;
     View3D scatteringXS;
 
-    // Calculated by buildCellToPosSurfMapping
-    ViewCellToPosSurf cell2PosSurf;
+    // Calculated by buildCellToSurfsMapping
+    ViewCellToSurfs cell2PosSurf;
+    ViewCellToSurfs cell2NegSurf;
     View1D posLeakageSurfs;
 
     CMFDData() = default;
@@ -128,18 +129,22 @@ struct CMFDData
 
         CMFDCoarseMesh.getDataSet("energy groups").read(nGroups);
 
-        buildCellToPosSurfMapping();
+        buildCellToSurfsMapping();
     };
 
     // Build a mapping from a cell to the surfaces in which the cell is positive (north, up, right).
     // Therefore the "pos" surf would be negative (south, down, left) for the cell. See test for an example.
     // -1 Means no surface. We expect up to three surfaces per cell (3D cartesian).
     // Uses members surf2Cell and nCells.
-    void buildCellToPosSurfMapping()
+    void buildCellToSurfsMapping()
     {
-        cell2PosSurf = ViewCellToPosSurf("cell2PosSurf", nCells, MAX_POS_SURF_PER_CELL);
+        cell2PosSurf = ViewCellToSurfs("cell2PosSurf", nCells, MAX_POS_SURF_PER_CELL);
         auto h_cell2PosSurf = Kokkos::create_mirror_view(cell2PosSurf);
         Kokkos::deep_copy(h_cell2PosSurf, -1);
+
+        cell2NegSurf = ViewCellToSurfs("cell2NegSurf", nCells, MAX_POS_SURF_PER_CELL);
+        auto h_cell2NegSurf = Kokkos::create_mirror_view(cell2NegSurf);
+        Kokkos::deep_copy(h_cell2NegSurf, -1);
 
         auto h_surf2Cell = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), surf2Cell);
         size_t nSurfaces = h_surf2Cell.extent(0);
@@ -150,17 +155,20 @@ struct CMFDData
         vecPosLeakageSurfs.reserve(nSurfaces);
 
         // Count array to track how many surfaces we've found for each cell
-        std::vector<PetscInt> countPerCell(nCells, 0);
+        std::vector<PetscInt> countPosSurfPerCell(nCells, 0);
+        std::vector<PetscInt> countNegSurfPerCell(nCells, 0);
 
         for (size_t surfID = 0; surfID < nSurfaces; surfID++)
         {
             const PetscInt posCell = h_surf2Cell(surfID, 0);
+            const PetscInt negCell = h_surf2Cell(surfID, 1);
+
             if (posCell >= 0)
             {
-                if (countPerCell[posCell] < MAX_POS_SURF_PER_CELL)
+                if (countPosSurfPerCell[posCell] < MAX_POS_SURF_PER_CELL)
                 {
-                    h_cell2PosSurf(posCell, countPerCell[posCell]) = surfID;
-                    countPerCell[posCell]++;
+                    h_cell2PosSurf(posCell, countPosSurfPerCell[posCell]) = surfID;
+                    countPosSurfPerCell[posCell]++;
                 }
                 else
                 {
@@ -170,10 +178,24 @@ struct CMFDData
             else {
                 vecPosLeakageSurfs.push_back(surfID);
             }
+
+            if (negCell >= 0)
+            {
+                if (countNegSurfPerCell[negCell] < MAX_POS_SURF_PER_CELL)
+                {
+                    h_cell2NegSurf(negCell, countNegSurfPerCell[negCell]) = surfID;
+                    countNegSurfPerCell[negCell]++;
+                }
+                else
+                {
+                    throw std::runtime_error("More than 3 negative surfaces found for a single cell, which is unexpected.");
+                }
+            }
         }
 
         // Copy to the device view stored in the struct
         Kokkos::deep_copy(cell2PosSurf, h_cell2PosSurf);
+        Kokkos::deep_copy(cell2NegSurf, h_cell2NegSurf);
 
         // Create a view for the positive leakage surfaces and store in the struct
         nPosLeakageSurfs = vecPosLeakageSurfs.size();

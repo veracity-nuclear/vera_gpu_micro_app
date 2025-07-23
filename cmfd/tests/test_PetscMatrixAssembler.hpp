@@ -179,7 +179,6 @@ public:
 
 TEST_P(PetscMatrixAssemblerTest, TestSimpleMatrixAssembler)
 {
-
   compareMatrices<SimpleMatrixAssembler>();
 }
 
@@ -196,4 +195,9 @@ TEST_P(PetscMatrixAssemblerTest, TestCOOMatrixAssembler)
 TEST_P(PetscMatrixAssemblerTest, TestCOOVectorAssembler)
 {
   compareVectors<COOMatrixAssembler>();
+}
+
+TEST_P(PetscMatrixAssemblerTest, TestCSRMatrixAssembler)
+{
+  compareMatrices<CSRMatrixAssembler>();
 }
