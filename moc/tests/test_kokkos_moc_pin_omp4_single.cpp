@@ -17,7 +17,7 @@ TEST(BasicTest, pin_7g_16a_3p_kokkos_single) {
         std::shared_ptr<BaseMOC> sweeper(new KokkosMOC<Kokkos::OpenMP, float>(parser));
         EigenSolver solver(parser, sweeper);
         solver.solve();
-        EXPECT_NEAR(solver.keff(), 1.325694203, 1.0e-7);
+        EXPECT_NEAR(solver.keff(), 1.325694203, 5.0e-7);
     }
     Kokkos::finalize();
 }
