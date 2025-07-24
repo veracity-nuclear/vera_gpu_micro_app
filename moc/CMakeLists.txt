@@ -27,17 +27,27 @@ include(../cmake/TestFunctions.cmake)
 
 set(TEST_EXECUTABLES
     test_exp_table
-    test_serial_moc_1region_1angle
-    test_serial_moc_4region_1angle
-    test_serial_moc_1region_16angle
+    test_serial_moc_1region_1angle_single
+    test_serial_moc_4region_1angle_single
+    test_serial_moc_1region_16angle_single
+    test_serial_moc_1region_1angle_double
+    test_serial_moc_4region_1angle_double
+    test_serial_moc_1region_16angle_double
     test_mixed_bcs
-    test_serial_moc_pin
-    test_kokkos_moc_pin_omp4
-    test_kokkos_moc_pin_serial
-    test_serial_moc_7x7
-    test_kokkos_moc_7x7_serial
-    test_kokkos_moc_7x7_omp4
-    heavy_test_serial_moc_mini-core
+    test_serial_moc_pin_single
+    test_serial_moc_pin_double
+    test_kokkos_moc_pin_omp4_single
+    test_kokkos_moc_pin_serial_single
+    test_kokkos_moc_pin_omp4_double
+    test_kokkos_moc_pin_serial_double
+    test_serial_moc_7x7_single
+    test_serial_moc_7x7_double
+    test_kokkos_moc_7x7_serial_single
+    test_kokkos_moc_7x7_omp4_single
+    test_kokkos_moc_7x7_serial_double
+    test_kokkos_moc_7x7_omp4_double
+    test_serial_moc_mini-core_single
+    test_serial_moc_mini-core_double
 )
 SET(TEST_LABELS
     "BASIC\;CONTINUOUS\;HEAVY"
@@ -45,9 +55,19 @@ SET(TEST_LABELS
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
+    "BASIC\;CONTINUOUS\;HEAVY"
+    "BASIC\;CONTINUOUS\;HEAVY"
+    "BASIC\;CONTINUOUS\;HEAVY"
     "CONTINUOUS\;HEAVY"
     "CONTINUOUS\;HEAVY"
     "CONTINUOUS\;HEAVY"
+    "CONTINUOUS\;HEAVY"
+    "CONTINUOUS\;HEAVY"
+    "CONTINUOUS\;HEAVY"
+    "HEAVY"
+    "HEAVY"
+    "HEAVY"
+    "HEAVY"
     "HEAVY"
     "HEAVY"
     "HEAVY"

@@ -33,7 +33,8 @@ void EigenSolver::solve() {
   auto total_start_time = std::chrono::high_resolution_clock::now();
   double elapsed_seconds = 0.0;
 
-  for (int iteration = 0; iteration < _max_iters; iteration++) {
+  int iteration;
+  for (iteration = 0; iteration < _max_iters; iteration++) {
       auto iter_start_time = std::chrono::high_resolution_clock::now();
       // Build source and zero the fluxes
       _sweeper->update_source(_fissrc);
@@ -93,6 +94,9 @@ void EigenSolver::solve() {
           std::cout << "Converged after " << iteration + 1 << " iterations." << std::endl;
           break;
       }
+  }
+  if (iteration == _max_iters) {
+      std::cout << "Hit maximum number of iterations." << std::endl;
   }
 }
 
