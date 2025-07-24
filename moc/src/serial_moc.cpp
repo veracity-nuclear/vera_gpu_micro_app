@@ -9,7 +9,8 @@
 #include "long_ray.hpp"
 #include "c5g7_library.hpp"
 
-SerialMOC::SerialMOC(const ArgumentParser& args) :
+template <typename RealType>
+SerialMOC<RealType>::SerialMOC(const ArgumentParser& args) :
     _filename(args.get_positional(0)),
     _file(HighFive::File(_filename, HighFive::File::ReadOnly))
 {
@@ -17,8 +18,12 @@ SerialMOC::SerialMOC(const ArgumentParser& args) :
     _read_rays();
 
     // Read the FSR volumes and plane height
-    _fsr_vol = _file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read<std::vector<double>>();
-    _plane_height = _file.getDataSet("/MOC_Ray_Data/Domain_00001/plane_height").read<double>();
+    auto fsr_vol_tmp = _file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read<std::vector<double>>();
+    _fsr_vol.resize(fsr_vol_tmp.size());
+    for (size_t i = 0; i < fsr_vol_tmp.size(); i++) {
+        _fsr_vol[i] = static_cast<RealType>(fsr_vol_tmp[i]);
+    }
+    _plane_height = static_cast<RealType>(_file.getDataSet("/MOC_Ray_Data/Domain_00001/plane_height").read<double>());
     _nfsr = _fsr_vol.size();
 
     // Read mapping data
@@ -69,12 +74,12 @@ SerialMOC::SerialMOC(const ArgumentParser& args) :
             _xsch[i].resize(_ng);
             _xssc[i].resize(_ng);
             for (int to = 0; to < _ng; to++) {
-                _xstr[i][to] = xstr[ixsr - 1][to];
-                _xsnf[i][to] = xsnf[ixsr - 1][to];
-                _xsch[i][to] = xsch[ixsr - 1][to];
+                _xstr[i][to] = static_cast<RealType>(xstr[ixsr - 1][to]);
+                _xsnf[i][to] = static_cast<RealType>(xsnf[ixsr - 1][to]);
+                _xsch[i][to] = static_cast<RealType>(xsch[ixsr - 1][to]);
                 _xssc[i][to].resize(_ng);
                 for (int from = 0; from < _ng; from++) {
-                    _xssc[i][to][from] = xssc[ixsr - 1][to][from];
+                    _xssc[i][to][from] = static_cast<RealType>(xssc[ixsr - 1][to][from]);
                 }
             }
         }
@@ -89,10 +94,11 @@ SerialMOC::SerialMOC(const ArgumentParser& args) :
 
     // Allocate scalar flux and source array
     _scalar_flux.resize(_nfsr);
+    _source.resize(_nfsr);
     for (size_t i = 0; i < _nfsr; ++i) {
         _scalar_flux[i].resize(_ng, 1.0);
+        _source[i].resize(_ng, static_cast<RealType>(1.0));
     }
-    _source = _scalar_flux;  // Initialize source to scalar flux
 
     // Read ray spacings and angular flux BC dimensions
     auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
@@ -107,13 +113,13 @@ SerialMOC::SerialMOC(const ArgumentParser& args) :
         if (objName.substr(0, 6) == "Angle_") {
             HighFive::Group angleGroup = domain.getGroup(objName);
             // Read ray spacing
-            _ray_spacing.push_back(angleGroup.getDataSet("spacing").read<double>());
+            _ray_spacing.push_back(static_cast<RealType>(angleGroup.getDataSet("spacing").read<double>()));
             // Read the BC sizes
             int iazi = std::stoi(objName.substr(8)) - 1;
             auto bc_sizes = angleGroup.getDataSet("BC_size").read<std::vector<int>>();
-            _angflux.push_back(AngFluxBCAngle(4));
+            _angflux.push_back(AngFluxBCAngle<RealType>(4));
             for (size_t iface = 0; iface < 4; iface++) {
-                _angflux[iazi].faces[iface] = AngFluxBCFace(bc_sizes[iface], _npol, _ng);
+                _angflux[iazi].faces[iface] = AngFluxBCFace<RealType>(bc_sizes[iface], _npol, _ng);
             }
             nazi++;
         }
@@ -123,17 +129,17 @@ SerialMOC::SerialMOC(const ArgumentParser& args) :
     // Build angle weights
     _angle_weights.reserve(nazi);
     for (int iazi = 0; iazi < nazi; iazi++) {
-        _angle_weights.push_back(std::vector<double>(_npol, 0.0));
+        _angle_weights.push_back(std::vector<RealType>(_npol, static_cast<RealType>(0.0)));
         for (int ipol = 0; ipol < _angle_weights[iazi].size(); ipol++) {
-            _angle_weights[iazi][ipol] = _ray_spacing[iazi] * azi_weights[iazi] * polar_weights[ipol]
-                * M_PI * std::sin(polar_angles[ipol]);
+            _angle_weights[iazi][ipol] = static_cast<RealType>(_ray_spacing[iazi] * azi_weights[iazi] * polar_weights[ipol]
+                * M_PI * std::sin(polar_angles[ipol]));
         }
     }
 
     // Store the inverse polar angle sine
     _rsinpolang.resize(_npol);
     for (int ipol = 0; ipol < _npol; ipol++) {
-        _rsinpolang[ipol] = 1.0 / std::sin(polar_angles[ipol]);
+        _rsinpolang[ipol] = static_cast<RealType>(1.0 / std::sin(polar_angles[ipol]));
     }
 
     // Allocate segment flux array
@@ -145,18 +151,19 @@ SerialMOC::SerialMOC(const ArgumentParser& args) :
     for (size_t j = 0; j < 2; j++) {
         _segflux[j].resize(_max_segments + 1);
         for (size_t i = 0; i < _max_segments + 1; i++) {
-            _segflux[j][i].resize(_ng, 0.0);
+            _segflux[j][i].resize(_ng, static_cast<RealType>(0.0));
         }
     }
 
     // Initialize the exponential argument array
     _exparg.resize(_max_segments + 1);
     for (size_t i = 0; i < _max_segments + 1; i++) {
-        _exparg[i].resize(_ng, 0.0);
+        _exparg[i].resize(_ng, static_cast<RealType>(0.0));
     }
 }
 
-void SerialMOC::_read_rays() {
+template <typename RealType>
+void SerialMOC<RealType>::_read_rays() {
     auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
 
     // Count the rays
@@ -199,43 +206,59 @@ void SerialMOC::_read_rays() {
 }
 
 // Get the total cross sections for each FSR from the library
-void SerialMOC::_get_xstr(
+template <typename RealType>
+void SerialMOC<RealType>::_get_xstr(
     const int num_fsr,
     const std::vector<int>& fsr_mat_id,
     const c5g7_library& library
 ) {
     _xstr.resize(num_fsr);
     for (auto i = 0; i < fsr_mat_id.size(); i++) {
-        _xstr[i] = library.total(fsr_mat_id[i]);
+        auto transport_xs = library.total(fsr_mat_id[i]);
+        _xstr[i].resize(transport_xs.size());
+        for (size_t g = 0; g < transport_xs.size(); g++) {
+            _xstr[i][g] = static_cast<RealType>(transport_xs[g]);
+        }
     }
 }
 
 // Get the nu-fission cross sections for each FSR from the library
-void SerialMOC::_get_xsnf(
+template <typename RealType>
+void SerialMOC<RealType>::_get_xsnf(
     const int num_fsr,
     const std::vector<int>& fsr_mat_id,
     const c5g7_library& library
 ) {
     _xsnf.resize(num_fsr);
     for (auto i = 0; i < fsr_mat_id.size(); i++) {
-        _xsnf[i] = library.nufiss(fsr_mat_id[i]);
+        auto nufiss_xs = library.nufiss(fsr_mat_id[i]);
+        _xsnf[i].resize(nufiss_xs.size());
+        for (size_t g = 0; g < nufiss_xs.size(); g++) {
+            _xsnf[i][g] = static_cast<RealType>(nufiss_xs[g]);
+        }
     }
 }
 
 // Get the chi for each FSR from the library
-void SerialMOC::_get_xsch(
+template <typename RealType>
+void SerialMOC<RealType>::_get_xsch(
     const int num_fsr,
     const std::vector<int>& fsr_mat_id,
     const c5g7_library& library
 ) {
     _xsch.resize(num_fsr);
     for (auto i = 0; i < fsr_mat_id.size(); i++) {
-        _xsch[i] = library.chi(fsr_mat_id[i]);
+        auto chi = library.chi(fsr_mat_id[i]);
+        _xsch[i].resize(chi.size());
+        for (size_t g = 0; g < chi.size(); g++) {
+            _xsch[i][g] = static_cast<RealType>(chi[g]);
+        }
     }
 }
 
 // Get the scattering cross sections for each FSR from the library
-void SerialMOC::_get_xssc(
+template <typename RealType>
+void SerialMOC<RealType>::_get_xssc(
     const int num_fsr,
     const std::vector<int>& fsr_mat_id,
     const c5g7_library& library
@@ -246,7 +269,7 @@ void SerialMOC::_get_xssc(
         for (int g = 0; g < _ng; g++) {
             _xssc[i][g].resize(_ng);
             for (int g2 = 0; g2 < _ng; g2++) {
-                _xssc[i][g][g2] = library.scat(fsr_mat_id[i], g, g2);
+                _xssc[i][g][g2] = static_cast<RealType>(library.scat(fsr_mat_id[i], g, g2));
             }
         }
     }
@@ -258,7 +281,8 @@ inline int reflect_angle(int angle) {
 }
 
 // Build the fission source term for each FSR based on the scalar flux and nu-fission cross sections
-std::vector<double> SerialMOC::fission_source(const double keff) const {
+template <typename RealType>
+std::vector<double> SerialMOC<RealType>::fission_source(const double keff) const {
     std::vector<double> fissrc(_nfsr, 0.0);
     for (size_t i = 0; i < _nfsr; i++) {
         for (int g = 0; g < _ng; g++) {
@@ -269,25 +293,27 @@ std::vector<double> SerialMOC::fission_source(const double keff) const {
 }
 
 // Build the total source term for each FSR based on the fission source and scattering cross sections
-void SerialMOC::update_source(const std::vector<double>& fissrc) {
+template <typename RealType>
+void SerialMOC<RealType>::update_source(const std::vector<double>& fissrc) {
     int _nfsr = _scalar_flux.size();
     int ng = _scalar_flux[0].size();
     for (size_t i = 0; i < _nfsr; i++) {
         for (int g = 0; g < ng; g++) {
-            _source[i][g] = fissrc[i] * _xsch[i][g];
+            _source[i][g] = static_cast<RealType>(fissrc[i]) * _xsch[i][g];
             for (int g2 = 0; g2 < ng; g2++) {
                 if (g != g2) {
-                    _source[i][g] += _xssc[i][g][g2] * _scalar_flux[i][g2];
+                    _source[i][g] += _xssc[i][g][g2] * static_cast<RealType>(_scalar_flux[i][g2]);
                 }
             }
-            _source[i][g] += _xssc[i][g][g] * _scalar_flux[i][g];
-            _source[i][g] /= (_xstr[i][g] * 4.0 * M_PI);
+            _source[i][g] += _xssc[i][g][g] * static_cast<RealType>(_scalar_flux[i][g]);
+            _source[i][g] /= (_xstr[i][g] * static_cast<RealType>(4.0 * M_PI));
         }
     }
 }
 
 // Main function to run the serial MOC sweep
-void SerialMOC::sweep() {
+template <typename RealType>
+void SerialMOC<RealType>::sweep() {
     Kokkos::Profiling::pushRegion("SerialMOC::Sweep");
     // Initialize old values and a few scratch values
     int iseg, ireg, refl_angle;
@@ -371,3 +397,7 @@ void SerialMOC::sweep() {
     _old_angflux = _angflux;
     Kokkos::Profiling::popRegion();
 }
+
+// Explicit template instantiations
+template class SerialMOC<float>;
+template class SerialMOC<double>;
