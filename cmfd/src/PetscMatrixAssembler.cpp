@@ -397,7 +397,7 @@ PetscErrorCode COOMatrixAssembler::_assembleM()
         // Don't want to access self->cmfdData in the lambda, so copy it to a reference
         auto& _cmfdData = cmfdData;
 
-        // (#26) Assume each row has maxNNZInRow non-zero entries
+        // TODO (#26): Assume each row has maxNNZInRow non-zero entries
         PetscInt maxNNZEntries = maxNNZInRow * matSize + cmfdData.nPosLeakageSurfs * cmfdData.nGroups;
 
         // Maybe these get assembled on the GPU, copied to the host for MatSetValuesCOO
