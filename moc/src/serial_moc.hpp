@@ -63,6 +63,6 @@ class SerialMOC : public BaseMOC {
         std::vector<std::vector<RealType>> _exparg;  // Exponential arguments for each segment and group
         std::vector<std::vector<double>> _scalar_flux;  // Scalar flux array (stays double)
         std::vector<std::vector<RealType>> _source;  // Multrigroup total source term for each FSR
-        std::vector<AngFluxBCAngleT<RealType>> _angflux;  // Angular flux for each angle
-        std::vector<AngFluxBCAngleT<RealType>> _old_angflux;  // Angular flux for each angle
+        std::vector<AngFluxBCAngle<RealType>> _angflux;  // Angular flux for each angle
+        std::vector<AngFluxBCAngle<RealType>> _old_angflux;  // Angular flux for each angle
 };

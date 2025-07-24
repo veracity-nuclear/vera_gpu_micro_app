@@ -117,9 +117,9 @@ SerialMOC<RealType>::SerialMOC(const ArgumentParser& args) :
             // Read the BC sizes
             int iazi = std::stoi(objName.substr(8)) - 1;
             auto bc_sizes = angleGroup.getDataSet("BC_size").read<std::vector<int>>();
-            _angflux.push_back(AngFluxBCAngleT<RealType>(4));
+            _angflux.push_back(AngFluxBCAngle<RealType>(4));
             for (size_t iface = 0; iface < 4; iface++) {
-                _angflux[iazi].faces[iface] = AngFluxBCFaceT<RealType>(bc_sizes[iface], _npol, _ng);
+                _angflux[iazi].faces[iface] = AngFluxBCFace<RealType>(bc_sizes[iface], _npol, _ng);
             }
             nazi++;
         }
