@@ -143,8 +143,17 @@ struct CSRMatrixAssembler : public PetscMatrixAssembler<>
     CSRMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
         : PetscMatrixAssembler<AssemblySpace>(CMFDCoarseMesh) {
             PetscCallCXXAbort(PETSC_COMM_SELF, _assembleM());
+
+            _fissionVectorView = Kokkos::View<PetscScalar *, AssemblyMemorySpace>("VecValuesKokkos", nRows);
         }
 
     PetscErrorCode _assembleM() override;
     PetscErrorCode _assembleFission(const FluxView& flux) override;
+
+    // The class needs to own the fission vector view because it should have
+    // the same lifetime/scope as the corresponding PetscVec. The PetscVec
+    // does not control the lifetime, and if the view is destroyed, errors
+    // will occur when the PetscVec is accessed.
+    Kokkos::View<PetscScalar *, AssemblyMemorySpace> _fissionVectorView;
+
 };

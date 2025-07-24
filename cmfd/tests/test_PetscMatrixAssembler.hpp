@@ -201,3 +201,8 @@ TEST_P(PetscMatrixAssemblerTest, TestCSRMatrixAssembler)
 {
   compareMatrices<CSRMatrixAssembler>();
 }
+
+TEST_P(PetscMatrixAssemblerTest, TestCSRVectorAssembler)
+{
+  compareVectors<CSRMatrixAssembler>();
+}

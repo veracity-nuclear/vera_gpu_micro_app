@@ -544,7 +544,7 @@ PetscErrorCode COOMatrixAssembler::_assembleFission(const FluxView& flux)
 
         // Use the team policy with the automatic team size to calculate the maximum team size
         Kokkos::TeamPolicy<AssemblySpace> nCellsRange(_cmfdData.nCells, Kokkos::AUTO);
-        int maxTeamSize = nCellsRange.team_size_max(functorVectorAssemble, Kokkos::ParallelReduceTag());
+        int maxTeamSize = nCellsRange.team_size_max(functorVectorAssemble, Kokkos::ParallelForTag());
 
         // If we can set the team size to the number of groups, we do so
         if (maxTeamSize >= _cmfdData.nGroups)
@@ -764,6 +764,60 @@ PetscErrorCode CSRMatrixAssembler::_assembleM()
 
 PetscErrorCode CSRMatrixAssembler::_assembleFission(const FluxView& flux)
 {
-    // TODO
-    return PETSC_ERR_SUP;
+    auto& _cmfdData = cmfdData;
+    auto& _values = _fissionVectorView;
+
+    // The following is nearly identical to the COOMatrixAssembler::_assembleFission method,
+    // but I anticipate that the COOMatrixAssembler version will evolve differently (it can handle sparsity,
+    // while the CSRMatrixAssembler version will not).
+    {
+        // We create the functor beforehand to calclate the maximum team size
+        auto functorVectorAssemble = KOKKOS_LAMBDA(const typename Kokkos::TeamPolicy<AssemblySpace>::member_type& teamMember)
+        {
+            const PetscInt cellIdx = teamMember.league_rank();
+
+            PetscScalar cellFissionRate = 0.0;
+            Kokkos::parallel_reduce(Kokkos::TeamThreadRange(teamMember, _cmfdData.nGroups), [=] (const PetscInt fromGroupIdx, PetscScalar &localFissionRate)
+            {
+                // if FluxView is 2D
+                // localFissionRate += cmfdData.nuFissionXS(fromGroupIdx, cellIdx) * flux(fromGroupIdx, cellIdx);
+
+                // if FluxView is 1D. I think the data access pattern is bad
+                localFissionRate += _cmfdData.nuFissionXS(fromGroupIdx, cellIdx) * flux(cellIdx * _cmfdData.nGroups + fromGroupIdx);
+            }, cellFissionRate);
+
+            teamMember.team_barrier();
+
+            const PetscScalar localFissionRateVolume = cellFissionRate * _cmfdData.volume(cellIdx);
+
+            Kokkos::parallel_for(Kokkos::TeamThreadRange(teamMember, _cmfdData.nGroups), [=] (const PetscInt toGroupIdx)
+            {
+                const PetscInt vecIdx = cellIdx * _cmfdData.nGroups + toGroupIdx;
+                _values(vecIdx) = _cmfdData.chi(toGroupIdx, cellIdx) * localFissionRateVolume;
+            });
+        };
+
+        // Use the team policy with the automatic team size to calculate the maximum team size
+        Kokkos::TeamPolicy<AssemblySpace> nCellsRange(_cmfdData.nCells, Kokkos::AUTO);
+        int maxTeamSize = nCellsRange.team_size_max(functorVectorAssemble, Kokkos::ParallelForTag());
+
+        // If we can set the team size to the number of groups, we do so
+        if (maxTeamSize >= _cmfdData.nGroups)
+        {
+            nCellsRange = Kokkos::TeamPolicy<AssemblySpace>(_cmfdData.nCells, _cmfdData.nGroups);
+        }
+
+        // Actually execute the parallel for loop
+        Kokkos::parallel_for("CSRVector", nCellsRange, functorVectorAssemble);
+    }
+
+    PetscFunctionBeginUser;
+    Kokkos::fence();
+
+
+
+    // The second input parameter is the block size, which I believe should be 1.
+    PetscCall(VecCreateSeqKokkosWithArray(PETSC_COMM_SELF, 1, nRows, _fissionVectorView.data(), &fissionVec));
+    // Maybe VecCreateMPIKokkosWithArray is better?
+    return PETSC_SUCCESS;
 }
