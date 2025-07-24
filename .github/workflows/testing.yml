@@ -32,4 +32,4 @@ jobs:
         shell: bash
         run: |
           cd build
-          ctest -j4 --output-on-failure -E "heavy_test"
+          ctest -j4 --output-on-failure -L CONTINUOUS

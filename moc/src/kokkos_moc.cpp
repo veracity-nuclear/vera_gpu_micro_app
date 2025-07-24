@@ -359,6 +359,26 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
     // Print a message with the number of rays and filename
     std::cout << "Successfully set up " << _n_rays << " rays from file: " << _filename << std::endl;
 
+    _h_ray_fsrs = HViewInt1D("ray_fsrs", _h_ray_nsegs(_n_rays));
+    _h_ray_segments = HViewReal1D("ray_segments", _h_ray_nsegs(_n_rays));
+    int iray = 0;
+    for (const auto& objName : domain.listObjectNames()) {
+        if (objName.substr(0, 6) == "Angle_") {
+            HighFive::Group angleGroup = domain.getGroup(objName);
+            for (const auto& rayName : angleGroup.listObjectNames()) {
+                if (rayName.substr(0, 8) == "LongRay_") {
+                    auto rayGroup = angleGroup.getGroup(rayName);
+                    auto fsrs = rayGroup.getDataSet("FSRs").read<std::vector<int>>();
+                    auto segments = rayGroup.getDataSet("Segments").read<std::vector<double>>();
+                    for (size_t iseg = 0; iseg < fsrs.size(); iseg++) {
+                        _h_ray_fsrs(_h_ray_nsegs(iray) + iseg) = fsrs[iseg] - 1; // Convert to zero-based index
+                        _h_ray_segments(_h_ray_nsegs(iray) + iseg) = static_cast<RealType>(segments[iseg]);
+                    }
+                    iray++;
+                }
+            }
+        }
+    }
     Kokkos::Profiling::popRegion();
 }
 
@@ -449,14 +469,14 @@ void KokkosMOC<ExecutionSpace, RealType>::update_source(const std::vector<double
     int ng = _h_scalar_flux.extent(1);
     for (size_t i = 0; i < _nfsr; i++) {
         for (int g = 0; g < ng; g++) {
-            _h_source(i, g) = static_cast<float>(fissrc[i]) * _h_xsch(i, g);
+            _h_source(i, g) = static_cast<RealType>(fissrc[i]) * _h_xsch(i, g);
             for (int g2 = 0; g2 < ng; g2++) {
                 if (g != g2) {
-                    _h_source(i, g) += _h_xssc(i, g, g2) * static_cast<float>(_h_scalar_flux(i, g2));
+                    _h_source(i, g) += _h_xssc(i, g, g2) * static_cast<RealType>(_h_scalar_flux(i, g2));
                 }
             }
-            _h_source(i, g) += _h_xssc(i, g, g) * static_cast<float>(_h_scalar_flux(i, g));
-            _h_source(i, g) /= (_h_xstr(i, g) * static_cast<float>(fourpi));
+            _h_source(i, g) += _h_xssc(i, g, g) * static_cast<RealType>(_h_scalar_flux(i, g));
+            _h_source(i, g) /= (_h_xstr(i, g) * static_cast<RealType>(fourpi));
         }
     }
     // Always copy to device
@@ -465,21 +485,21 @@ void KokkosMOC<ExecutionSpace, RealType>::update_source(const std::vector<double
 }
 
 // General template implementation (fallback)
-template <typename ExecutionSpace, typename RealType>
-Kokkos::TeamPolicy<ExecutionSpace> KokkosMOC<ExecutionSpace, RealType>::_configure_team_policy(int n_rays, int npol, int ng) {
-    // Default implementation for any unspecialized execution space
-    const int n_teams = static_cast<long int>(n_rays) *  npol * ng;
-    return Kokkos::TeamPolicy<ExecutionSpace>(n_teams, 1, 1);
+template <typename ExecutionSpace>
+Kokkos::TeamPolicy<ExecutionSpace> _configure_team_policy(int n_rays, int npol, int ng) {
+    int n_teams, team_size;
+    #ifdef KOKKOS_ENABLE_CUDA
+    if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
+        n_teams = static_cast<long int>(n_rays);
+        team_size = npol * ng;
+    } else
+    #endif
+    {
+        n_teams = static_cast<long int>(n_rays) *  npol * ng;
+        team_size = 1;
+    }
+    return Kokkos::TeamPolicy<ExecutionSpace>(n_teams, team_size, 1);
 }
-
-#ifdef KOKKOS_ENABLE_CUDA
-template <typename RealType>
-Kokkos::TeamPolicy<Kokkos::Cuda> KokkosMOC<Kokkos::Cuda, RealType>::_configure_team_policy(int n_rays, int npol, int ng) {
-    const int n_teams = static_cast<long int>(n_rays);
-    const int team_size = npol * ng;
-    return Kokkos::TeamPolicy<Kokkos::Cuda>(n_teams, team_size, 1);
-}
-#endif
 
 template <typename ExecSpace>
 struct RayIndexCalculator {
@@ -495,7 +515,7 @@ struct RayIndexCalculator {
     }
 };
 
-// Specialization for Serial backend
+// Specialization for Cuda backend
 #ifdef KOKKOS_ENABLE_CUDA
 template <>
 struct RayIndexCalculator<Kokkos::Cuda> {
@@ -522,56 +542,43 @@ void compute_exparg(int iray, int ig, int ipol,
                     const Kokkos::View<const RealType*, ExecutionSpace>& rsinpolang,
                     int nsegs)
 {
-    const auto& ray = ray_data(iray);
-    int seg_start = ray.seg_start;
-    for (int iseg = 0; iseg < nsegs; iseg++) {
-        const auto& segment = segment_data(seg_start + iseg);
-        RealType val = -xstr(segment.fsr_id, ig) * segment.length * rsinpolang(ipol);
-        int i = Kokkos::floor(val * rdx) + n_intervals + 1;
-        if (i >= 0 && i < n_intervals + 1) {
-            exparg(iseg) = exp_table(i, 0) * val + exp_table(i, 1);
-        } else if (val < static_cast<RealType>(-700.0)) {
-            exparg(iseg) = static_cast<RealType>(1.0);
-        } else {
-            exparg(iseg) = static_cast<RealType>(1.0) - Kokkos::exp(val);
+#ifdef KOKKOS_ENABLE_CUDA
+    if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
+        return;
+    } else
+#endif
+    {
+        const auto& ray = ray_data(iray);
+        int seg_start = ray.seg_start;
+        for (int iseg = 0; iseg < nsegs; iseg++) {
+            const auto& segment = segment_data(seg_start + iseg);
+            RealType val = -xstr(segment.fsr_id, ig) * segment.length * rsinpolang(ipol);
+            int i = Kokkos::floor(val * rdx) + n_intervals + 1;
+            if (i >= 0 && i < n_intervals + 1) {
+                exparg(iseg) = exp_table(i, 0) * val + exp_table(i, 1);
+            } else if (val < static_cast<RealType>(-700.0)) {
+                exparg(iseg) = static_cast<RealType>(1.0);
+            } else {
+                exparg(iseg) = static_cast<RealType>(1.0) - Kokkos::exp(val);
+            }
         }
     }
 }
-
-#ifdef KOKKOS_ENABLE_CUDA
-template <typename RealType>
-KOKKOS_INLINE_FUNCTION
-void compute_exparg<Kokkos::Cuda, RealType>(int iray, int ig, int ipol,
-                    const Kokkos::View<const RealType**, Kokkos::Cuda>& exp_table,
-                    int n_intervals, RealType rdx,
-                    Kokkos::View<RealType*, typename Kokkos::Cuda::scratch_memory_space>& exparg,
-                    const Kokkos::View<const RealType**, Kokkos::Cuda>& xstr,
-                    const Kokkos::View<const typename KokkosMOC<Kokkos::Cuda, RealType>::DeviceRayData*, Kokkos::Cuda>& ray_data,
-                    const Kokkos::View<const typename KokkosMOC<Kokkos::Cuda, RealType>::DeviceSegmentData*, Kokkos::Cuda>& segment_data,
-                    const Kokkos::View<const RealType*, Kokkos::Cuda>& rsinpolang,
-                    int nsegs)
-{
-    return;
-}
-#endif
 
 template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
 RealType eval_exp_arg(const Kokkos::View<RealType*, typename ExecutionSpace::scratch_memory_space>& exparg,
                     const int iseg, const RealType xstr, const RealType ray_segment, const RealType rsinpolang)
 {
-    return exparg(iseg);
-}
-
 #ifdef KOKKOS_ENABLE_CUDA
-template <typename RealType>
-KOKKOS_INLINE_FUNCTION
-RealType eval_exp_arg<Kokkos::Cuda, RealType>(const Kokkos::View<RealType*, typename Kokkos::Cuda::scratch_memory_space>& exparg,
-                    const int iseg, const RealType xstr, const RealType ray_segment, const RealType rsinpolang)
-{
-    return static_cast<RealType>(1.0) - Kokkos::exp(-xstr * ray_segment * rsinpolang);
-}
+    if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
+        return static_cast<RealType>(1.0) - Kokkos::exp(-xstr * ray_segment * rsinpolang);
+    } else
 #endif
+    {
+        return exparg(iseg);
+    }
+}
 
 template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
@@ -580,7 +587,7 @@ void tally_scalar_flux(
     Kokkos::View<RealType***, typename ExecutionSpace::array_layout, typename ExecutionSpace::memory_space> threaded_flux,
     const int ireg,
     const int ig,
-    const double contribution
+    const RealType contribution
 ) {
 #ifdef KOKKOS_ENABLE_OPENMP
     if constexpr (std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
@@ -588,7 +595,7 @@ void tally_scalar_flux(
     } else
 #endif
     {
-        Kokkos::atomic_add(&flux(ireg, ig), contribution);
+        Kokkos::atomic_add(&flux(ireg, ig), static_cast<double>(contribution));
     }
 }
 
@@ -597,6 +604,7 @@ template <typename ExecutionSpace, typename RealType>
 void KokkosMOC<ExecutionSpace, RealType>::sweep() {
     Kokkos::Profiling::pushRegion("KokkosMOC::Sweep " + _device);
     using ScratchViewReal1D = Kokkos::View<RealType*, typename ExecutionSpace::scratch_memory_space>;
+    Kokkos::deep_copy(_d_old_angflux, _h_old_angflux);
 
     // Avoid implicit capture
     auto& ray_data = _d_ray_data;
@@ -628,13 +636,17 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
 
     // Use the specialized team policy configuration
     typedef typename Kokkos::TeamPolicy<ExecutionSpace>::member_type team_member;
-    auto policy = _configure_team_policy(n_rays, npol, ng);
+    auto policy = _configure_team_policy<ExecutionSpace>(n_rays, npol, ng);
 
     // Add scratch space for exponential arguments
+    size_t scratch_size;
     if (_device != "cuda") {
-        size_t scratch_size = ScratchViewReal1D::shmem_size(_max_segments);
-        policy = policy.set_scratch_size(0, Kokkos::PerTeam(scratch_size));
+        scratch_size = ScratchViewReal1D::shmem_size(_max_segments);
+        scratch_size = ScratchViewReal1D::shmem_size(_max_segments);
+    } else {
+        scratch_size = 0;
     }
+    policy = policy.set_scratch_size(0, Kokkos::PerTeam(scratch_size));
 
     // Sweep all rays using parallel_for with ray index
     Kokkos::parallel_for("MOC Sweep Rays", policy, KOKKOS_LAMBDA(const team_member& teamMember) {
@@ -654,7 +666,7 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
         // Create thread-local exparg array for non-CUDA execution spaces using scratch space
         ScratchViewReal1D exparg(teamMember.team_scratch(0), nsegs);
         compute_exparg<ExecutionSpace, RealType>(iray, ig, ipol, exp_table, n_exp_intervals, exp_rdx, exparg,
-                                       xstr, ray_data, segment_data, rsinpolang, ray.nsegs);
+                                                 xstr, ray_data, segment_data, rsinpolang, ray.nsegs);
 
         // Create temporary arrays for segment flux
         RealType fsegflux = old_angflux(ray.bc_frwd_start, ipol, ig);
@@ -708,7 +720,8 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
     Kokkos::parallel_for("ScaleScalarFlux",
         Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<2>>({0, 0}, {_nfsr, _ng}),
         KOKKOS_LAMBDA(int i, int g) {
-            scalar_flux(i, g) = scalar_flux(i, g) * static_cast<double>(_plane_height) / (static_cast<double>(xstr(i, g)) * static_cast<double>(fsr_vol(i))) + static_cast<double>(source(i, g)) * fourpi;
+            scalar_flux(i, g) = scalar_flux(i, g) * static_cast<double>(_plane_height / (xstr(i, g) * fsr_vol(i)))
+                + static_cast<double>(source(i, g) * fourpi);
     });
 
     // Copy results back to host

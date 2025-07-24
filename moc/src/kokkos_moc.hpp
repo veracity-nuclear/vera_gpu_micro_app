@@ -38,9 +38,6 @@ class KokkosMOC : public BaseMOC {
         // Unified implementation of MOC sweep for any execution space
         void _impl_sweep();
 
-        // Configure team policy based on execution space
-        Kokkos::TeamPolicy<ExecutionSpace> _configure_team_policy(int n_rays, int npol, int ng);
-
         // Device-compatible segment data structure
         struct DeviceSegmentData {
             int fsr_id;
@@ -134,6 +131,29 @@ class KokkosMOC : public BaseMOC {
         using DeviceSegmentView = Kokkos::View<DeviceSegmentData*, layout, MemorySpace>;
         DeviceRayView _d_ray_data;
         DeviceSegmentView _d_segment_data;
+
+        HViewInt1D _h_ray_nsegs;
+        HViewInt1D _h_ray_bc_face_start;
+        HViewInt1D _h_ray_bc_face_end;
+        HViewInt1D _h_ray_bc_index_frwd_start;
+        HViewInt1D _h_ray_bc_index_frwd_end;
+        HViewInt1D _h_ray_bc_index_bkwd_start;
+        HViewInt1D _h_ray_bc_index_bkwd_end;
+        HViewInt1D _h_ray_angle_index;
+        HViewInt1D _h_ray_fsrs;
+        HViewReal1D _h_ray_segments;
+
+        // Ray device data
+        DViewInt1D _d_ray_nsegs;
+        DViewInt1D _d_ray_bc_face_start;
+        DViewInt1D _d_ray_bc_face_end;
+        DViewInt1D _d_ray_bc_index_frwd_start;
+        DViewInt1D _d_ray_bc_index_frwd_end;
+        DViewInt1D _d_ray_bc_index_bkwd_start;
+        DViewInt1D _d_ray_bc_index_bkwd_end;
+        DViewInt1D _d_ray_angle_index;
+        DViewInt1D _d_ray_fsrs;
+        DViewReal1D _d_ray_segments;
 
         // Solution host data
         HViewDouble2D _h_scalar_flux;
