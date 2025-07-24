@@ -292,7 +292,7 @@ PetscErrorCode COOMatrixAssembler::_assembleM()
     //     matSize, matSize, cmfdData.nGroups, NULL, 1, NULL, &MMat);
 
     static constexpr int method = 2;
-    // METHOD 1: Use Vectors with emplace back to aPetscErrorCode storing zeros
+    // METHOD 1: Use Vectors with emplace back to avoid storing zeros
     if constexpr(method == 1)
     {
         std::vector<PetscInt> rowIndices, colIndices;
@@ -598,7 +598,8 @@ PetscErrorCode CSRMatrixAssembler::_assembleM()
     static constexpr size_t additionalEntriesPerSurf = 2;
 
     // On each row we have
-    const PetscInt maxNNZInRow = cmfdData.nGroups + MAX_POS_SURF_PER_CELL * additionalEntriesPerSurf;
+    // Note: If we have one cell, we have no leakage terms, so we don't need to add the additional entries.
+    const PetscInt maxNNZInRow = cmfdData.nGroups + MAX_POS_SURF_PER_CELL * additionalEntriesPerSurf * static_cast<PetscInt>(cmfdData.nCells > 1);
     const PetscInt matSize = cmfdData.nCells * cmfdData.nGroups; // row or col
     const PetscInt numNonZero = matSize * maxNNZInRow;
 
