@@ -189,8 +189,8 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
             bc_bkwd_end = angface_to_ray[irefl][ray.bc_face(RAY_START)][start_index];
             for (size_t ipol = 0; ipol < _npol; ipol++) {
                 for (size_t ig = 0; ig < _ng; ig++) {
-                    _h_angflux(bc_frwd_start, ipol, ig) = 0.0f;
-                    _h_angflux(bc_bkwd_end, ipol, ig) = 0.0f;
+                    _h_angflux(bc_frwd_start, ipol, ig) = 0.0;
+                    _h_angflux(bc_bkwd_end, ipol, ig) = 0.0;
                 }
             }
         }
@@ -204,8 +204,8 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
             bc_bkwd_start = angface_to_ray[ang][ray.bc_face(RAY_END)][start_index];
             for (size_t ipol = 0; ipol < _npol; ipol++) {
                 for (size_t ig = 0; ig < _ng; ig++) {
-                    _h_angflux(bc_frwd_end, ipol, ig) = 0.0f;
-                    _h_angflux(bc_bkwd_start, ipol, ig) = 0.0f;
+                    _h_angflux(bc_frwd_end, ipol, ig) = 0.0;
+                    _h_angflux(bc_bkwd_start, ipol, ig) = 0.0;
                 }
             }
         }
@@ -336,9 +336,12 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
     }
 
     // Reserve space for rays
+    _h_ray_nsegs = HViewInt1D("ray_nsegs", _n_rays + 1);
+    _h_ray_nsegs(0) = 0;
     _rays.reserve(_n_rays);
 
     // Set up the rays using KokkosLongRay
+    int iray = 0;
     for (const auto& objName : domain.listObjectNames()) {
         if (objName.substr(0, 6) == "Angle_") {
             HighFive::Group angleGroup = domain.getGroup(objName);
@@ -350,7 +353,10 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
             for (const auto& rayName : angleGroup.listObjectNames()) {
                 if (rayName.substr(0, 8) == "LongRay_") {
                     auto rayGroup = angleGroup.getGroup(rayName);
+                    auto fsrs = rayGroup.getDataSet("FSRs").read<std::vector<int>>();
+                    _h_ray_nsegs(iray + 1) = _h_ray_nsegs(iray) + fsrs.size();
                     _rays.emplace_back(rayGroup, angleIndex, radians);
+                    iray++;
                 }
             }
         }
@@ -361,7 +367,7 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
 
     _h_ray_fsrs = HViewInt1D("ray_fsrs", _h_ray_nsegs(_n_rays));
     _h_ray_segments = HViewReal1D("ray_segments", _h_ray_nsegs(_n_rays));
-    int iray = 0;
+    iray = 0;
     for (const auto& objName : domain.listObjectNames()) {
         if (objName.substr(0, 6) == "Angle_") {
             HighFive::Group angleGroup = domain.getGroup(objName);
