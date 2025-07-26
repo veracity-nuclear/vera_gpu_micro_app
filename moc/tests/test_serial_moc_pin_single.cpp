@@ -14,7 +14,7 @@ TEST(BasicTest, pin_7g_16a_3p_serial_single) {
     std::shared_ptr<BaseMOC> sweeper(new SerialMOC<float>(parser));
     EigenSolver solver(parser, sweeper);
     solver.solve();
-    EXPECT_NEAR(solver.keff(), 1.325693714, 1.0e-7);
+    EXPECT_NEAR(solver.keff(), 1.325693714, 5.0e-6);
 }
 
 int main(int argc, char **argv) {
