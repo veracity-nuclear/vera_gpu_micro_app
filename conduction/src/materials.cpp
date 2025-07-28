@@ -123,25 +123,15 @@ void UO2::update_node_radii(const std::shared_ptr<CylinderNode>& node, double T,
         throw std::out_of_range("Temperature in Kelvin cannot be less than 0.0");
     }
 
+    double delta_r_inner = 0.0, delta_r_outer = 0.0;
+
+    // thermal expansion
     double strain = 1e-5 * (T - T_prev);
-    node->set_inner_radius(node->get_inner_radius() * (1.0 + strain));
-    node->set_outer_radius(node->get_outer_radius() * (1.0 + strain));
-}
+    delta_r_inner += node->get_inner_radius() * strain;
+    delta_r_outer += node->get_outer_radius() * strain;
 
-double Helium::k(double T) const {
-    const double a = 1.314e-3; // in BTU/hr-ft-F
-    const double b = 0.668;
-    double T_R = T * 9.0 / 5.0; // Convert K to °R
-    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
-    return k * 1.730735;   // Convert to W/m-K
-}
-
-double Xenon::k(double T) const {
-    const double a = 1.395e-5; // in BTU/hr-ft-F
-    const double b = 0.872;
-    double T_R = T * 9.0 / 5.0; // Convert K to °R
-    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
-    return k * 1.730735;   // Convert to W/m-K
+    node->set_inner_radius(node->get_inner_radius() + delta_r_inner);
+    node->set_outer_radius(node->get_outer_radius() + delta_r_outer);
 }
 
 double Argon::k(double T) const {
@@ -152,9 +142,9 @@ double Argon::k(double T) const {
     return k * 1.730735;   // Convert to W/m-K
 }
 
-double Krypton::k(double T) const {
-    const double a = 1.588e-5; // in BTU/hr-ft-F
-    const double b = 0.92331;
+double Helium::k(double T) const {
+    const double a = 1.314e-3; // in BTU/hr-ft-F
+    const double b = 0.668;
     double T_R = T * 9.0 / 5.0; // Convert K to °R
     double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
     return k * 1.730735;   // Convert to W/m-K
@@ -168,9 +158,25 @@ double Hydrogen::k(double T) const {
     return k * 1.730735;   // Convert to W/m-K
 }
 
+double Krypton::k(double T) const {
+    const double a = 1.588e-5; // in BTU/hr-ft-F
+    const double b = 0.92331;
+    double T_R = T * 9.0 / 5.0; // Convert K to °R
+    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
+    return k * 1.730735;   // Convert to W/m-K
+}
+
 double Nitrogen::k(double T) const {
     const double a = 7.35e-5; // in BTU/hr-ft-F
     const double b = 0.846;
+    double T_R = T * 9.0 / 5.0; // Convert K to °R
+    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
+    return k * 1.730735;   // Convert to W/m-K
+}
+
+double Xenon::k(double T) const {
+    const double a = 1.395e-5; // in BTU/hr-ft-F
+    const double b = 0.872;
     double T_R = T * 9.0 / 5.0; // Convert K to °R
     double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
     return k * 1.730735;   // Convert to W/m-K
