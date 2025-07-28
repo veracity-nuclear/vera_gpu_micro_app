@@ -105,6 +105,21 @@ std::vector<double> CylindricalSolver::solve(
             std::shared_ptr<Solid> material = materials[i];
 
             material->update_node_radii(node, Tavg[i], Tavg_prev[i]);
+
+            // Retrieve the outer radius of the previous node
+            if (i > 0) {
+                double r_outer_prev = nodes[i - 1]->get_outer_radius();
+                if (node->get_inner_radius() < r_outer_prev) {
+                    double prev_volume = node->get_volume();
+
+                    // Update inner radius to match the outer radius of the previous node
+                    node->set_inner_radius(r_outer_prev);
+
+                    // Adjust outer radius, conserving mass
+                    double new_outer_radius = std::sqrt((prev_volume / (M_PI * node->get_height())) + (node->get_inner_radius() * node->get_inner_radius()));
+                    node->set_outer_radius(new_outer_radius);
+                }
+            }
         }
 
         // Check convergence
@@ -160,7 +175,7 @@ std::vector<double> CylindricalSolver::internal_Tsolve(
 
             // calculate gap width between this node and the next inward node
             double gap_width = nodes[i]->get_inner_radius() - nodes[i - 1]->get_outer_radius();
-            if (gap_width > 0.0) {
+            if (gap_width > 1e-6) {
                 // Assume Helium is the fill gas in the gap for now
                 double k_gap = gap_fluid->k(interface_temps[idx_right]); // W/m-K
 
