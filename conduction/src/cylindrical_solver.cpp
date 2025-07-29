@@ -148,11 +148,11 @@ std::vector<double> CylindricalSolver::internal_Tsolve(
     const size_t N = nodes.size();
 
     std::vector<double> volumes = get_volumes();
-    double qtotal = std::inner_product(qdot.begin(), qdot.end(), volumes.begin(), 0.0);
-
     std::vector<double> Tavg(nodes.size(), 0.0);
     std::vector<double> Tavg_prev(nodes.size(), 0.0);
     for (size_t iter = 0; iter < max_iterations; ++iter) {
+
+        double qtotal = std::inner_product(qdot.begin(), qdot.end(), volumes.begin(), 0.0);
 
         // Calculate thermal conductivity for each node
         std::vector<double> k(N);
@@ -163,27 +163,28 @@ std::vector<double> CylindricalSolver::internal_Tsolve(
         // Calculate temperatures at cylinder node surfaces
         interface_temps[interface_temps.size() - 1] = T_outer;
         double R_total = 0.0;
-
         for (size_t i = nodes.size(); i-- > 0;) {
             auto [idx_left, idx_right] = node_to_interface_indices[i];
 
-            interface_temps[idx_right] = T_outer + qtotal * R_total;
-            R_total += nodes[i]->calculate_thermal_resistance(k[i]); // W/m-K
-            interface_temps[idx_left] = T_outer + qtotal * R_total;
+            qtotal -= qdot[i] * volumes[i]; // Update total heat for next node
+            double qflux = qtotal / nodes[i]->get_inner_area(); // Inner heat flux coming into the node
+            interface_temps[idx_left] = nodes[i]->solve_inner_temperature(k[i], interface_temps[idx_right], qflux, qdot[i]);
 
             if (i == 0) { continue; } // Skip the first node (no gap before the first node)
 
             // calculate gap width between this node and the next inward node
             double gap_width = nodes[i]->get_inner_radius() - nodes[i - 1]->get_outer_radius();
             if (gap_width > 1e-6) {
-                // Assume Helium is the fill gas in the gap for now
-                double k_gap = gap_fluid->k(interface_temps[idx_right]); // W/m-K
 
                 // Gap conductance
+                double k_gap = gap_fluid->k(interface_temps[idx_right]); // W/m-K
                 double H_gap = k_gap / gap_width; // W/m^2-K
 
                 // Add gap resistance to total resistance for the next node
-                R_total += 1 / (H_gap * nodes[i]->get_inner_area()); // W/m-K
+                double R_gap = 1 / (H_gap * nodes[i - 1]->get_outer_area());
+
+                // Update the temperature at the outer surface of the next node
+                interface_temps[idx_left - 1] = interface_temps[idx_left] + qtotal * R_gap;
             }
         }
 
@@ -191,31 +192,13 @@ std::vector<double> CylindricalSolver::internal_Tsolve(
         for (size_t i = 0; i < nodes.size(); ++i) {
 
             // Calculate average temperature using 1-D heat conduction formula with 2 Dirichlet boundary conditions
-            double R_inner = nodes[i]->get_inner_radius();
-            double R_outer = nodes[i]->get_outer_radius();
-            double R_avg = (R_inner + R_outer) * 0.5;
-
             size_t idx_left = node_to_interface_indices[i].first;
             size_t idx_right = node_to_interface_indices[i].second;
 
             double T_inner = interface_temps[idx_left];
             double T_outer = interface_temps[idx_right];
 
-            if (std::abs(R_inner) < 1e-9) {
-                // Special case for the center of a cylinder (R_inner = 0)
-                Tavg[i] = T_outer + 3.0 / 16.0 * (qdot[i] / k[i]) * R_outer * R_outer;
-            } else {
-                // Solve for C1
-                double num = (T_outer - T_inner) + (qdot[i] / (4.0 * k[i])) * (R_outer * R_outer - R_inner * R_inner);
-                double denom = std::log(R_outer) - std::log(R_inner);
-                double C1 = num / denom;
-
-                // Solve for C2
-                double C2 = T_inner + (qdot[i] / (4.0 * k[i])) * R_inner * R_inner - C1 * std::log(R_inner);
-
-                // Evaluate T at average radius
-                Tavg[i] = -(qdot[i] / (4.0 * k[i])) * R_avg * R_avg + C1 * std::log(R_avg) + C2;
-            }
+            Tavg[i] = nodes[i]->calculate_avg_temperature(k[i], T_inner, T_outer, qdot[i]);
             nodes[i]->set_temperature(Tavg[i]); // Update node temperature
         }
 

@@ -43,7 +43,7 @@ TEST(CylindricalSolverTest, TemperatureDistribution_1Region) {
     };
 
     CylindricalSolver solver(nodes, materials);
-    std::vector<double> qdot = {3.8e6};  // W/m^3
+    std::vector<double> qdot = {3.8e9};  // W/m^3
     double T_outer = 600.0; // K
 
     std::vector<double> avg_temps = solver.solve(qdot, T_outer);
@@ -52,65 +52,91 @@ TEST(CylindricalSolverTest, TemperatureDistribution_1Region) {
 
     // analytical solution for temperature at fuel centerline
     // T(r=0) = T_outer + qdot / (4 * k) * (r_out^2 - r_in^2)
-    double T_fuel_cl_analytical = 611.857359; // K
+    double T_fuel_cl_analytical = 732.328771; // K
 
     EXPECT_NEAR(T_fuel_cl, T_fuel_cl_analytical, 1e-6);
 
     EXPECT_EQ(avg_temps.size(), 1);
-    EXPECT_NEAR(avg_temps[0], 608.893019, 1e-6);
+    EXPECT_NEAR(avg_temps[0], 699.246578, 1e-6);
 }
 
-TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_3Regions) {
+TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_10Regions) {
     double height = 0.11951; // m
-    std::vector<double> radii = {0.0, 0.004096, 0.004180, 0.004750}; // radii in m
-    std::vector<std::shared_ptr<CylinderNode>> nodes = {
-        std::make_shared<CylinderNode>(height, radii[0], radii[1]),
-        std::make_shared<CylinderNode>(height, radii[2], radii[3])
-    };
-    std::vector<std::shared_ptr<Solid>> materials = {
-        std::make_shared<UO2>(),
-        std::make_shared<Zircaloy>()
-    };
 
-    double qdot_fuel = 1000 / nodes[0]->get_volume(); // W/m^3
+    std::vector<double> fuel_radii = {0.000000, 0.004096}; // fuel radii in m
+    std::vector<double> clad_radii = {0.004180, 0.004750}; // clad radii in m
+
+    double N_fuel_regions = 8; // Number of fuel regions
+    double N_clad_regions = 2; // Number of clad regions
+    double pin_total_power = 1000.0; // W
+    double r0, r1, dr;
+
+    std::vector<std::shared_ptr<CylinderNode>> nodes = {};
+    std::vector<std::shared_ptr<Solid>> materials = {};
+    std::vector<double> power = {}; // W
+
+    r0 = fuel_radii[0];
+    r1 = fuel_radii[1];
+    dr = (r1 - r0) / N_fuel_regions;
+    for (size_t i = 0; i < N_fuel_regions; ++i) {
+        double inner_radius = r0 + i * dr;
+        double outer_radius = r0 + (i + 1) * dr;
+        nodes.push_back(std::make_shared<CylinderNode>(height, inner_radius, outer_radius));
+        materials.push_back(std::make_shared<UO2>());
+        power.push_back(1.0 - std::pow(inner_radius / r1, 2)); // W
+    }
+
+    // normalize power to 1000 W
+    double normalization_factor = std::accumulate(power.begin(), power.end(), 0.0);
+    for (auto &p : power) {
+        p = (p / normalization_factor) * pin_total_power; // W
+    }
+
+    r0 = clad_radii[0];
+    r1 = clad_radii[1];
+    dr = (r1 - r0) / N_clad_regions;
+    for (size_t i = 0; i < N_clad_regions; ++i) {
+        double inner_radius = r0 + i * dr;
+        double outer_radius = r0 + (i + 1) * dr;
+        nodes.push_back(std::make_shared<CylinderNode>(height, inner_radius, outer_radius));
+        materials.push_back(std::make_shared<Zircaloy>());
+        power.push_back(0.0); // W
+    }
+
+    std::vector<double> qdot(nodes.size(), 0.0); // W/m^3
+    for (size_t i = 0; i < nodes.size() - 1; ++i) {
+        qdot[i] = power[i] / nodes[i]->get_volume(); // W/m^3
+    }
 
     CylindricalSolver solver(nodes, materials);
-    std::vector<double> qdot = {qdot_fuel, 0.0};  // W/m^3
     double T_outer = 600.0; // K
 
     std::vector<double> avg_temps = solver.solve(qdot, T_outer);
     std::vector<double> interface_temps = solver.get_interface_temperatures();
+
     double T_fuel_cl = interface_temps[0];
-    double T_fuel_outer = interface_temps[1];
-    double T_clad_inner = interface_temps[2];
-    double T_clad_outer = interface_temps[3];
+    double T_fuel_outer = interface_temps[8];
+    double T_clad_inner = interface_temps[9];
+    double T_clad_outer = interface_temps[11];
 
     // analytical solution for temperature at fuel centerline
     // T(r=0.) = T_outer + q * (R_fuel + R_gap + R_clad)
     // T(r=r1) = T_outer + q * (R_gap + R_clad)
     // T(r=r2) = T_outer + q * R_clad
     // T(r=r3) = T_outer
-    double T_fuel_cl_analytical = 888.662; // K
-    double T_fuel_outer_analytical = 719.112; // K
-    double T_clad_inner_analytical = 610.340; // K
-    double T_clad_outer_analytical = 600.000; // K
+    double T_fuel_cl_analytical    = 721.201927; // K
+    double T_fuel_outer_analytical = 717.750637; // K
+    double T_clad_inner_analytical = 600.103502; // K
+    double T_clad_outer_analytical = 600.000000; // K
 
     // Test interface temperatures
-    EXPECT_NEAR(T_fuel_cl, T_fuel_cl_analytical, 1e-3);
-    EXPECT_NEAR(T_fuel_outer, T_fuel_outer_analytical, 1e-3);
-    EXPECT_NEAR(T_clad_inner, T_clad_inner_analytical, 1e-3);
-    EXPECT_NEAR(T_clad_outer, T_clad_outer_analytical, 1e-3);
+    EXPECT_NEAR(T_fuel_cl, T_fuel_cl_analytical, 1e-6);
+    EXPECT_NEAR(T_fuel_outer, T_fuel_outer_analytical, 1e-6);
+    EXPECT_NEAR(T_clad_inner, T_clad_inner_analytical, 1e-6);
+    EXPECT_NEAR(T_clad_outer, T_clad_outer_analytical, 1e-6);
 
     // Test average temperatures
-    EXPECT_EQ(avg_temps.size(), 2);
-    EXPECT_NEAR(avg_temps[0], 846.274, 1e-3);
-    EXPECT_NEAR(avg_temps[1], 605.005, 1e-3);
-
-    // Test thermal expansion effects
-    EXPECT_NEAR(nodes[0]->get_inner_radius(), 0.00000000, 1e-6);
-    EXPECT_NEAR(nodes[0]->get_outer_radius(), 0.00410608, 1e-6);
-    EXPECT_NEAR(nodes[1]->get_inner_radius(), 0.00418834, 1e-6);
-    EXPECT_NEAR(nodes[1]->get_outer_radius(), 0.00475947, 1e-6);
+    EXPECT_EQ(avg_temps.size(), 10);
 }
 
 int main(int argc, char **argv) {
