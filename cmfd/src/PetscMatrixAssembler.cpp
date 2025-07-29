@@ -5,7 +5,7 @@ inline bool isNonZero(const PetscScalar& value)
     return std::abs(value) > PETSC_MACHINE_EPSILON;
 }
 
-void SimpleMatrixAssembler::_assembleM()
+PetscErrorCode SimpleMatrixAssembler::_assembleM()
 {
     PetscFunctionBeginUser;
 
@@ -15,11 +15,11 @@ void SimpleMatrixAssembler::_assembleM()
     // Set the matrix dimensions (just for compatibility checks))
     // The PETSC_DECIDEs are for sub matrices split across multiple MPI ranks.
     const PetscInt matSize = cmfdData.nCells * cmfdData.nGroups;
-    MatSetSizes(MMat, PETSC_DECIDE, PETSC_DECIDE, matSize, matSize);
+    PetscCall(MatSetSizes(MMat, PETSC_DECIDE, PETSC_DECIDE, matSize, matSize));
 
     // Set the type of the matrix (etc.) based on PETSc CLI options.
     // Default is AIJ sparse matrix.
-    MatSetFromOptions(MMat);
+    PetscCall(MatSetFromOptions(MMat));
 
     // TODO Figure out a way to change assembly type. Runtime vs compile time?
     // Should these just be different classes?
@@ -39,7 +39,7 @@ void SimpleMatrixAssembler::_assembleM()
                 const PetscScalar value = -1 * scatteringMat(scatterToIdx, scatterFromIdx) * volume;
                 if (isNonZero(value))
                 {
-                    MatSetValue(MMat, cellIdx * cmfdData.nGroups + scatterFromIdx, cellIdx * cmfdData.nGroups + scatterToIdx, value, ADD_VALUES);
+                    PetscCall(MatSetValue(MMat, cellIdx * cmfdData.nGroups + scatterFromIdx, cellIdx * cmfdData.nGroups + scatterToIdx, value, ADD_VALUES));
                 }
             }
         }
@@ -52,11 +52,11 @@ void SimpleMatrixAssembler::_assembleM()
             if (isNonZero(value))
             {
                 const PetscInt diagIdx = cellIdx * cmfdData.nGroups + groupIdx;
-                MatSetValue(MMat, diagIdx, diagIdx, value, ADD_VALUES);
+                PetscCall(MatSetValue(MMat, diagIdx, diagIdx, value, ADD_VALUES));
             }
             {
                 const PetscInt diagIdx = cellIdx * cmfdData.nGroups + groupIdx;
-                MatSetValue(MMat, diagIdx, diagIdx, value, ADD_VALUES);
+                PetscCall(MatSetValue(MMat, diagIdx, diagIdx, value, ADD_VALUES));
             }
         }
     }
@@ -80,20 +80,20 @@ void SimpleMatrixAssembler::_assembleM()
             if (posCellMatIdx >= 0)
             {
                 const PetscScalar value = -1 * dhat + dtilde;
-                if (isNonZero(value)) {MatSetValue(MMat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {PetscCall(MatSetValue(MMat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES));}
             }
             if (negCellMatIdx >= 0)
             {
                 const PetscScalar value = dhat + dtilde;
-                if (isNonZero(value)) {MatSetValue(MMat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {PetscCall(MatSetValue(MMat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES));}
             }
             if (posCellMatIdx >= 0 && negCellMatIdx >= 0)
             {
                 const PetscScalar value1 = -1 * dhat - dtilde;
-                if (isNonZero(value1)) {MatSetValue(MMat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES);}
+                if (isNonZero(value1)) {PetscCall(MatSetValue(MMat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES));}
 
                 const PetscScalar value2 = dhat - dtilde;
-                if (isNonZero(value2)) {MatSetValue(MMat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES);}
+                if (isNonZero(value2)) {PetscCall(MatSetValue(MMat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES));}
             }
         }
     }
@@ -107,7 +107,7 @@ void SimpleMatrixAssembler::_assembleM()
                 const PetscScalar value = -1 * cmfdData.scatteringXS(scatterToIdx, scatterFromIdx, cellIdx) * cmfdData.volume(cellIdx);
                 if (isNonZero(value))
                 {
-                    MatSetValue(MMat, cellIdx * cmfdData.nGroups + scatterFromIdx, cellIdx * cmfdData.nGroups + scatterToIdx, value, ADD_VALUES);
+                    PetscCall(MatSetValue(MMat, cellIdx * cmfdData.nGroups + scatterFromIdx, cellIdx * cmfdData.nGroups + scatterToIdx, value, ADD_VALUES));
                 }
             }
         }
@@ -122,7 +122,7 @@ void SimpleMatrixAssembler::_assembleM()
             if (isNonZero(value))
             {
                 const PetscInt diagIdx = cellIdx * cmfdData.nGroups + groupIdx;
-                MatSetValue(MMat, diagIdx, diagIdx, value, ADD_VALUES);
+                PetscCall(MatSetValue(MMat, diagIdx, diagIdx, value, ADD_VALUES));
             }
         }
     }
@@ -143,31 +143,33 @@ void SimpleMatrixAssembler::_assembleM()
             if (posCellMatIdx >= 0)
             {
                 const PetscScalar value = -1 * dhat + dtilde;
-                if (isNonZero(value)) {MatSetValue(MMat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {PetscCall(MatSetValue(MMat, posCellMatIdx, posCellMatIdx, value, ADD_VALUES));}
             }
             if (negCellMatIdx >= 0)
             {
                 const PetscScalar value = dhat + dtilde;
-                if (isNonZero(value)) {MatSetValue(MMat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES);}
+                if (isNonZero(value)) {PetscCall(MatSetValue(MMat, negCellMatIdx, negCellMatIdx, value, ADD_VALUES));}
             }
             if (posCellMatIdx >= 0 && negCellMatIdx >= 0)
             {
                 const PetscScalar value1 = -1 * dhat - dtilde;
-                if (isNonZero(value1)) {MatSetValue(MMat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES);}
+                if (isNonZero(value1)) {PetscCall(MatSetValue(MMat, posCellMatIdx, negCellMatIdx, value1, ADD_VALUES));}
 
                 const PetscScalar value2 = dhat - dtilde;
-                if (isNonZero(value2)) {MatSetValue(MMat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES);}
+                if (isNonZero(value2)) {PetscCall(MatSetValue(MMat, negCellMatIdx, posCellMatIdx, value2, ADD_VALUES));}
             }
         }
     }
     #endif
 
     // Actually put the values into the matrix
-    MatAssemblyBegin(MMat, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(MMat, MAT_FINAL_ASSEMBLY);
+    PetscCall(MatAssemblyBegin(MMat, MAT_FINAL_ASSEMBLY));
+    PetscCall(MatAssemblyEnd(MMat, MAT_FINAL_ASSEMBLY));
+
+    return PETSC_SUCCESS;
 }
 
-void SimpleMatrixAssembler::_assembleFission(const FluxView& flux)
+PetscErrorCode SimpleMatrixAssembler::_assembleFission(const FluxView& flux)
 {
     std::vector<PetscInt> vecIndices;
     std::vector<PetscScalar> vecValues;
@@ -203,12 +205,14 @@ void SimpleMatrixAssembler::_assembleFission(const FluxView& flux)
     }
 
     // Actually put the values into the vector
-    VecSetValues(fissionVec, vecIndices.size(), vecIndices.data(), vecValues.data(), INSERT_VALUES);
-    VecAssemblyBegin(fissionVec);
-    VecAssemblyEnd(fissionVec);
+    PetscCall(VecSetValues(fissionVec, vecIndices.size(), vecIndices.data(), vecValues.data(), INSERT_VALUES));
+    PetscCall(VecAssemblyBegin(fissionVec));
+    PetscCall(VecAssemblyEnd(fissionVec));
+
+    return PETSC_SUCCESS;
 }
 
-void COOMatrixAssembler::_assembleM()
+PetscErrorCode COOMatrixAssembler::_assembleM()
 {
     /*
     The shape of a two cell three group matrix is
@@ -277,11 +281,11 @@ void COOMatrixAssembler::_assembleM()
 
     // // There are a lot of options here for splitting up the matrix into submatrices per mpi rank
     // //  (on the PETSc side), i.e., # of rows/cols per rank and number of zeros on and off the diagonal (per row).
-    MatCreateAIJKokkos(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE,
+    PetscCall(MatCreateAIJKokkos(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE,
         matSize, matSize,
         PETSC_DEFAULT, NULL,
         PETSC_DEFAULT, NULL,
-        &MMat);
+        &MMat));
 
     // Attempt. Could optimize with d_nnz based on scatter matrix layout (4th from last param)
     // MatCreateAIJKokkos(PETSC_COMM_WORLD, cmfdData.nGroups, cmfdData.nGroups,
@@ -382,8 +386,8 @@ void COOMatrixAssembler::_assembleM()
         size_t numNonZero = values.size();
 
 
-        MatSetPreallocationCOO(MMat, numNonZero, rowIndices.data(), colIndices.data());
-        MatSetValuesCOO(MMat, values.data(), ADD_VALUES);
+        PetscCall(MatSetPreallocationCOO(MMat, numNonZero, rowIndices.data(), colIndices.data()));
+        PetscCall(MatSetValuesCOO(MMat, values.data(), ADD_VALUES));
     }
     else if constexpr(method == 2) // METHOD 2:
     // Use Kokkos views somewhat naively (use teams, scratch pad, etc. to optimize)
@@ -393,14 +397,14 @@ void COOMatrixAssembler::_assembleM()
         // Don't want to access self->cmfdData in the lambda, so copy it to a reference
         auto& _cmfdData = cmfdData;
 
-        // Assume each row has maxNNZInRow non-zero entries
+        // TODO (#26): Assume each row has maxNNZInRow non-zero entries
         PetscInt maxNNZEntries = maxNNZInRow * matSize + cmfdData.nPosLeakageSurfs * cmfdData.nGroups;
 
         // Maybe these get assembled on the GPU, copied to the host for MatSetValuesCOO
         // Maybe this changes based on where the matrix is assembled, or does Kokkos handle that?
-        Kokkos::View<PetscInt *, AssemblyMemorySpace> rowIndices("rowIndicesKokkos", maxNNZEntries);
-        Kokkos::View<PetscInt *, AssemblyMemorySpace> colIndices("colIndicesKokkos", maxNNZEntries);
-        Kokkos::View<PetscScalar *, AssemblyMemorySpace> values("valuesKokkos", maxNNZEntries);
+        Kokkos::View<PetscInt *, AssemblyMemorySpace> rowIndices("rowIndicesCOO", maxNNZEntries);
+        Kokkos::View<PetscInt *, AssemblyMemorySpace> colIndices("colIndicesCOO", maxNNZEntries);
+        Kokkos::View<PetscScalar *, AssemblyMemorySpace> values("valuesCOO", maxNNZEntries);
 
         {
             Kokkos::parallel_for("COOMatrixAssembler2: ScatterXS", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<3>>({0, 0, 0}, {cmfdData.nGroups, cmfdData.nGroups, cmfdData.nCells}),
@@ -474,7 +478,7 @@ void COOMatrixAssembler::_assembleM()
 
             // TODO: This is also not tightly nested and could be optimized
             Kokkos::parallel_for("COOMatrixAssembler2: OutLeakage", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<2>>({0, 0}, {cmfdData.nGroups, cmfdData.nPosLeakageSurfs}),
-            KOKKOS_LAMBDA(const PetscInt groupIdx, const PetscInt nthPosLeakageSurf)
+                KOKKOS_LAMBDA(const PetscInt groupIdx, const PetscInt nthPosLeakageSurf)
             {
                 const PetscInt posSurfIdx = _cmfdData.posLeakageSurfs(nthPosLeakageSurf);
                 const PetscInt negCellIdx = _cmfdData.surf2Cell(posSurfIdx, 1);
@@ -490,21 +494,22 @@ void COOMatrixAssembler::_assembleM()
                     colIndices(locationIn1D) = negCellMatIdx;
                     values(locationIn1D) = dhat + dtilde;
                 }
-
-            }
-        );
+            });
     }
 
-        MatSetPreallocationCOO(MMat, maxNNZEntries, rowIndices.data(), colIndices.data());
-        MatSetValuesCOO(MMat, values.data(), ADD_VALUES);
+        Kokkos::fence();
+        PetscCall(MatSetPreallocationCOO(MMat, maxNNZEntries, rowIndices.data(), colIndices.data()));
+        PetscCall(MatSetValuesCOO(MMat, values.data(), ADD_VALUES));
     }
+
+    return PETSC_SUCCESS;
 }
 
-void COOMatrixAssembler::_assembleFission(const FluxView& flux)
+PetscErrorCode COOMatrixAssembler::_assembleFission(const FluxView& flux)
 {
     auto& _cmfdData = cmfdData;
 
-    // TODO: Assuming no zeros in the vector. We can optimize based on chi to get the sparsity pattern.
+    // TODO (#26): Assuming no zeros in the vector. We can optimize based on chi to get the sparsity pattern.
     const PetscInt nnz = nRows;
     Kokkos::View<PetscInt *, AssemblyMemorySpace> rowIndices("rowIndicesKokkos", nnz);
     Kokkos::View<PetscScalar *, AssemblyMemorySpace> values("VecValuesKokkos", nnz);
@@ -539,7 +544,7 @@ void COOMatrixAssembler::_assembleFission(const FluxView& flux)
 
         // Use the team policy with the automatic team size to calculate the maximum team size
         Kokkos::TeamPolicy<AssemblySpace> nCellsRange(_cmfdData.nCells, Kokkos::AUTO);
-        int maxTeamSize = nCellsRange.team_size_max(functorVectorAssemble, Kokkos::ParallelReduceTag());
+        int maxTeamSize = nCellsRange.team_size_max(functorVectorAssemble, Kokkos::ParallelForTag());
 
         // If we can set the team size to the number of groups, we do so
         if (maxTeamSize >= _cmfdData.nGroups)
@@ -552,6 +557,268 @@ void COOMatrixAssembler::_assembleFission(const FluxView& flux)
     }
 
     PetscFunctionBeginUser;
-    VecSetPreallocationCOO(fissionVec, nnz, rowIndices.data());
-    VecSetValuesCOO(fissionVec, values.data(), INSERT_VALUES);
+    Kokkos::fence();
+    PetscCall(VecSetPreallocationCOO(fissionVec, nnz, rowIndices.data()));
+    PetscCall(VecSetValuesCOO(fissionVec, values.data(), INSERT_VALUES));
+
+    return PETSC_SUCCESS;
+}
+
+PetscErrorCode CSRMatrixAssembler::_assembleM()
+{
+    // Don't want to access self->cmfdData in the lambda, so copy it to a reference
+    auto& _cmfdData = cmfdData;
+
+    // See the comment in COOMatrixAssembler::_assembleM() for a similar description of the layout.
+    // In COO, we store i, j, and values in three 1D vectors of length nnz.
+    // In CSR, we store the column index and values in two 1D vectors of length nnz
+    // and the index in the values vector where each row starts in 1D vector of length nRows + 1
+    // (the last entry is the total number of non-zero entries in the matrix).
+    // The biggest difference is that in CSR, we don't have the luxury of using INSERT_VALUES,
+    // (which is used in COO to handle multiple entries to the same index), so we have to
+    // deal with race conditions ourselves.
+    //
+    // Extra info: In COO, the three vectors didn't have to be in a specific order, but we made
+    // them almost ordered by row (in reality, by cell, so -- are in the wrong "row" in the 1D vector).
+    // In CSR, the order of column indices in a row isn't important, but all values and columns must be
+    // grouped by row.
+
+    // We use a slightly different layout. See COO's _assembleM() for the notation.
+    //                                  |-------- Scatter --------| | Leakage +- | | Leakage -+ |
+    // "Row"0 (Cell 0, ScatterFrom 0): [ScatterTo0, ... ScatterToN, +-0, +-1, +-2, -+0, -+1, -+2,
+    // "Row"1 (Cell 0, ScatterFrom 1): [ScatterTo0, ... ScatterToN, +-0, +-1, +-2, -+0, -+1, -+2,
+    //
+    // Some notes:
+    // - Rather than organizing the values by surface, we organize them by +- and -+.
+    // - ++ and -- leakage (including out leakage) need to be added to the diagonals of the scatter
+    //      submatrices (in our 1D vector) before we hand off to PETSc.
+    // - The -+ leakage terms aren't stored on the iteration of "row 0" (the positive cell),
+    //      but rather in the iteration in which "row0" is the negative cell.
+
+    static constexpr size_t additionalEntriesPerSurf = 2;
+
+    // On each row we have
+    // Note: If we have one cell, we have no leakage terms, so we don't need to add the additional entries.
+    const PetscInt maxNNZInRow = cmfdData.nGroups + MAX_POS_SURF_PER_CELL * additionalEntriesPerSurf * static_cast<PetscInt>(cmfdData.nCells > 1);
+    const PetscInt matSize = cmfdData.nCells * cmfdData.nGroups; // row or col
+    const PetscInt numNonZero = matSize * maxNNZInRow;
+
+    // Specifying the memory space to AssemblyMemorySpace upsets PETSc,
+    // even though AssemblyMemorySpace should end up being the same as the
+    // default memory space. This is almost certainly a soft bug in PETSc.
+    Kokkos::View<PetscInt *> rowIndices("rowIndicesKokkos", matSize + 1);
+    Kokkos::View<PetscInt *> colIndices("colIndicesKokkos", numNonZero);
+    Kokkos::View<PetscScalar *> values("valuesCOO", numNonZero);
+
+    // Scatter XS and Removal XS won't conflict
+    // Leakage terms will conflict on the ++ and -- terms.
+    // There are a few options to handle this:
+    // - Do atomics on ++ and -- terms
+    // - Do ++, +-, and -+ terms and store --. Fence and then do -- terms atomically
+    // - ... I'm sure there are more options.
+    static constexpr int method = 1;
+
+    { // Kokkos scope
+
+        // TODO (#26): We specify the number of non-zero entries per row as the same for all rows.
+        // This makes figuring out the row indices vector trivial
+        Kokkos::parallel_for("CSRMatrixAssembler: RowIndices", Kokkos::RangePolicy<AssemblySpace>(0, matSize + 1),
+            KOKKOS_LAMBDA(const PetscInt rowIdx)
+        {
+            // The first entry is always 0, the last entry is the total number of non-zero entries
+            if (rowIdx == 0) { rowIndices(rowIdx) = 0; }
+            else if (rowIdx == matSize) { rowIndices(rowIdx) = numNonZero; }
+            else { rowIndices(rowIdx) = rowIdx * maxNNZInRow; }
+        });
+
+        // This is basically verbatim from the COOMatrixAssembler without the row index
+        Kokkos::parallel_for("CSRMatrixAssembler: ScatterXS", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<3>>({0, 0, 0}, {_cmfdData.nGroups, _cmfdData.nGroups, _cmfdData.nCells}),
+            KOKKOS_LAMBDA(const PetscInt scatterToIdx, const PetscInt scatterFromIdx, const PetscInt cellIdx)
+        {
+            // Don't need diagonal entries here because we use removal xs
+            // Else, we would have to have another entry for the diagonal
+            if (scatterToIdx != scatterFromIdx)
+            {
+                const size_t rowIdxInMat = cellIdx * _cmfdData.nGroups + scatterFromIdx;
+                const size_t locationIn1D = rowIdxInMat * maxNNZInRow + scatterToIdx;
+
+                colIndices(locationIn1D) = cellIdx * _cmfdData.nGroups + scatterToIdx;
+                values(locationIn1D) = -1 * _cmfdData.scatteringXS(scatterToIdx, scatterFromIdx, cellIdx) * _cmfdData.volume(cellIdx);
+            }
+        });
+
+        // This is also verbatim from the COOMatrixAssembler without the row index
+        Kokkos::parallel_for("CSRMatrixAssembler: RemovalXS", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<2>>({0, 0}, {_cmfdData.nGroups, _cmfdData.nCells}),
+            KOKKOS_LAMBDA(const PetscInt groupIdx, const PetscInt cellIdx)
+        {
+            // groupIdx is both from and to since removal includes self scattering
+            const size_t rowIdxInMat = cellIdx * _cmfdData.nGroups + groupIdx;
+            const size_t locationIn1D = rowIdxInMat * maxNNZInRow + groupIdx;
+
+            colIndices(locationIn1D) = rowIdxInMat; // diagonal
+            values(locationIn1D) = _cmfdData.removalXS(groupIdx, cellIdx) * _cmfdData.volume(cellIdx);
+        });
+
+        // There are potential race conditions between the above kernel and the following kernels
+        // as they both write to the diagonal of the matrix.
+        Kokkos::fence(); // We could just make the values set above atomic. I'm not sure which is better.
+
+        // METHOD 1: Use atomics on ++ and -- terms as they can refer to the same cell
+        // on different iterations of the loop.
+        if constexpr(method == 1)
+        {
+            const PetscInt nGroups = _cmfdData.nGroups;
+            Kokkos::parallel_for("CSRMatrixAssembler1: InLeakage", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<3>>({0, 0, 0}, {_cmfdData.nGroups, _cmfdData.nCells, MAX_POS_SURF_PER_CELL}),
+                KOKKOS_LAMBDA(const PetscInt groupIdx, const PetscInt posCellIdx, const PetscInt posSurfPosition)
+            {
+                // posSurfPosition is 0, 1, or 2 as we expect each cell to have three positive surfaces (MAX_POS_SURF_PER_CELL)
+
+                // We are only on the diagonal of each block matrix,
+                // so groupIdx could be from or to, but we use it to find the "row" (scatter from).
+
+                // TODO (kind of in line with #26): Cells on the boundary don't have less than three surfaces with a non-boundary cell,
+                // but we currently store zeros in the +- and -+ values. These zeros could be removed.
+
+                const PetscInt posSurfIdx = _cmfdData.cell2PosSurf(posCellIdx, posSurfPosition);
+                if (posSurfIdx >= 0) // -1 is invalid surface
+                {
+                    const PetscScalar dhat = _cmfdData.dHat(groupIdx, posSurfIdx);
+                    const PetscScalar dtilde = _cmfdData.dTilde(groupIdx, posSurfIdx);
+
+                    const PetscInt posCellMatIdx = posCellIdx * _cmfdData.nGroups + groupIdx;
+                    const PetscInt posRowBeginIn1D = posCellMatIdx * maxNNZInRow;
+
+                    // ++ (in pos cell row, pos cell column)
+                    const PetscInt posDiagIn1D = posRowBeginIn1D + groupIdx;
+                    Kokkos::atomic_add(&values(posDiagIn1D), -1 * dhat + dtilde);
+
+                    const PetscInt negCellIdx = _cmfdData.surf2Cell(posSurfIdx, 1);
+                    if (negCellIdx >= 0)
+                    {
+                        const PetscInt negCellMatIdx = negCellIdx * _cmfdData.nGroups + groupIdx;
+                        const PetscInt negRowBeginIn1D = negCellMatIdx * maxNNZInRow;
+
+                        // +- (in pos cell row, neg cell column)
+                        const PetscInt posNegIn1D = posRowBeginIn1D + _cmfdData.nGroups + posSurfPosition;
+                        colIndices(posNegIn1D) = negCellMatIdx;
+                        values(posNegIn1D) = -1 * dhat - dtilde;
+
+                        // Get the "position" (0, 1, or 2) of the surface for the negative cell
+                        // TODO: There are several ways to find the correct spot for -+ (precalculate the negative surface positions,
+                        // maybe move -+ into a different kernel), but this works for now and can be optimized later.
+                        // Note, if this is refactored, _cmfdData.cell2NegSurf can probably be removed.
+                        PetscInt negSurfPosition = -1;
+                        for (PetscInt testNegSurfPosition = 0; testNegSurfPosition < MAX_POS_SURF_PER_CELL; ++testNegSurfPosition)
+                        {
+                            if (_cmfdData.cell2NegSurf(negCellIdx, testNegSurfPosition) == posSurfIdx)
+                            {
+                                negSurfPosition = testNegSurfPosition;
+                                break;
+                            }
+                        }
+
+                        // -+ (in neg cell row, pos cell column)
+                        const PetscInt negPosIn1D = negRowBeginIn1D + nGroups + MAX_POS_SURF_PER_CELL + negSurfPosition;
+                        colIndices(negPosIn1D) = posCellMatIdx;
+                        values(negPosIn1D) = dhat - dtilde;
+
+                        // -- (in neg cell row, neg cell column)
+                        const size_t negDiagIn1D = negRowBeginIn1D + groupIdx;
+                        Kokkos::atomic_add(&values(negDiagIn1D), dhat + dtilde);
+                    }
+                }
+            });
+        }
+
+        Kokkos::parallel_for("CSRMatrixAssembler1: OutLeakage", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<2>>({0, 0}, {cmfdData.nGroups, cmfdData.nPosLeakageSurfs}),
+            KOKKOS_LAMBDA(const PetscInt groupIdx, const PetscInt nthPosLeakageSurf)
+        {
+            const PetscInt posSurfIdx = _cmfdData.posLeakageSurfs(nthPosLeakageSurf);
+            const PetscInt negCellIdx = _cmfdData.surf2Cell(posSurfIdx, 1);
+
+            if (negCellIdx >= 0)
+            {
+                const PetscInt negCellMatIdx = (negCellIdx)*_cmfdData.nGroups + groupIdx;
+                const PetscScalar dhat = _cmfdData.dHat(groupIdx, posSurfIdx);
+                const PetscScalar dtilde = _cmfdData.dTilde(groupIdx, posSurfIdx);
+
+                const PetscInt negDiagIn1D = (negCellMatIdx * maxNNZInRow) + groupIdx;
+
+                // The posLeakage surfaces may not be unique so we use atomics
+                Kokkos::atomic_add(&values(negDiagIn1D), dhat + dtilde);
+            }
+        });
+
+    } // Kokkos scope ends
+
+    PetscFunctionBeginUser;
+    // TODO (#26): The null allows you to specify the number of non-zero entries per row.
+    // This will improve memory/performance if implemented
+    PetscCall(MatCreateSeqAIJKokkos(PETSC_COMM_WORLD, matSize, matSize, numNonZero, NULL, &MMat));
+
+    // Actually put the values into the matrix
+    Kokkos::fence();
+    PetscCall(MatCreateSeqAIJKokkosWithKokkosViews(PETSC_COMM_SELF, matSize, matSize, rowIndices, colIndices, values, &MMat));
+
+    return PETSC_SUCCESS;
+}
+
+PetscErrorCode CSRMatrixAssembler::_assembleFission(const FluxView& flux)
+{
+    auto& _cmfdData = cmfdData;
+    auto& _values = _fissionVectorView;
+
+    // The following is nearly identical to the COOMatrixAssembler::_assembleFission method,
+    // but I anticipate that the COOMatrixAssembler version will evolve differently (it can handle sparsity,
+    // while the CSRMatrixAssembler version will not).
+    {
+        // We create the functor beforehand to calclate the maximum team size
+        auto functorVectorAssemble = KOKKOS_LAMBDA(const typename Kokkos::TeamPolicy<AssemblySpace>::member_type& teamMember)
+        {
+            const PetscInt cellIdx = teamMember.league_rank();
+
+            PetscScalar cellFissionRate = 0.0;
+            Kokkos::parallel_reduce(Kokkos::TeamThreadRange(teamMember, _cmfdData.nGroups), [=] (const PetscInt fromGroupIdx, PetscScalar &localFissionRate)
+            {
+                // if FluxView is 2D
+                // localFissionRate += cmfdData.nuFissionXS(fromGroupIdx, cellIdx) * flux(fromGroupIdx, cellIdx);
+
+                // if FluxView is 1D. I think the data access pattern is bad
+                localFissionRate += _cmfdData.nuFissionXS(fromGroupIdx, cellIdx) * flux(cellIdx * _cmfdData.nGroups + fromGroupIdx);
+            }, cellFissionRate);
+
+            teamMember.team_barrier();
+
+            const PetscScalar localFissionRateVolume = cellFissionRate * _cmfdData.volume(cellIdx);
+
+            Kokkos::parallel_for(Kokkos::TeamThreadRange(teamMember, _cmfdData.nGroups), [=] (const PetscInt toGroupIdx)
+            {
+                const PetscInt vecIdx = cellIdx * _cmfdData.nGroups + toGroupIdx;
+                _values(vecIdx) = _cmfdData.chi(toGroupIdx, cellIdx) * localFissionRateVolume;
+            });
+        };
+
+        // Use the team policy with the automatic team size to calculate the maximum team size
+        Kokkos::TeamPolicy<AssemblySpace> nCellsRange(_cmfdData.nCells, Kokkos::AUTO);
+        int maxTeamSize = nCellsRange.team_size_max(functorVectorAssemble, Kokkos::ParallelForTag());
+
+        // If we can set the team size to the number of groups, we do so
+        if (maxTeamSize >= _cmfdData.nGroups)
+        {
+            nCellsRange = Kokkos::TeamPolicy<AssemblySpace>(_cmfdData.nCells, _cmfdData.nGroups);
+        }
+
+        // Actually execute the parallel for loop
+        Kokkos::parallel_for("CSRVector", nCellsRange, functorVectorAssemble);
+    }
+
+    PetscFunctionBeginUser;
+    Kokkos::fence();
+
+
+
+    // The second input parameter is the block size, which I believe should be 1.
+    PetscCall(VecCreateSeqKokkosWithArray(PETSC_COMM_SELF, 1, nRows, _fissionVectorView.data(), &fissionVec));
+    // Maybe VecCreateMPIKokkosWithArray is better?
+    return PETSC_SUCCESS;
 }
