@@ -3,24 +3,13 @@
 #include "cylindrical_solver.hpp"
 #include "hdf5_utils.hpp"
 
-/* The SMR test running in serial runs 184,730 conduction solves in 0.16 seconds. */
+/* The SMR test running in serial runs 184,730 conduction solves in 412 ms. */
 
 const std::string filename = std::string(TEST_DATA_DIR) + "/smr.h5";
 
 TEST(SMR_Serial, ConductionSolve) {
-    std::vector<double> radii = {0.0, 0.004096, 0.004180, 0.004750}; // fuel, gap, clad radii in m
-    double height = 0.11951; // m
-    std::vector<CylinderNode> nodes = {
-        CylinderNode(height, radii[0], radii[1]),
-        CylinderNode(height, radii[1], radii[2]),
-        CylinderNode(height, radii[2], radii[3])
-    };
-    std::vector<std::shared_ptr<SolidMaterial>> materials = {
-        std::make_shared<UO2>(),
-        std::make_shared<Helium>(),
-        std::make_shared<Zircaloy>()
-    };
-    CylindricalSolver solver(nodes);
+    std::vector<double> radii = {0.0, 0.4096, 0.4180, 0.4750}; // fuel, gap, clad radii in cm
+    double height = 11.951; // cm
 
     std::vector<std::string> state_groups = {
         "/STATE_0001", "/STATE_0002", "/STATE_0003", "/STATE_0004", "/STATE_0005",
@@ -51,12 +40,25 @@ TEST(SMR_Serial, ConductionSolve) {
     size_t N = all_pin_powers.size();
     EXPECT_EQ(N, 18473 * state_groups.size());
 
-    std::vector<std::vector<double>> qdot(N, std::vector<double>(nodes.size(), 0.0));
+
     auto start = std::chrono::high_resolution_clock::now();
     for (size_t i = 0; i < N; ++i) {
+        std::vector<std::shared_ptr<CylinderNode>> nodes = {
+            std::make_shared<CylinderNode>(height, radii[0], radii[1]),
+            std::make_shared<CylinderNode>(height, radii[2], radii[3])
+        };
+        std::vector<std::shared_ptr<Solid>> materials = {
+            std::make_shared<UO2>(),
+            std::make_shared<Zircaloy>()
+        };
+        CylindricalSolver solver(nodes, materials);
         double T_outer = all_clad_surf_temps[i];
-        qdot[i][0] = all_pin_powers[i] / nodes[0].get_volume(); // only node with fuel has heat gen
-        std::vector<double> Tavg = solver.solve_temperatures(qdot[i], materials, T_outer);
+
+        std::vector<double> qdot(nodes.size(), 0.0);
+        qdot[0] = all_pin_powers[i] / nodes[0]->get_volume(); // only node with fuel has heat gen
+        std::vector<double> Tavg = solver.solve(qdot, T_outer);
+        std::vector<double> interface_temps = solver.get_interface_temperatures();
+
         EXPECT_GT(std::accumulate(Tavg.begin(), Tavg.end(), 0.0), 0.0); // use result to prevent compiler optimization
         EXPECT_EQ(Tavg.size(), nodes.size());
     }
