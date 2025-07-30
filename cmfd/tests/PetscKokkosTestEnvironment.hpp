@@ -96,12 +96,14 @@ struct DummyMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExe
       PetscCallCXXAbort(PETSC_COMM_SELF, VecDestroy(&fluxGold));
     };
 
-    void _assembleM() override
+    PetscErrorCode _assembleM() override
     {
       // No-op, MMat is already initialized in the constructor
+      return PETSC_SUCCESS;
     }
-    void _assembleFission(const FluxView &flux) override
+    PetscErrorCode _assembleFission(const FluxView &flux) override
     {
       // No-op, we don't need to assemble fission in this dummy assembler
+      return PETSC_SUCCESS;
     }
 };
