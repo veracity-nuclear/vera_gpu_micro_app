@@ -501,7 +501,7 @@ struct RayIndexCalculator<Kokkos::Cuda> {
 
 template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
-void compute_exparg(const KokkosLongRay<ExecutionSpace>& ray, int ig, int ipol,
+void compute_exparg(const KokkosLongRay<ExecutionSpace, RealType>& ray, int ig, int ipol,
                     const Kokkos::View<const RealType**, ExecutionSpace>& exp_table,
                     int n_intervals, RealType rdx,
                     Kokkos::View<RealType*, typename ExecutionSpace::scratch_memory_space>& exparg,
@@ -517,7 +517,7 @@ void compute_exparg(const KokkosLongRay<ExecutionSpace>& ray, int ig, int ipol,
         int nsegs = ray.nsegs();
         for (int iseg = 0; iseg < nsegs; iseg++) {
             int fsr_id = ray.d_fsr(iseg) - 1; // Convert to 0-based
-            RealType segment_length = static_cast<RealType>(ray.d_segment(iseg));
+            RealType segment_length = ray.d_segment(iseg);
             RealType val = -xstr(fsr_id, ig) * segment_length * rsinpolang(ipol);
             int i = Kokkos::floor(val * rdx) + n_intervals + 1;
             if (i >= 0 && i < n_intervals + 1) {
@@ -640,7 +640,7 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
         for (int iseg = 0; iseg < nsegs; iseg++) {
             // Forward segment sweep
             int ireg = ray.d_fsr(iseg) - 1; // Convert to 0-based
-            RealType segment_length = static_cast<RealType>(ray.d_segment(iseg));
+            RealType segment_length = ray.d_segment(iseg);
             RealType exp_arg = -xstr(ireg, ig) * segment_length * rsinpolang(ipol);
             RealType phid = (fsegflux - source(ireg, ig)) *
                 eval_exp_arg<ExecutionSpace, RealType>(exparg, iseg, xstr(ireg, ig), segment_length, rsinpolang(ipol));
@@ -651,7 +651,7 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
             // Backward segment sweep
             int bseg = nsegs - 1 - iseg;
             ireg = ray.d_fsr(bseg) - 1; // Convert to 0-based
-            segment_length = static_cast<RealType>(ray.d_segment(bseg));
+            segment_length = ray.d_segment(bseg);
             exp_arg = -xstr(ireg, ig) * segment_length * rsinpolang(ipol);
             phid = (bsegflux - source(ireg, ig)) *
                 eval_exp_arg<ExecutionSpace, RealType>(exparg, bseg, xstr(ireg, ig), segment_length, rsinpolang(ipol));

@@ -108,7 +108,7 @@ class KokkosMOC : public BaseMOC {
         // Ray data
         int _n_rays;  // Number of rays
         int _max_segments;  // Maximum number of segments in any ray
-        std::vector<KokkosLongRay<ExecutionSpace>> _rays;
+        std::vector<KokkosLongRay<ExecutionSpace, RealType>> _rays;
 
         HViewInt1D _h_ray_nsegs;
         HViewInt1D _h_ray_bc_face_start;
