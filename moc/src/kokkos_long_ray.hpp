@@ -35,7 +35,6 @@ struct KokkosLongRay
         int _angflux_bc_bkwd_end;
 
         // Angle data
-        double _radians;
         int _angle_index;
 
         // Ray segments
@@ -45,9 +44,9 @@ struct KokkosLongRay
         KokkosLongRay() = default;
 
         // Constructor that initializes the KokkosLongRay object from a HighFive::Group
-        // for a specific angle index and radians value
-        KokkosLongRay(const HighFive::Group& group, int angle_index, double radians)
-        : _radians(radians), _angle_index(angle_index)
+        // for a specific angle index
+        KokkosLongRay(const HighFive::Group& group, int angle_index)
+        : _angle_index(angle_index)
         {
             // Read data from HDF5
             auto fsrs = group.getDataSet("FSRs").read<std::vector<int>>();
@@ -81,8 +80,15 @@ struct KokkosLongRay
             _angflux_bc_bkwd_end = bkwd_end;
         }
 
-        int angle() const { return _angle_index; }
-        int nsegs() const { return _nsegs; }
+        KOKKOS_INLINE_FUNCTION
+        int angle() const {
+            return _angle_index;
+        }
+
+        KOKKOS_INLINE_FUNCTION
+        int nsegs() const {
+            return _nsegs;
+        }
 
         // Get FSR for a given segment (device version)
         KOKKOS_INLINE_FUNCTION
