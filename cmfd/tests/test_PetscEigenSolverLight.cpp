@@ -16,3 +16,9 @@ INSTANTIATE_TEST_SUITE_P(
     PetscEigenSolverTest,
     ::testing::ValuesIn(createParams<COOMatrixAssembler>(lightTestFiles))
 );
+
+INSTANTIATE_TEST_SUITE_P(
+    TestEigenCSRLight,
+    PetscEigenSolverTest,
+    ::testing::ValuesIn(createParams<CSRMatrixAssembler>(lightTestFiles))
+);

@@ -15,3 +15,9 @@ INSTANTIATE_TEST_SUITE_P(
     PetscEigenSolverTest,
     ::testing::ValuesIn(createParams<COOMatrixAssembler>(heavyTestFiles))
 );
+
+INSTANTIATE_TEST_SUITE_P(
+    TestEigenCSRHeavy,
+    PetscEigenSolverTest,
+    ::testing::ValuesIn(createParams<CSRMatrixAssembler>(heavyTestFiles))
+);

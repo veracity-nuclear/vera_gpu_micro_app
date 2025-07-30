@@ -6,15 +6,15 @@
 #include "eigen_solver.hpp"
 #include "argument_parser.hpp"
 
-TEST(BasicTest, cart_4region_7g_1a_1p_serial) {
-    const char* raw_args[] = {"exe", "data/cart_4region_7g_1a_1p_serial.h5", "data/c5g7.xsl"};
+TEST(BasicTest, cart_4region_7g_1a_1p_serial_single) {
+    const char* raw_args[] = {"exe", "data/cart_4region_7g_1a_1p_serial.h5", "data/c5g7.xsl", "--precision", "single"};
     char** args = const_cast<char**>(raw_args);
     auto parser = ArgumentParser::vera_gpu_moc_parser(raw_args[0]);
-    parser.parse(3, args);
-    std::shared_ptr<BaseMOC> sweeper(new SerialMOC(parser));
+    parser.parse(5, args);
+    std::shared_ptr<BaseMOC> sweeper(new SerialMOC<float>(parser));
     EigenSolver solver(parser, sweeper);
     solver.solve();
-    EXPECT_NEAR(solver.keff(), 0.73822768, 1.0e-7);
+    EXPECT_NEAR(solver.keff(), 0.738219274, 1.0e-7);
 }
 
 int main(int argc, char **argv) {

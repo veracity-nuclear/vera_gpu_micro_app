@@ -9,18 +9,20 @@
 
 static constexpr double fourpi = 4.0 * M_PI;
 
-template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace, typename RealType = float>
 class KokkosMOC : public BaseMOC {
     using layout = typename ExecutionSpace::array_layout;
     using MemorySpace = typename ExecutionSpace::memory_space;
     using HViewInt1D = Kokkos::View<int*, layout, Kokkos::HostSpace>;
-    using HViewDouble1D = Kokkos::View<double*, layout, Kokkos::HostSpace>;
     using HViewDouble2D = Kokkos::View<double**, layout, Kokkos::HostSpace>;
-    using HViewDouble3D = Kokkos::View<double***, layout, Kokkos::HostSpace>;
+    using HViewReal1D = Kokkos::View<RealType*, layout, Kokkos::HostSpace>;
+    using HViewReal2D = Kokkos::View<RealType**, layout, Kokkos::HostSpace>;
+    using HViewReal3D = Kokkos::View<RealType***, layout, Kokkos::HostSpace>;
     using DViewInt1D = Kokkos::View<int*, layout, MemorySpace>;
-    using DViewDouble1D = Kokkos::View<double*, layout, MemorySpace>;
     using DViewDouble2D = Kokkos::View<double**, layout, MemorySpace>;
-    using DViewDouble3D = Kokkos::View<double***, layout, MemorySpace>;
+    using DViewReal1D = Kokkos::View<RealType*, layout, MemorySpace>;
+    using DViewReal2D = Kokkos::View<RealType**, layout, MemorySpace>;
+    using DViewReal3D = Kokkos::View<RealType***, layout, MemorySpace>;
 
     // Friend declaration for googletest
     friend class BasicTest_test_kokkos_exp_table_Test;
@@ -35,14 +37,11 @@ class KokkosMOC : public BaseMOC {
         // Unified implementation of MOC sweep for any execution space
         void _impl_sweep();
 
-        // Configure team policy based on execution space
-        Kokkos::TeamPolicy<ExecutionSpace> _configure_team_policy(int n_rays, int npol, int ng);
-
         // Get the FSR volumes
         std::vector<double> fsr_vol() const override {
             std::vector<double> result(_nfsr);
             for (int i = 0; i < _nfsr; i++) {
-                result[i] = _h_fsr_vol(i);
+                result[i] = static_cast<double>(_h_fsr_vol(i));
             }
             return result;
         }
@@ -82,29 +81,29 @@ class KokkosMOC : public BaseMOC {
         int _npol;  // Number of polar angles
         int _ng;  // Number of energy groups
         int _n_exp_intervals;  // Number of exponential table intervals
-        double _exp_rdx;  // Exponential table inverse spacing
+        RealType _exp_rdx;  // Exponential table inverse spacing
 
         // Geometry host data
-        double _plane_height;  // Height of the plane
-        HViewDouble1D _h_fsr_vol;
-        HViewDouble2D _h_xstr;
-        HViewDouble2D _h_xsnf;
-        HViewDouble2D _h_xsch;
-        HViewDouble3D _h_xssc;
-        std::vector<double> _ray_spacing;
-        HViewDouble2D _h_angle_weights;
-        HViewDouble1D _h_rsinpolang;
-        HViewDouble2D _h_exp_table;
+        RealType _plane_height;  // Height of the plane
+        HViewReal1D _h_fsr_vol;
+        HViewReal2D _h_xstr;
+        HViewReal2D _h_xsnf;
+        HViewReal2D _h_xsch;
+        HViewReal3D _h_xssc;
+        std::vector<RealType> _ray_spacing;
+        HViewReal2D _h_angle_weights;
+        HViewReal1D _h_rsinpolang;
+        HViewReal2D _h_exp_table;
 
         // Geometry device data
-        DViewDouble1D _d_fsr_vol;
-        DViewDouble2D _d_xstr;
-        DViewDouble2D _d_xsnf;
-        DViewDouble2D _d_xsch;
-        DViewDouble3D _d_xssc;
-        DViewDouble2D _d_angle_weights;
-        DViewDouble1D _d_rsinpolang;
-        DViewDouble2D _d_exp_table;
+        DViewReal1D _d_fsr_vol;
+        DViewReal2D _d_xstr;
+        DViewReal2D _d_xsnf;
+        DViewReal2D _d_xsch;
+        DViewReal3D _d_xssc;
+        DViewReal2D _d_angle_weights;
+        DViewReal1D _d_rsinpolang;
+        DViewReal2D _d_exp_table;
 
         // Ray host data
         int _n_rays;  // Number of rays
@@ -118,7 +117,7 @@ class KokkosMOC : public BaseMOC {
         HViewInt1D _h_ray_bc_index_bkwd_end;
         HViewInt1D _h_ray_angle_index;
         HViewInt1D _h_ray_fsrs;
-        HViewDouble1D _h_ray_segments;
+        HViewReal1D _h_ray_segments;
 
         // Ray device data
         DViewInt1D _d_ray_nsegs;
@@ -130,18 +129,18 @@ class KokkosMOC : public BaseMOC {
         DViewInt1D _d_ray_bc_index_bkwd_end;
         DViewInt1D _d_ray_angle_index;
         DViewInt1D _d_ray_fsrs;
-        DViewDouble1D _d_ray_segments;
+        DViewReal1D _d_ray_segments;
 
         // Solution host data
         HViewDouble2D _h_scalar_flux;
-        HViewDouble2D _h_source;
-        HViewDouble3D _h_angflux;
-        HViewDouble3D _h_old_angflux;
+        HViewReal2D _h_source;
+        HViewReal3D _h_angflux;
+        HViewReal3D _h_old_angflux;
 
         // Solution device data
         DViewDouble2D _d_scalar_flux;
-        DViewDouble2D _d_source;
-        DViewDouble3D _d_angflux;
-        DViewDouble3D _d_old_angflux;
-        DViewDouble3D _d_thread_scalar_flux;
+        DViewReal2D _d_source;
+        DViewReal3D _d_angflux;
+        DViewReal3D _d_old_angflux;
+        DViewReal3D _d_thread_scalar_flux;
 };
