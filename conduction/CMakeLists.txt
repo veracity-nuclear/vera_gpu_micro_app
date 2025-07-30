@@ -1,4 +1,5 @@
 add_library(conduction_lib
+    src/cylinder_node.cpp
     src/cylindrical_solver.cpp
     src/main.cpp
     src/materials.cpp
