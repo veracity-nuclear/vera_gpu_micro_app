@@ -54,10 +54,6 @@ TEST(SMR_Serial, ConductionSolve) {
         CylindricalSolver solver(nodes, materials);
         double T_outer = all_clad_surf_temps[i];
 
-        if (all_pin_powers[i] < 1e-6) {
-            continue;
-        }
-
         std::vector<double> qdot(nodes.size(), 0.0);
         qdot[0] = all_pin_powers[i] / nodes[0]->get_volume(); // only node with fuel has heat gen
         std::vector<double> Tavg = solver.solve(qdot, T_outer);
