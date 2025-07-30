@@ -299,8 +299,6 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
     }
 
     // Reserve space for rays
-    _h_ray_nsegs = HViewInt1D("ray_nsegs", _n_rays + 1);
-    _h_ray_nsegs(0) = 0;
     _rays.reserve(_n_rays);
 
     // Set up the rays using KokkosLongRay
@@ -317,7 +315,6 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
                 if (rayName.substr(0, 8) == "LongRay_") {
                     auto rayGroup = angleGroup.getGroup(rayName);
                     auto fsrs = rayGroup.getDataSet("FSRs").read<std::vector<int>>();
-                    _h_ray_nsegs(iray + 1) = _h_ray_nsegs(iray) + fsrs.size();
                     _rays.emplace_back(rayGroup, angleIndex, radians);
                     iray++;
                 }
@@ -327,27 +324,6 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
 
     // Print a message with the number of rays and filename
     std::cout << "Successfully set up " << _n_rays << " rays from file: " << _filename << std::endl;
-
-    _h_ray_fsrs = HViewInt1D("ray_fsrs", _h_ray_nsegs(_n_rays));
-    _h_ray_segments = HViewReal1D("ray_segments", _h_ray_nsegs(_n_rays));
-    iray = 0;
-    for (const auto& objName : domain.listObjectNames()) {
-        if (objName.substr(0, 6) == "Angle_") {
-            HighFive::Group angleGroup = domain.getGroup(objName);
-            for (const auto& rayName : angleGroup.listObjectNames()) {
-                if (rayName.substr(0, 8) == "LongRay_") {
-                    auto rayGroup = angleGroup.getGroup(rayName);
-                    auto fsrs = rayGroup.getDataSet("FSRs").read<std::vector<int>>();
-                    auto segments = rayGroup.getDataSet("Segments").read<std::vector<double>>();
-                    for (size_t iseg = 0; iseg < fsrs.size(); iseg++) {
-                        _h_ray_fsrs(_h_ray_nsegs(iray) + iseg) = fsrs[iseg] - 1; // Convert to zero-based index
-                        _h_ray_segments(_h_ray_nsegs(iray) + iseg) = static_cast<RealType>(segments[iseg]);
-                    }
-                    iray++;
-                }
-            }
-        }
-    }
     Kokkos::Profiling::popRegion();
 }
 
