@@ -8,8 +8,8 @@
 const std::string filename = std::string(TEST_DATA_DIR) + "/smr.h5";
 
 TEST(SMR_Serial, ConductionSolve) {
-    std::vector<double> radii = {0.0, 0.004096, 0.004180, 0.004750}; // fuel, gap, clad radii in m
-    double height = 0.11951; // m
+    std::vector<double> radii = {0.0, 0.4096, 0.4180, 0.4750}; // fuel, gap, clad radii in cm
+    double height = 11.951; // cm
 
     std::vector<std::string> state_groups = {
         "/STATE_0001", "/STATE_0002", "/STATE_0003", "/STATE_0004", "/STATE_0005",

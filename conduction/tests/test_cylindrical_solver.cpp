@@ -33,8 +33,8 @@ TEST(CylindricalSolverTest, ConstructorInvalid) {
 }
 
 TEST(CylindricalSolverTest, TemperatureDistribution_1Region) {
-    double height = 0.025; // m
-    std::vector<double> radii = {0.0, 0.008}; // fuel radius in m
+    double height = 2.5; // cm
+    std::vector<double> radii = {0.0, 0.8}; // fuel radius in cm
     std::vector<std::shared_ptr<CylinderNode>> nodes = {
         std::make_shared<CylinderNode>(height, radii[0], radii[1])
     };
@@ -43,7 +43,7 @@ TEST(CylindricalSolverTest, TemperatureDistribution_1Region) {
     };
 
     CylindricalSolver solver(nodes, materials);
-    std::vector<double> qdot = {3.8e9};  // W/m^3
+    std::vector<double> qdot = {100 / nodes[0]->get_volume()};  // W/cm^3
     double T_outer = 600.0; // K
 
     std::vector<double> avg_temps = solver.solve(qdot, T_outer);
@@ -52,19 +52,19 @@ TEST(CylindricalSolverTest, TemperatureDistribution_1Region) {
 
     // analytical solution for temperature at fuel centerline
     // T(r=0) = T_outer + qdot / (4 * k) * (r_out^2 - r_in^2)
-    double T_fuel_cl_analytical = 732.328771; // K
+    double T_fuel_cl_analytical = 665.267006; // K
 
     EXPECT_NEAR(T_fuel_cl, T_fuel_cl_analytical, 1e-6);
 
     EXPECT_EQ(avg_temps.size(), 1);
-    EXPECT_NEAR(avg_temps[0], 699.246578, 1e-6);
+    EXPECT_NEAR(avg_temps[0], 648.950255, 1e-6);
 }
 
 TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_10Regions) {
-    double height = 0.11951; // m
+    double height = 11.951; // cm
 
-    std::vector<double> fuel_radii = {0.000000, 0.004096}; // fuel radii in m
-    std::vector<double> clad_radii = {0.004180, 0.004750}; // clad radii in m
+    std::vector<double> fuel_radii = {0.0000, 0.4096}; // fuel radii in cm
+    std::vector<double> clad_radii = {0.4180, 0.4750}; // clad radii in cm
 
     double N_fuel_regions = 8; // Number of fuel regions
     double N_clad_regions = 2; // Number of clad regions
@@ -124,9 +124,9 @@ TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_10Regions) {
     // T(r=r1) = T_outer + q * (R_gap + R_clad)
     // T(r=r2) = T_outer + q * R_clad
     // T(r=r3) = T_outer
-    double T_fuel_cl_analytical    = 721.201927; // K
-    double T_fuel_outer_analytical = 717.750637; // K
-    double T_clad_inner_analytical = 600.103502; // K
+    double T_fuel_cl_analytical    = 982.802240; // K
+    double T_fuel_outer_analytical = 611.507420; // K
+    double T_clad_inner_analytical = 610.334927; // K
     double T_clad_outer_analytical = 600.000000; // K
 
     // Test interface temperatures

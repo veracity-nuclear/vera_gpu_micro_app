@@ -41,7 +41,7 @@ void CylinderNode::set_temperature(double T) {
 double CylinderNode::calculate_avg_temperature(double k, double T_inner, double T_outer, double qdot) const {
 
     // Convert from W/m-K to W/cm-K
-    k *= 100.0; // W/cm-K
+    k /= 100.0; // W/cm-K
 
     double r_avg = (r_in + r_out) * 0.5;
 
@@ -64,7 +64,7 @@ double CylinderNode::calculate_avg_temperature(double k, double T_inner, double 
 double CylinderNode::solve_inner_temperature(double k, double T_outer, double qflux, double qdot) const {
 
     // convert from W/m-K to W/cm-K
-    k *= 100.0; // W/cm-K
+    k /= 100.0; // W/cm-K
 
     if (r_in < 1e-9) {
         return cyl_Tin(k, r_out, T_outer, qdot);
