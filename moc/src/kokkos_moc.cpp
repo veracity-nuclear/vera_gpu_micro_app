@@ -252,6 +252,8 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
     // Instead of conditional device setup, always initialize device views
     _d_rays = Kokkos::create_mirror(MemorySpace(), _h_rays);
     Kokkos::deep_copy(_d_rays, _h_rays);
+    _d_segments = Kokkos::create_mirror(MemorySpace(), _h_segments);
+    Kokkos::deep_copy(_d_segments, _h_segments);
     _d_angle_weights = Kokkos::create_mirror(ExecutionSpace(), _h_angle_weights);
     Kokkos::deep_copy(_d_angle_weights, _h_angle_weights);
     _d_fsr_vol = Kokkos::create_mirror_view_and_copy(MemorySpace(), _h_fsr_vol);
@@ -303,6 +305,7 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
 
     // Set up the rays
     int iray = 0;
+    int nsegs = 0;
     for (const auto& objName : domain.listObjectNames()) {
         if (objName.substr(0, 6) == "Angle_") {
             HighFive::Group angleGroup = domain.getGroup(objName);
@@ -313,8 +316,31 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
             for (const auto& rayName : angleGroup.listObjectNames()) {
                 if (rayName.substr(0, 8) == "LongRay_") {
                     auto rayGroup = angleGroup.getGroup(rayName);
+                    int ray_segs = rayGroup.getDataSet("FSRs").read<std::vector<int>>().size();
+                    _h_rays(iray) = KokkosLongRay(rayGroup, angleIndex, ray_segs, nsegs);
+                    nsegs += ray_segs;
+                    iray++;
+                }
+            }
+        }
+    }
+
+    // Reserve space for segment metadata
+    _h_segments = HViewKokkosRaySegment1D("segments", nsegs);
+
+    // Set up segments
+    iray = 0;
+    for (const auto& objName : domain.listObjectNames()) {
+        if (objName.substr(0, 6) == "Angle_") {
+            HighFive::Group angleGroup = domain.getGroup(objName);
+            for (const auto& rayName : angleGroup.listObjectNames()) {
+                if (rayName.substr(0, 8) == "LongRay_") {
+                    auto rayGroup = angleGroup.getGroup(rayName);
                     auto fsrs = rayGroup.getDataSet("FSRs").read<std::vector<int>>();
-                    _h_rays(iray) = KokkosLongRay<Kokkos::HostSpace, RealType>(rayGroup, angleIndex);
+                    auto segs = rayGroup.getDataSet("Segments").read<std::vector<double>>();
+                    for (size_t iseg = 0; iseg < fsrs.size(); iseg++) {
+                        _h_segments(_h_rays(iray).first_seg() + iseg) = KokkosRaySegment<RealType>(fsrs[iseg] - 1, static_cast<RealType>(segs[iseg]));
+                    }
                     iray++;
                 }
             }
@@ -476,10 +502,10 @@ struct RayIndexCalculator<Kokkos::Cuda> {
 
 template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
-void compute_exparg(const KokkosLongRay<typename ExecutionSpace::memory_space, RealType> ray, int ig, int ipol,
+void compute_exparg(const KokkosRaySegment<RealType> segment, int ig, int ipol,
                     const Kokkos::View<const RealType**, ExecutionSpace>& exp_table,
                     int n_intervals, RealType rdx,
-                    Kokkos::View<RealType*, typename ExecutionSpace::scratch_memory_space>& exparg,
+                    RealType& exparg,
                     const Kokkos::View<const RealType**, ExecutionSpace>& xstr,
                     const Kokkos::View<const RealType*, ExecutionSpace>& rsinpolang)
 {
@@ -489,18 +515,14 @@ void compute_exparg(const KokkosLongRay<typename ExecutionSpace::memory_space, R
     } else
 #endif
     {
-        for (int iseg = 0; iseg < ray.nsegs(); iseg++) {
-            int fsr_id = ray.fsr(iseg) - 1; // Convert to 0-based
-            RealType segment_length = ray.segment(iseg);
-            RealType val = -xstr(fsr_id, ig) * segment_length * rsinpolang(ipol);
-            int i = Kokkos::floor(val * rdx) + n_intervals + 1;
-            if (i >= 0 && i < n_intervals + 1) {
-                exparg(iseg) = exp_table(i, 0) * val + exp_table(i, 1);
-            } else if (val < static_cast<RealType>(-700.0)) {
-                exparg(iseg) = static_cast<RealType>(1.0);
-            } else {
-                exparg(iseg) = static_cast<RealType>(1.0) - Kokkos::exp(val);
-            }
+        RealType val = -xstr(segment.fsr(), ig) * segment.length() * rsinpolang(ipol);
+        int i = Kokkos::floor(val * rdx) + n_intervals + 1;
+        if (i >= 0 && i < n_intervals + 1) {
+            exparg = exp_table(i, 0) * val + exp_table(i, 1);
+        } else if (val < static_cast<RealType>(-700.0)) {
+            exparg = static_cast<RealType>(1.0);
+        } else {
+            exparg = static_cast<RealType>(1.0) - Kokkos::exp(val);
         }
     }
 }
@@ -548,6 +570,7 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
 
     // Avoid implicit capture
     auto& rays = _d_rays;
+    auto& segments = _d_segments;
     auto& old_angflux = _d_old_angflux;
     auto& angflux = _d_angflux;
     auto& scalar_flux = _d_scalar_flux;
@@ -597,8 +620,12 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
 
         // Create thread-local exparg array for non-CUDA execution spaces using scratch space
         ScratchViewReal1D exparg(teamMember.team_scratch(0), rays[iray].nsegs());
-        compute_exparg<ExecutionSpace, RealType>(rays[iray], ig, ipol, exp_table, n_exp_intervals, exp_rdx, exparg,
-                                                 xstr, rsinpolang);
+        for (int iseg = 0; iseg < rays[iray].nsegs(); iseg++) {
+            int global_seg = rays[iray].first_seg() + iseg;
+            const auto& segment = segments[global_seg];
+            compute_exparg<ExecutionSpace, RealType>(segment, ig, ipol, exp_table, n_exp_intervals, exp_rdx, exparg(iseg), xstr, rsinpolang);
+
+        }
 
         // Create temporary arrays for segment flux
         RealType fsegflux = old_angflux(rays[iray].angflux_bc_frwd_start(), ipol, ig);
@@ -607,8 +634,9 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
         // Forward and backward sweeps
         for (int iseg = 0; iseg < rays[iray].nsegs(); iseg++) {
             // Forward segment sweep
-            int ireg = rays[iray].fsr(iseg) - 1; // Convert to 0-based
-            RealType segment_length = rays[iray].segment(iseg);
+            auto& segment = segments(rays[iray].first_seg() + iseg);
+            int ireg = segment.fsr();
+            RealType segment_length = segment.length();
             RealType exp_arg = -xstr(ireg, ig) * segment_length * rsinpolang(ipol);
             RealType phid = (fsegflux - source(ireg, ig)) *
                 eval_exp_arg<ExecutionSpace, RealType>(exparg, iseg, xstr(ireg, ig), segment_length, rsinpolang(ipol));
@@ -618,8 +646,9 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
 
             // Backward segment sweep
             int bseg = rays[iray].nsegs() - 1 - iseg;
-            ireg = rays[iray].fsr(bseg) - 1; // Convert to 0-based
-            segment_length = rays[iray].segment(bseg);
+            segment = segments(rays[iray].first_seg() + bseg);
+            ireg = segment.fsr();
+            segment_length = segment.length();
             exp_arg = -xstr(ireg, ig) * segment_length * rsinpolang(ipol);
             phid = (bsegflux - source(ireg, ig)) *
                 eval_exp_arg<ExecutionSpace, RealType>(exparg, bseg, xstr(ireg, ig), segment_length, rsinpolang(ipol));

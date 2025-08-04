@@ -16,14 +16,26 @@ struct KokkosRaySegment {
 
     KOKKOS_INLINE_FUNCTION
     KokkosRaySegment(int fsr, RealType length) : _fsr(fsr), _length(length) {}
+
+    // Get FSR for a given segment (device version)
+    KOKKOS_INLINE_FUNCTION
+    int fsr() const {
+        return _fsr;
+    }
+
+    // Get segment length for a given segment (device version)
+    KOKKOS_INLINE_FUNCTION
+    RealType length() const {
+        return _length;
+    }
 };
 
 // Kokkos-compatible LongRay structure
-template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace, typename RealType = double>
 struct KokkosLongRay
 {
     public:
         // Ray metadata
+        int _first_seg;
         int _nsegs;
         int _bc_face[2];     // size 2: [start, end]
         int _bc_index[2];    // size 2: [start, end]
@@ -37,32 +49,19 @@ struct KokkosLongRay
         // Angle data
         int _angle_index;
 
-        // Ray segments
-        KokkosRaySegment<RealType>* _segments;
-
         // Default constructor
         KokkosLongRay() = default;
 
         // Constructor that initializes the KokkosLongRay object from a HighFive::Group
         // for a specific angle index
-        KokkosLongRay(const HighFive::Group& group, int angle_index)
-        : _angle_index(angle_index)
+        KokkosLongRay(const HighFive::Group& group, int angle_index, int nsegs, int first_segment)
+        : _angle_index(angle_index),
+          _nsegs(nsegs),
+          _first_seg(first_segment)
         {
             // Read data from HDF5
-            auto fsrs = group.getDataSet("FSRs").read<std::vector<int>>();
-            auto segments = group.getDataSet("Segments").read<std::vector<double>>();
             auto bc_face = group.getDataSet("BC_face").read<std::vector<int>>();
             auto bc_index = group.getDataSet("BC_index").read<std::vector<int>>();
-
-            _nsegs = fsrs.size();
-
-            // Allocate host views
-            _segments = new KokkosRaySegment<RealType>[_nsegs];
-
-            // Copy data to host views
-            for (int i = 0; i < _nsegs; i++) {
-                _segments[i] = KokkosRaySegment<RealType>(fsrs[i], static_cast<RealType>(segments[i]));
-            }
 
             // Adjust BC indices (convert from 1-based to 0-based)
             _bc_face[RAY_START] = bc_face[RAY_START] - 1;
@@ -86,20 +85,13 @@ struct KokkosLongRay
         }
 
         KOKKOS_INLINE_FUNCTION
+        int first_seg() const {
+            return _first_seg;
+        }
+
+        KOKKOS_INLINE_FUNCTION
         int nsegs() const {
             return _nsegs;
-        }
-
-        // Get FSR for a given segment (device version)
-        KOKKOS_INLINE_FUNCTION
-        int fsr(int iseg) const {
-            return _segments[iseg]._fsr;
-        }
-
-        // Get segment length for a given segment (device version)
-        KOKKOS_INLINE_FUNCTION
-        RealType segment(int iseg) const {
-            return _segments[iseg]._length;
         }
 
         // Get BC face (device version)

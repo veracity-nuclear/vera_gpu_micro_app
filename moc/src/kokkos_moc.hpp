@@ -24,8 +24,10 @@ class KokkosMOC : public BaseMOC {
     using DViewReal1D = Kokkos::View<RealType*, layout, MemorySpace>;
     using DViewReal2D = Kokkos::View<RealType**, layout, MemorySpace>;
     using DViewReal3D = Kokkos::View<RealType***, layout, MemorySpace>;
-    using HViewKokkosLongRay1D = Kokkos::View<KokkosLongRay<Kokkos::HostSpace, RealType>*, layout, Kokkos::HostSpace>;
-    using DViewKokkosLongRay1D = Kokkos::View<KokkosLongRay<MemorySpace, RealType>*, layout, MemorySpace>;
+    using HViewKokkosRaySegment1D = Kokkos::View<KokkosRaySegment<RealType>*, layout, Kokkos::HostSpace>;
+    using DViewKokkosRaySegment1D = Kokkos::View<KokkosRaySegment<RealType>*, layout, MemorySpace>;
+    using HViewKokkosLongRay1D = Kokkos::View<KokkosLongRay*, layout, Kokkos::HostSpace>;
+    using DViewKokkosLongRay1D = Kokkos::View<KokkosLongRay*, layout, MemorySpace>;
 
     // Friend declaration for googletest
     friend class BasicTest_test_kokkos_exp_table_Test;
@@ -110,6 +112,8 @@ class KokkosMOC : public BaseMOC {
         // Ray data
         int _n_rays;  // Number of rays
         int _max_segments;  // Maximum number of segments in any ray
+        HViewKokkosRaySegment1D _h_segments;
+        DViewKokkosRaySegment1D _d_segments;
         HViewKokkosLongRay1D _h_rays;
         DViewKokkosLongRay1D _d_rays;
 
