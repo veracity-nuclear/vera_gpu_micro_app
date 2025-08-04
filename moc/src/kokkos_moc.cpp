@@ -502,10 +502,9 @@ struct RayIndexCalculator<Kokkos::Cuda> {
 
 template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
-void compute_exparg(const KokkosRaySegment<RealType> segment, int ig, int ipol,
+RealType compute_exparg(const KokkosRaySegment<RealType> segment, int ig, int ipol,
                     const Kokkos::View<const RealType**, ExecutionSpace>& exp_table,
                     int n_intervals, RealType rdx,
-                    RealType& exparg,
                     const Kokkos::View<const RealType**, ExecutionSpace>& xstr,
                     const Kokkos::View<const RealType*, ExecutionSpace>& rsinpolang)
 {
@@ -518,19 +517,18 @@ void compute_exparg(const KokkosRaySegment<RealType> segment, int ig, int ipol,
         RealType val = -xstr(segment.fsr(), ig) * segment.length() * rsinpolang(ipol);
         int i = Kokkos::floor(val * rdx) + n_intervals + 1;
         if (i >= 0 && i < n_intervals + 1) {
-            exparg = exp_table(i, 0) * val + exp_table(i, 1);
+            return exp_table(i, 0) * val + exp_table(i, 1);
         } else if (val < static_cast<RealType>(-700.0)) {
-            exparg = static_cast<RealType>(1.0);
+            return static_cast<RealType>(1.0);
         } else {
-            exparg = static_cast<RealType>(1.0) - Kokkos::exp(val);
+            return static_cast<RealType>(1.0) - Kokkos::exp(val);
         }
     }
 }
 
 template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
-RealType eval_exp_arg(const Kokkos::View<RealType*, typename ExecutionSpace::scratch_memory_space>& exparg,
-                    const int iseg, const RealType xstr, const RealType ray_segment, const RealType rsinpolang)
+RealType eval_exp_arg(RealType exparg, const RealType xstr, const RealType ray_segment, const RealType rsinpolang)
 {
 #ifdef KOKKOS_ENABLE_CUDA
     if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
@@ -538,7 +536,7 @@ RealType eval_exp_arg(const Kokkos::View<RealType*, typename ExecutionSpace::scr
     } else
 #endif
     {
-        return exparg(iseg);
+        return exparg;
     }
 }
 
@@ -621,9 +619,8 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
         // Create thread-local exparg array for non-CUDA execution spaces using scratch space
         ScratchViewReal1D exparg(teamMember.team_scratch(0), rays[iray].nsegs());
         for (int iseg = 0; iseg < rays[iray].nsegs(); iseg++) {
-            int global_seg = rays[iray].first_seg() + iseg;
-            const auto& segment = segments[global_seg];
-            compute_exparg<ExecutionSpace, RealType>(segment, ig, ipol, exp_table, n_exp_intervals, exp_rdx, exparg(iseg), xstr, rsinpolang);
+            const auto& segment = segments[rays[iray].first_seg() + iseg];
+            exparg(iseg) = compute_exparg<ExecutionSpace, RealType>(segment, ig, ipol, exp_table, n_exp_intervals, exp_rdx, xstr, rsinpolang);
 
         }
 
@@ -639,10 +636,9 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
             RealType segment_length = segment.length();
             RealType exp_arg = -xstr(ireg, ig) * segment_length * rsinpolang(ipol);
             RealType phid = (fsegflux - source(ireg, ig)) *
-                eval_exp_arg<ExecutionSpace, RealType>(exparg, iseg, xstr(ireg, ig), segment_length, rsinpolang(ipol));
+                eval_exp_arg<ExecutionSpace, RealType>(exparg(iseg), xstr(ireg, ig), segment_length, rsinpolang(ipol));
             fsegflux -= phid;
-            tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig,
-                static_cast<double>(phid * angle_weights(rays[iray].angle(), ipol)));
+            tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, phid * angle_weights(rays[iray].angle(), ipol));
 
             // Backward segment sweep
             int bseg = rays[iray].nsegs() - 1 - iseg;
@@ -651,10 +647,9 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
             segment_length = segment.length();
             exp_arg = -xstr(ireg, ig) * segment_length * rsinpolang(ipol);
             phid = (bsegflux - source(ireg, ig)) *
-                eval_exp_arg<ExecutionSpace, RealType>(exparg, bseg, xstr(ireg, ig), segment_length, rsinpolang(ipol));
+                eval_exp_arg<ExecutionSpace, RealType>(exparg(bseg), xstr(ireg, ig), segment_length, rsinpolang(ipol));
             bsegflux -= phid;
-            tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig,
-                static_cast<double>(phid * angle_weights(rays[iray].angle(), ipol)));
+            tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, phid * angle_weights(rays[iray].angle(), ipol));
         }
 
         // Store final segment flux back to angular flux arrays
