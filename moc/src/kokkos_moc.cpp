@@ -674,10 +674,11 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
     }
 
     // Scale the flux with source, volume, and transport XS
+    auto plane_height = _plane_height;
     Kokkos::parallel_for("ScaleScalarFlux",
         Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<2>>({0, 0}, {_nfsr, _ng}),
         KOKKOS_LAMBDA(int i, int g) {
-            scalar_flux(i, g) = scalar_flux(i, g) * static_cast<double>(_plane_height / (xstr(i, g) * fsr_vol(i)))
+            scalar_flux(i, g) = scalar_flux(i, g) * static_cast<double>(plane_height / (xstr(i, g) * fsr_vol(i)))
                 + static_cast<double>(source(i, g) * fourpi);
     });
 
