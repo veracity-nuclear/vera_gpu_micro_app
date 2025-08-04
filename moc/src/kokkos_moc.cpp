@@ -508,21 +508,14 @@ RealType compute_exparg(const KokkosRaySegment<RealType> segment, int ig, int ip
                     const Kokkos::View<const RealType**, ExecutionSpace>& xstr,
                     const Kokkos::View<const RealType*, ExecutionSpace>& rsinpolang)
 {
-#ifdef KOKKOS_ENABLE_CUDA
-    if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
-        return;
-    } else
-#endif
-    {
-        RealType val = -xstr(segment.fsr(), ig) * segment.length() * rsinpolang(ipol);
-        int i = Kokkos::floor(val * rdx) + n_intervals + 1;
-        if (i >= 0 && i < n_intervals + 1) {
-            return exp_table(i, 0) * val + exp_table(i, 1);
-        } else if (val < static_cast<RealType>(-700.0)) {
-            return static_cast<RealType>(1.0);
-        } else {
-            return static_cast<RealType>(1.0) - Kokkos::exp(val);
-        }
+    RealType val = -xstr(segment.fsr(), ig) * segment.length() * rsinpolang(ipol);
+    int i = Kokkos::floor(val * rdx) + n_intervals + 1;
+    if (i >= 0 && i < n_intervals + 1) {
+        return exp_table(i, 0) * val + exp_table(i, 1);
+    } else if (val < static_cast<RealType>(-700.0)) {
+        return static_cast<RealType>(1.0);
+    } else {
+        return static_cast<RealType>(1.0) - Kokkos::exp(val);
     }
 }
 
@@ -618,7 +611,16 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
 
         // Create thread-local exparg array for non-CUDA execution spaces using scratch space
         ScratchViewReal1D exparg(teamMember.team_scratch(0), rays(iray).nsegs());
-        for (int iseg = 0; iseg < rays(iray).nsegs(); iseg++) {
+	int nsegs;
+#ifdef KOKKOS_ENABLE_CUDA
+	if constexpr(std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
+            nsegs = 0;
+        } else
+#endif
+        {
+            nsegs = rays(iray).nsegs();
+        }
+        for (int iseg = 0; iseg < nsegs; iseg++) {
             const auto& segment = segments(rays(iray).first_seg() + iseg);
             exparg(iseg) = compute_exparg<ExecutionSpace, RealType>(segment, ig, ipol, exp_table, n_exp_intervals, exp_rdx, xstr, rsinpolang);
 
