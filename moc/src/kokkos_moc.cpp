@@ -316,9 +316,9 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
             for (const auto& rayName : angleGroup.listObjectNames()) {
                 if (rayName.substr(0, 8) == "LongRay_") {
                     auto rayGroup = angleGroup.getGroup(rayName);
-                    int ray_segs = rayGroup.getDataSet("FSRs").read<std::vector<int>>().size();
-                    _h_rays(iray) = KokkosLongRay(rayGroup, angleIndex, ray_segs, nsegs);
-                    nsegs += ray_segs;
+                    int ray_nsegs = rayGroup.getDataSet("FSRs").read<std::vector<int>>().size();
+                    _h_rays(iray) = KokkosLongRay(rayGroup, angleIndex, ray_nsegs, nsegs);
+                    nsegs += ray_nsegs;
                     iray++;
                 }
             }
