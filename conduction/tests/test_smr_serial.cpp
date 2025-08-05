@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
+#include <Kokkos_Core.hpp>
 #include "cylinder_node.hpp"
-#include "cylindrical_solver.hpp"
+#include "cylindrical_solver_serial.hpp"
 #include "hdf5_utils.hpp"
 
 /* The SMR test running in serial runs 184,730 conduction solves in 412 ms. */
@@ -51,16 +52,31 @@ TEST(SMR_Serial, ConductionSolve) {
             std::make_shared<UO2>(),
             std::make_shared<Zircaloy>()
         };
-        CylindricalSolver solver(nodes, materials);
+        CylindricalSolverSerial solver(nodes, materials);
         double T_outer = all_clad_surf_temps[i];
 
-        std::vector<double> qdot(nodes.size(), 0.0);
-        qdot[0] = all_pin_powers[i] / nodes[0]->get_volume(); // only node with fuel has heat gen
-        std::vector<double> Tavg = solver.solve(qdot, T_outer);
-        std::vector<double> interface_temps = solver.get_interface_temperatures();
+        // Create Kokkos::View for qdot
+        CylindricalSolverSerial::DoubleView qdot("qdot", nodes.size());
+        auto h_qdot = Kokkos::create_mirror_view(qdot);
+        for (size_t j = 0; j < nodes.size(); ++j) {
+            h_qdot(j) = 0.0;
+        }
+        h_qdot(0) = all_pin_powers[i] / nodes[0]->get_volume(); // only node with fuel has heat gen
+        Kokkos::deep_copy(qdot, h_qdot);
 
-        EXPECT_GT(std::accumulate(Tavg.begin(), Tavg.end(), 0.0), 0.0); // use result to prevent compiler optimization
-        EXPECT_EQ(Tavg.size(), nodes.size());
+        CylindricalSolverSerial::DoubleView Tavg = solver.solve(qdot, T_outer);
+        CylindricalSolverSerial::DoubleView interface_temps = solver.get_interface_temperatures();
+
+        // Copy to host for verification
+        auto h_Tavg = Kokkos::create_mirror_view(Tavg);
+        Kokkos::deep_copy(h_Tavg, Tavg);
+
+        double sum_temps = 0.0;
+        for (size_t j = 0; j < h_Tavg.extent(0); ++j) {
+            sum_temps += h_Tavg(j);
+        }
+        EXPECT_GT(sum_temps, 0.0); // use result to prevent compiler optimization
+        EXPECT_EQ(h_Tavg.extent(0), nodes.size());
     }
     auto end = std::chrono::high_resolution_clock::now();
     std::cout << "Elapsed: "
@@ -69,6 +85,11 @@ TEST(SMR_Serial, ConductionSolve) {
 }
 
 int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+    Kokkos::initialize(argc, argv);
+    {
+        ::testing::InitGoogleTest(&argc, argv);
+        auto result = RUN_ALL_TESTS();
+        Kokkos::finalize();
+        return result;
+    }
 }
