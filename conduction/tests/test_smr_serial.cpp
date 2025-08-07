@@ -22,13 +22,13 @@ TEST(SMR_Serial, ConductionSolve) {
     };
 
     // Create conduction solver
-    ConductionSerial conduction_solver(radii, height, materials);
+    Conduction<Kokkos::Serial> conduction_solver(radii, height, materials);
 
     // Load pin data from HDF5 file
     conduction_solver.load_pin_data(filename, state_groups);
 
     // Solve all pins
-    ConductionSerial::ConductionResults results = conduction_solver.solve_all_pins();
+    auto results = conduction_solver.solve_all_pins();
 
     // Verify results
     EXPECT_EQ(results.total_pins, 18473 * state_groups.size());

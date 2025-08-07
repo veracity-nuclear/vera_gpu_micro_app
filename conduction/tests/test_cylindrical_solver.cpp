@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <Kokkos_Core.hpp>
 #include "cylinder_node.hpp"
 #include "cylindrical_solver_serial.hpp"
 
@@ -45,24 +44,15 @@ TEST(CylindricalSolverTest, TemperatureDistribution_1Region) {
 
     CylindricalSolverSerial solver(nodes, materials);
 
-    // Create Kokkos::View for qdot
-    CylindricalSolverSerial::DoubleView1D qdot("qdot", 1);
-    auto h_qdot = Kokkos::create_mirror_view(qdot);
-    h_qdot(0) = 100 / nodes[0]->get_volume();  // W/cm^3
-    Kokkos::deep_copy(qdot, h_qdot);
+    std::vector<double> qdot(1);
+    qdot[0] = 100 / nodes[0]->get_volume();  // W/cm^3
 
     double T_outer = 600.0; // K
 
-    CylindricalSolverSerial::DoubleView1D avg_temps = solver.solve(qdot, T_outer);
-    CylindricalSolverSerial::DoubleView1D interface_temps = solver.get_interface_temperatures();
+    std::vector<double> avg_temps = solver.solve(qdot, T_outer);
+    std::vector<double> interface_temps = solver.get_interface_temperatures();
 
-    // Copy to host for verification
-    auto h_avg_temps = Kokkos::create_mirror_view(avg_temps);
-    auto h_interface_temps = Kokkos::create_mirror_view(interface_temps);
-    Kokkos::deep_copy(h_avg_temps, avg_temps);
-    Kokkos::deep_copy(h_interface_temps, interface_temps);
-
-    double T_fuel_cl = h_interface_temps(0);
+    double T_fuel_cl = interface_temps[0];
 
     // analytical solution for temperature at fuel centerline
     // T(r=0) = T_outer + qdot / (4 * k) * (r_out^2 - r_in^2)
@@ -70,8 +60,8 @@ TEST(CylindricalSolverTest, TemperatureDistribution_1Region) {
 
     EXPECT_NEAR(T_fuel_cl, T_fuel_cl_analytical, 1e-6);
 
-    EXPECT_EQ(h_avg_temps.extent(0), 1);
-    EXPECT_NEAR(h_avg_temps(0), 648.950255, 1e-6);
+    EXPECT_EQ(avg_temps.size(), 1);
+    EXPECT_NEAR(avg_temps[0], 648.950255, 1e-6);
 }
 
 TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_10Regions) {
@@ -122,30 +112,16 @@ TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_10Regions) {
         qdot_vec[i] = power[i] / nodes[i]->get_volume(); // W/m^3
     }
 
-    // Create Kokkos::View for qdot
-    CylindricalSolverSerial::DoubleView1D qdot("qdot", nodes.size());
-    auto h_qdot = Kokkos::create_mirror_view(qdot);
-    for (size_t i = 0; i < nodes.size(); ++i) {
-        h_qdot(i) = qdot_vec[i];
-    }
-    Kokkos::deep_copy(qdot, h_qdot);
-
     CylindricalSolverSerial solver(nodes, materials);
     double T_outer = 600.0; // K
 
-    CylindricalSolverSerial::DoubleView1D avg_temps = solver.solve(qdot, T_outer);
-    CylindricalSolverSerial::DoubleView1D interface_temps = solver.get_interface_temperatures();
+    std::vector<double> avg_temps = solver.solve(qdot_vec, T_outer);
+    std::vector<double> interface_temps = solver.get_interface_temperatures();
 
-    // Copy to host for verification
-    auto h_avg_temps = Kokkos::create_mirror_view(avg_temps);
-    auto h_interface_temps = Kokkos::create_mirror_view(interface_temps);
-    Kokkos::deep_copy(h_avg_temps, avg_temps);
-    Kokkos::deep_copy(h_interface_temps, interface_temps);
-
-    double T_fuel_cl = h_interface_temps(0);
-    double T_fuel_outer = h_interface_temps(8);
-    double T_clad_inner = h_interface_temps(9);
-    double T_clad_outer = h_interface_temps(11);
+    double T_fuel_cl = interface_temps[0];
+    double T_fuel_outer = interface_temps[8];
+    double T_clad_inner = interface_temps[9];
+    double T_clad_outer = interface_temps[11];
 
     // analytical solution for temperature at fuel centerline
     // T(r=0.) = T_outer + q * (R_fuel + R_gap + R_clad)
@@ -164,15 +140,10 @@ TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_10Regions) {
     EXPECT_NEAR(T_clad_outer, T_clad_outer_analytical, 1e-6);
 
     // Test average temperatures
-    EXPECT_EQ(h_avg_temps.extent(0), 10);
+    EXPECT_EQ(avg_temps.size(), 10);
 }
 
 int main(int argc, char **argv) {
-    Kokkos::initialize(argc, argv);
-    {
-        ::testing::InitGoogleTest(&argc, argv);
-        auto result = RUN_ALL_TESTS();
-        Kokkos::finalize();
-        return result;
-    }
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }

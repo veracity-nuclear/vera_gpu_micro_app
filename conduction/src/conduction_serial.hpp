@@ -9,7 +9,6 @@
 #include <cassert>
 #include <Kokkos_Core.hpp>
 #include "cylinder_node.hpp"
-#include "cylindrical_solver_base.hpp"
 #include "cylindrical_solver_serial.hpp"
 #include "materials.hpp"
 #include "hdf5_utils.hpp"
@@ -45,6 +44,13 @@ public:
     // Solve all pins in parallel
     ConductionResults solve_all_pins();
 
+    // Test method to set data manually (for debugging)
+    void set_test_data(const std::vector<double>& pin_powers, const std::vector<double>& clad_surf_temps) {
+        pin_powers_ = pin_powers;
+        clad_surf_temps_ = clad_surf_temps;
+        data_loaded_ = true;
+    }
+
 private:
     std::vector<double> radii_;
     double height_;
@@ -77,7 +83,9 @@ void Conduction<ExecutionSpace>::load_pin_data(
     pin_powers_.clear();
     clad_surf_temps_.clear();
 
-    for (const auto& group : state_groups) {
+    for (size_t i = 0; i < state_groups.size(); ++i) {
+        const auto& group = state_groups[i];
+
         double total_power = read_hdf5_scalar(filename, group + "/total_power");
         double power_percent = read_hdf5_scalar(filename, group + "/power") * 0.01; // convert to fraction
 
@@ -138,8 +146,12 @@ Conduction<ExecutionSpace>::solve_all_pins() {
     Kokkos::deep_copy(pin_powers_view, h_pin_powers);
     Kokkos::deep_copy(clad_temps_view, h_clad_temps);
 
-    // For now, we'll use a simple loop since the solver creation requires host-side operations
-    // TODO: Refactor solvers to be device-compatible for full parallel execution
+    // Create solvers for all pins
+    // Pre-create everything on the host: solvers, nodes, and qdot views
+    std::vector<std::unique_ptr<CylindricalSolverSerial>> solvers(N);
+    std::vector<std::vector<double>> qdot_vectors(N);
+    std::vector<double> T_outer_values(N);
+
     for (size_t i = 0; i < N; ++i) {
         // Create nodes for this pin (fuel and clad with gap between)
         std::vector<std::shared_ptr<CylinderNode>> nodes = {
@@ -147,62 +159,38 @@ Conduction<ExecutionSpace>::solve_all_pins() {
             std::make_shared<CylinderNode>(height_, radii_[2], radii_[3])  // clad node
         };
 
-        // Create solver for this pin using the appropriate concrete class
-        std::unique_ptr<CylindricalSolverBase<ExecutionSpace>> solver;
+        // Create solver for this pin using the updated non-Kokkos solver
+        solvers[i] = std::make_unique<CylindricalSolverSerial>(nodes, materials_);
 
-        if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Serial>) {
-            solver = std::make_unique<CylindricalSolverSerial>(nodes, materials_);
-        }
-#ifdef KOKKOS_ENABLE_OPENMP
-        else if constexpr (std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
-            // TODO: Create CylindricalSolverOpenMP when it exists
-            throw std::runtime_error("OpenMP solver not yet implemented");
-        }
-#endif
-#ifdef KOKKOS_ENABLE_CUDA
-        else if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
-            // TODO: Create CylindricalSolverCuda when it exists
-            throw std::runtime_error("CUDA solver not yet implemented");
-        }
-#endif
-        else {
-            throw std::runtime_error("Unsupported execution space");
-        }
+        // Pre-create and initialize qdot vector for this pin
+        qdot_vectors[i].resize(nodes.size(), 0.0);
+        qdot_vectors[i][0] = pin_powers_[i] / nodes[0]->get_volume(); // only fuel node has heat generation
 
-        double T_outer = clad_surf_temps_[i];
+        // Store T_outer value for this pin
+        T_outer_values[i] = clad_surf_temps_[i];
+    }
 
-        // Create Kokkos::View for qdot
-        typename CylindricalSolverBase<ExecutionSpace>::DoubleView1D qdot("qdot", nodes.size());
-        auto h_qdot = Kokkos::create_mirror_view(qdot);
+    // Pre-allocate result storage
+    std::vector<std::vector<double>> Tavg_results(N);
+    std::vector<std::vector<double>> T_interface_results(N);
 
-        for (size_t j = 0; j < nodes.size(); ++j) {
-            h_qdot(j) = 0.0;
-        }
-        h_qdot(0) = pin_powers_[i] / nodes[0]->get_volume(); // only fuel node has heat generation
-        Kokkos::deep_copy(qdot, h_qdot);
+    // Use regular loop with simple non-Kokkos solver
 
-        // Solve for this pin
-        auto Tavg = solver->solve(qdot, T_outer);
+    for (size_t i = 0; i < N; ++i) {
+        // Solve using the simple solver
+        Tavg_results[i] = solvers[i]->solve(qdot_vectors[i], T_outer_values[i]);
+        T_interface_results[i] = solvers[i]->get_interface_temperatures();
+    }
 
-        // Copy results
-        auto h_Tavg = Kokkos::create_mirror_view(Tavg);
-        Kokkos::deep_copy(h_Tavg, Tavg);
-
-        // Get interface temperatures from solver
-        auto T_interface = solver->get_interface_temperatures();
-        auto h_T_interface = Kokkos::create_mirror_view(T_interface);
-        Kokkos::deep_copy(h_T_interface, T_interface);
-
-        // Store average temperatures
-        for (size_t j = 0; j < h_Tavg.extent(0); ++j) {
-            results.average_temperatures[i * nodes.size() + j] = h_Tavg(j);
+    // Copy results back - simplified since we're using vectors now
+    for (size_t i = 0; i < N; ++i) {
+        // Copy average temperatures
+        for (size_t j = 0; j < Tavg_results[i].size(); ++j) {
+            results.average_temperatures[i * num_nodes + j] = Tavg_results[i][j];
         }
 
-        // Store interface temperatures for this pin directly from solver
-        results.interface_temperatures[i].resize(h_T_interface.extent(0));
-        for (size_t j = 0; j < h_T_interface.extent(0); ++j) {
-            results.interface_temperatures[i][j] = h_T_interface(j);
-        }
+        // Copy interface temperatures
+        results.interface_temperatures[i] = T_interface_results[i];
     }
 
     auto end = std::chrono::high_resolution_clock::now();
