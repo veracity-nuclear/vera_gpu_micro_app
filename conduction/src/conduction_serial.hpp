@@ -41,15 +41,7 @@ public:
         const std::vector<std::string>& state_groups
     );
 
-    // Solve all pins in parallel
     ConductionResults solve_all_pins();
-
-    // Test method to set data manually (for debugging)
-    void set_test_data(const std::vector<double>& pin_powers, const std::vector<double>& clad_surf_temps) {
-        pin_powers_ = pin_powers;
-        clad_surf_temps_ = clad_surf_temps;
-        data_loaded_ = true;
-    }
 
 private:
     std::vector<double> radii_;
@@ -70,7 +62,7 @@ Conduction<ExecutionSpace>::Conduction(
     double height,
     const std::vector<std::shared_ptr<Solid>>& materials
 ) : radii_(radii), height_(height), materials_(materials) {
-    if (radii_.size() != 4 || materials_.size() != 2) {
+    if (radii_.size() != 4 || materials_.size() != 2) {  // (For now, can expand later)
         throw std::invalid_argument("Expected 4 radii and 2 materials for fuel-gap-clad geometry");
     }
 }
@@ -146,9 +138,9 @@ Conduction<ExecutionSpace>::solve_all_pins() {
     Kokkos::deep_copy(pin_powers_view, h_pin_powers);
     Kokkos::deep_copy(clad_temps_view, h_clad_temps);
 
-    // Create solvers for all pins
+    // Create solvers for all pins using raw pointers for Kokkos compatibility
     // Pre-create everything on the host: solvers, nodes, and qdot views
-    std::vector<std::unique_ptr<CylindricalSolverSerial>> solvers(N);
+    std::vector<CylindricalSolverSerial*> solvers(N);
     std::vector<std::vector<double>> qdot_vectors(N);
     std::vector<double> T_outer_values(N);
 
@@ -159,8 +151,8 @@ Conduction<ExecutionSpace>::solve_all_pins() {
             std::make_shared<CylinderNode>(height_, radii_[2], radii_[3])  // clad node
         };
 
-        // Create solver for this pin using the updated non-Kokkos solver
-        solvers[i] = std::make_unique<CylindricalSolverSerial>(nodes, materials_);
+        // Create solver for this pin using raw pointer for Kokkos compatibility
+        solvers[i] = new CylindricalSolverSerial(nodes, materials_);
 
         // Pre-create and initialize qdot vector for this pin
         qdot_vectors[i].resize(nodes.size(), 0.0);
@@ -170,27 +162,47 @@ Conduction<ExecutionSpace>::solve_all_pins() {
         T_outer_values[i] = clad_surf_temps_[i];
     }
 
-    // Pre-allocate result storage
-    std::vector<std::vector<double>> Tavg_results(N);
-    std::vector<std::vector<double>> T_interface_results(N);
+    // Pre-allocate result storage using Kokkos Views for parallel_for
+    DoubleView2D Tavg_results_view("Tavg_results", N, num_nodes);
+    DoubleView2D T_interface_results_view("T_interface_results", N, num_nodes + 1);
 
-    // Use regular loop with simple non-Kokkos solver
+    // Use parallel_for loop with simple non-Kokkos solver
+    Kokkos::parallel_for("Outermost Loop", N, KOKKOS_LAMBDA(int i) {
+        // Solve using the simple solver - get results into temporary vectors
+        std::vector<double> tavg = solvers[i]->solve(qdot_vectors[i], T_outer_values[i]);
+        std::vector<double> tintf = solvers[i]->get_interface_temperatures();
 
-    for (size_t i = 0; i < N; ++i) {
-        // Solve using the simple solver
-        Tavg_results[i] = solvers[i]->solve(qdot_vectors[i], T_outer_values[i]);
-        T_interface_results[i] = solvers[i]->get_interface_temperatures();
-    }
+        // Copy results to Kokkos Views
+        for (size_t j = 0; j < tavg.size(); ++j) {
+            Tavg_results_view(i, j) = tavg[j];
+        }
+        for (size_t j = 0; j < tintf.size(); ++j) {
+            T_interface_results_view(i, j) = tintf[j];
+        }
+    });
 
-    // Copy results back - simplified since we're using vectors now
+    // Copy results back from Kokkos Views to host vectors
+    auto h_Tavg_results = Kokkos::create_mirror_view(Tavg_results_view);
+    auto h_T_interface_results = Kokkos::create_mirror_view(T_interface_results_view);
+    Kokkos::deep_copy(h_Tavg_results, Tavg_results_view);
+    Kokkos::deep_copy(h_T_interface_results, T_interface_results_view);
+
     for (size_t i = 0; i < N; ++i) {
         // Copy average temperatures
-        for (size_t j = 0; j < Tavg_results[i].size(); ++j) {
-            results.average_temperatures[i * num_nodes + j] = Tavg_results[i][j];
+        for (size_t j = 0; j < num_nodes; ++j) {
+            results.average_temperatures[i * num_nodes + j] = h_Tavg_results(i, j);
         }
 
         // Copy interface temperatures
-        results.interface_temperatures[i] = T_interface_results[i];
+        results.interface_temperatures[i].resize(num_nodes + 1);
+        for (size_t j = 0; j < num_nodes + 1; ++j) {
+            results.interface_temperatures[i][j] = h_T_interface_results(i, j);
+        }
+    }
+
+    // Clean up raw pointers
+    for (size_t i = 0; i < N; ++i) {
+        delete solvers[i];
     }
 
     auto end = std::chrono::high_resolution_clock::now();

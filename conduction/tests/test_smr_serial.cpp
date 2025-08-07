@@ -3,7 +3,7 @@
 #include "conduction_serial.hpp"
 #include "materials.hpp"
 
-/* The SMR test running in serial runs 184,730 conduction solves using a parallel_for kernel. */
+/* The SMR test running in serial runs 184,730 conduction solves. */
 
 const std::string filename = std::string(TEST_DATA_DIR) + "/smr.h5";
 
