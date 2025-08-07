@@ -1,13 +1,13 @@
 #include "cylindrical_solver_serial.hpp"
 
-CylindricalSolverSerial::DoubleView CylindricalSolverSerial::solve(
-    const DoubleView& qdot,
+CylindricalSolverSerial::DoubleView1D CylindricalSolverSerial::solve(
+    const DoubleView1D& qdot,
     double T_outer,
     double tolerance,
     size_t max_iterations
 ) {
-    DoubleView Tavg("Tavg", nodes.size());
-    DoubleView Tavg_prev("Tavg_prev", nodes.size());
+    DoubleView1D Tavg("Tavg", nodes.size());
+    DoubleView1D Tavg_prev("Tavg_prev", nodes.size());
 
     // Initialize with T_outer
     auto h_Tavg = Kokkos::create_mirror_view(Tavg);
@@ -71,18 +71,18 @@ CylindricalSolverSerial::DoubleView CylindricalSolverSerial::solve(
     return Tavg;
 }
 
-CylindricalSolverSerial::DoubleView CylindricalSolverSerial::internal_Tsolve(
-    const DoubleView& qdot,
+CylindricalSolverSerial::DoubleView1D CylindricalSolverSerial::internal_Tsolve(
+    const DoubleView1D& qdot,
     double T_outer,
     double tolerance,
     size_t max_iterations
 ) {
     const size_t N = nodes.size();
 
-    DoubleView volumes = get_volumes();
-    DoubleView Tavg("Tavg", N);
-    DoubleView Tavg_prev("Tavg_prev", N);
-    DoubleView k("k", N);
+    DoubleView1D volumes = get_volumes();
+    DoubleView1D Tavg("Tavg", N);
+    DoubleView1D Tavg_prev("Tavg_prev", N);
+    DoubleView1D k("k", N);
 
     // Initialize to zero
     Kokkos::deep_copy(Tavg, 0.0);

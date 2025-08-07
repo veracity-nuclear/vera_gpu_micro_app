@@ -38,9 +38,12 @@ TEST(SMR_Serial, ConductionSolve) {
     EXPECT_EQ(results.average_temperatures.size(), results.total_pins * 2); // 2 nodes per pin
     EXPECT_EQ(results.interface_temperatures.size(), results.total_pins);
 
-    // Verify that all temperature sums are positive (prevents compiler optimization)
+    // Verify that all interface temperatures are positive (prevents compiler optimization)
     for (size_t i = 0; i < results.total_pins; ++i) {
-        EXPECT_GT(results.interface_temperatures[i], 0.0);
+        EXPECT_GT(results.interface_temperatures[i].size(), 0);
+        for (double temp : results.interface_temperatures[i]) {
+            EXPECT_GT(temp, 0.0);
+        }
     }
 
     std::cout << "Solved " << results.total_pins << " pins in "

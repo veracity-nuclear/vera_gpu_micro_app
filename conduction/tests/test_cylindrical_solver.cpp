@@ -46,15 +46,15 @@ TEST(CylindricalSolverTest, TemperatureDistribution_1Region) {
     CylindricalSolverSerial solver(nodes, materials);
 
     // Create Kokkos::View for qdot
-    CylindricalSolverSerial::DoubleView qdot("qdot", 1);
+    CylindricalSolverSerial::DoubleView1D qdot("qdot", 1);
     auto h_qdot = Kokkos::create_mirror_view(qdot);
     h_qdot(0) = 100 / nodes[0]->get_volume();  // W/cm^3
     Kokkos::deep_copy(qdot, h_qdot);
 
     double T_outer = 600.0; // K
 
-    CylindricalSolverSerial::DoubleView avg_temps = solver.solve(qdot, T_outer);
-    CylindricalSolverSerial::DoubleView interface_temps = solver.get_interface_temperatures();
+    CylindricalSolverSerial::DoubleView1D avg_temps = solver.solve(qdot, T_outer);
+    CylindricalSolverSerial::DoubleView1D interface_temps = solver.get_interface_temperatures();
 
     // Copy to host for verification
     auto h_avg_temps = Kokkos::create_mirror_view(avg_temps);
@@ -123,7 +123,7 @@ TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_10Regions) {
     }
 
     // Create Kokkos::View for qdot
-    CylindricalSolverSerial::DoubleView qdot("qdot", nodes.size());
+    CylindricalSolverSerial::DoubleView1D qdot("qdot", nodes.size());
     auto h_qdot = Kokkos::create_mirror_view(qdot);
     for (size_t i = 0; i < nodes.size(); ++i) {
         h_qdot(i) = qdot_vec[i];
@@ -133,8 +133,8 @@ TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_10Regions) {
     CylindricalSolverSerial solver(nodes, materials);
     double T_outer = 600.0; // K
 
-    CylindricalSolverSerial::DoubleView avg_temps = solver.solve(qdot, T_outer);
-    CylindricalSolverSerial::DoubleView interface_temps = solver.get_interface_temperatures();
+    CylindricalSolverSerial::DoubleView1D avg_temps = solver.solve(qdot, T_outer);
+    CylindricalSolverSerial::DoubleView1D interface_temps = solver.get_interface_temperatures();
 
     // Copy to host for verification
     auto h_avg_temps = Kokkos::create_mirror_view(avg_temps);

@@ -13,7 +13,7 @@ public:
     using execution_space = ExecutionSpace;
     using memory_space = typename execution_space::memory_space;
     using device_type = Kokkos::Device<execution_space, memory_space>;
-    using DoubleView = Kokkos::View<double*, device_type>;
+    using DoubleView1D = Kokkos::View<double*, device_type>;
     using IntView = Kokkos::View<int*, device_type>;
     using PairView = Kokkos::View<Kokkos::pair<size_t, size_t>*, device_type>;
 
@@ -29,13 +29,13 @@ public:
     double get_number_of_nodes() const { return nodes.size(); }
     void set_gap_fluid(const std::shared_ptr<Fluid> &fluid) { gap_fluid = fluid; }
     std::shared_ptr<CylinderNode> get_node(const size_t index);
-    DoubleView get_volumes() const;
-    DoubleView get_interface_temperatures() const;
-    DoubleView get_average_temperatures() const;
+    DoubleView1D get_volumes() const;
+    DoubleView1D get_interface_temperatures() const;
+    DoubleView1D get_average_temperatures() const;
 
     // Pure virtual method to be implemented by derived classes
-    virtual DoubleView solve(
-        const DoubleView &qdot,
+    virtual DoubleView1D solve(
+        const DoubleView1D &qdot,
         double T_outer,
         double tolerance = 1e-6,
         size_t max_iterations = 100
@@ -46,17 +46,17 @@ protected:
     std::shared_ptr<Fluid> gap_fluid = std::make_shared<Helium>("He"); // Fluid for gap conductance model (default to Helium)
     std::vector<std::shared_ptr<CylinderNode>> nodes;
     std::vector<std::shared_ptr<Solid>> materials;
-    DoubleView interface_temps;
+    DoubleView1D interface_temps;
     PairView node_to_interface_indices;
 
     // Common helper methods that can be used by derived classes
     void initialize_interface_data(double T_initial);
-    DoubleView create_volumes_view() const;
-    DoubleView create_average_temperatures_view() const;
+    DoubleView1D create_volumes_view() const;
+    DoubleView1D create_average_temperatures_view() const;
 
     // Virtual method for execution space specific implementations
-    virtual DoubleView internal_Tsolve(
-        const DoubleView &qdot,
+    virtual DoubleView1D internal_Tsolve(
+        const DoubleView1D &qdot,
         double T_outer,
         double tolerance,
         size_t max_iterations
@@ -95,13 +95,13 @@ std::shared_ptr<CylinderNode> CylindricalSolverBase<ExecutionSpace>::get_node(co
 }
 
 template<typename ExecutionSpace>
-typename CylindricalSolverBase<ExecutionSpace>::DoubleView
+typename CylindricalSolverBase<ExecutionSpace>::DoubleView1D
 CylindricalSolverBase<ExecutionSpace>::get_volumes() const {
     return create_volumes_view();
 }
 
 template<typename ExecutionSpace>
-typename CylindricalSolverBase<ExecutionSpace>::DoubleView
+typename CylindricalSolverBase<ExecutionSpace>::DoubleView1D
 CylindricalSolverBase<ExecutionSpace>::get_interface_temperatures() const {
     if (interface_temps.extent(0) == 0) {
         throw std::runtime_error("Interface temperatures have not been calculated yet");
@@ -110,7 +110,7 @@ CylindricalSolverBase<ExecutionSpace>::get_interface_temperatures() const {
 }
 
 template<typename ExecutionSpace>
-typename CylindricalSolverBase<ExecutionSpace>::DoubleView
+typename CylindricalSolverBase<ExecutionSpace>::DoubleView1D
 CylindricalSolverBase<ExecutionSpace>::get_average_temperatures() const {
     return create_average_temperatures_view();
 }
@@ -157,7 +157,7 @@ void CylindricalSolverBase<ExecutionSpace>::initialize_interface_data(double T_i
     temp_node_to_interface_indices.emplace_back(left_interface, right_interface);
 
     // Initialize Kokkos::Views
-    interface_temps = DoubleView("interface_temps", temp_interface_temps.size());
+    interface_temps = DoubleView1D("interface_temps", temp_interface_temps.size());
     node_to_interface_indices = PairView("node_to_interface_indices", temp_node_to_interface_indices.size());
 
     // Copy data to Kokkos::Views
@@ -177,9 +177,9 @@ void CylindricalSolverBase<ExecutionSpace>::initialize_interface_data(double T_i
 }
 
 template<typename ExecutionSpace>
-typename CylindricalSolverBase<ExecutionSpace>::DoubleView
+typename CylindricalSolverBase<ExecutionSpace>::DoubleView1D
 CylindricalSolverBase<ExecutionSpace>::create_volumes_view() const {
-    DoubleView volumes("volumes", nodes.size());
+    DoubleView1D volumes("volumes", nodes.size());
     auto h_volumes = Kokkos::create_mirror_view(volumes);
 
     for (size_t i = 0; i < nodes.size(); ++i) {
@@ -191,9 +191,9 @@ CylindricalSolverBase<ExecutionSpace>::create_volumes_view() const {
 }
 
 template<typename ExecutionSpace>
-typename CylindricalSolverBase<ExecutionSpace>::DoubleView
+typename CylindricalSolverBase<ExecutionSpace>::DoubleView1D
 CylindricalSolverBase<ExecutionSpace>::create_average_temperatures_view() const {
-    DoubleView avg_temps("avg_temps", nodes.size());
+    DoubleView1D avg_temps("avg_temps", nodes.size());
     auto h_avg_temps = Kokkos::create_mirror_view(avg_temps);
 
     for (size_t i = 0; i < nodes.size(); ++i) {
