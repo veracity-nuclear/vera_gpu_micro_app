@@ -6,6 +6,7 @@
 #include "c5g7_library.hpp"
 #include "base_moc.hpp"
 #include "argument_parser.hpp"
+#include "kokkos_long_ray.hpp"
 
 static constexpr double fourpi = 4.0 * M_PI;
 
@@ -23,6 +24,10 @@ class KokkosMOC : public BaseMOC {
     using DViewReal1D = Kokkos::View<RealType*, layout, MemorySpace>;
     using DViewReal2D = Kokkos::View<RealType**, layout, MemorySpace>;
     using DViewReal3D = Kokkos::View<RealType***, layout, MemorySpace>;
+    using HViewKokkosRaySegment1D = Kokkos::View<KokkosRaySegment<RealType>*, layout, Kokkos::HostSpace>;
+    using DViewKokkosRaySegment1D = Kokkos::View<KokkosRaySegment<RealType>*, layout, MemorySpace>;
+    using HViewKokkosLongRay1D = Kokkos::View<KokkosLongRay*, layout, Kokkos::HostSpace>;
+    using DViewKokkosLongRay1D = Kokkos::View<KokkosLongRay*, layout, MemorySpace>;
 
     // Friend declaration for googletest
     friend class BasicTest_test_kokkos_exp_table_Test;
@@ -65,7 +70,6 @@ class KokkosMOC : public BaseMOC {
 
     private:
         void _read_rays();  // Read rays from the HDF5 file
-        void _convert_rays();  // Convert rays to flattened format
         void _get_xstr(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xstr from XS library
         void _get_xsnf(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xsnf from XS library
         void _get_xsch(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xsch from XS library
@@ -105,31 +109,13 @@ class KokkosMOC : public BaseMOC {
         DViewReal1D _d_rsinpolang;
         DViewReal2D _d_exp_table;
 
-        // Ray host data
+        // Ray data
         int _n_rays;  // Number of rays
         int _max_segments;  // Maximum number of segments in any ray
-        HViewInt1D _h_ray_nsegs;
-        HViewInt1D _h_ray_bc_face_start;
-        HViewInt1D _h_ray_bc_face_end;
-        HViewInt1D _h_ray_bc_index_frwd_start;
-        HViewInt1D _h_ray_bc_index_frwd_end;
-        HViewInt1D _h_ray_bc_index_bkwd_start;
-        HViewInt1D _h_ray_bc_index_bkwd_end;
-        HViewInt1D _h_ray_angle_index;
-        HViewInt1D _h_ray_fsrs;
-        HViewReal1D _h_ray_segments;
-
-        // Ray device data
-        DViewInt1D _d_ray_nsegs;
-        DViewInt1D _d_ray_bc_face_start;
-        DViewInt1D _d_ray_bc_face_end;
-        DViewInt1D _d_ray_bc_index_frwd_start;
-        DViewInt1D _d_ray_bc_index_frwd_end;
-        DViewInt1D _d_ray_bc_index_bkwd_start;
-        DViewInt1D _d_ray_bc_index_bkwd_end;
-        DViewInt1D _d_ray_angle_index;
-        DViewInt1D _d_ray_fsrs;
-        DViewReal1D _d_ray_segments;
+        HViewKokkosRaySegment1D _h_segments;
+        DViewKokkosRaySegment1D _d_segments;
+        HViewKokkosLongRay1D _h_rays;
+        DViewKokkosLongRay1D _d_rays;
 
         // Solution host data
         HViewDouble2D _h_scalar_flux;
