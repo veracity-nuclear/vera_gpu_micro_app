@@ -6,17 +6,24 @@ PetscEigenSolver::PetscEigenSolver(AssemblerPtr&& _assemblerPtr, PCType pcType, 
     const Mat& A = assemblerPtr->getM();
 
     PetscFunctionBeginUser;
+    PetscLogStage stage;
+    PetscLogStageRegister("KSPCreate", &stage);
+    PetscLogStagePush(stage);
+
     KSPCreate(PETSC_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, A, A);
     KSPSetTolerances(ksp, tol, PETSC_CURRENT, PETSC_CURRENT, PETSC_CURRENT);
-    KSPGetPC(ksp, &pc);
-    PCSetType(pc, pcType);
+    // KSPGetPC(ksp, &pc);
+    // PCSetType(pc, pcType);
+    KSPSetFromOptions(ksp);
 
     PetscCallCXXAbort(PETSC_COMM_SELF, assemblerPtr->instantiateVec(pastFission));
     PetscCallCXXAbort(PETSC_COMM_SELF, assemblerPtr->instantiateVec(currentFlux));
 
     // Initialize flux vector to the initial guess at all values
     VecSet(currentFlux, initialGuess);
+
+    PetscLogStagePop();
 }
 
 PetscEigenSolver::~PetscEigenSolver() {
@@ -31,6 +38,10 @@ PetscEigenSolver::~PetscEigenSolver() {
 
 PetscErrorCode PetscEigenSolver::solve(size_t maxIterations) {
     PetscFunctionBeginUser;
+    PetscLogStage stage;
+    PetscLogStageRegister("EigenSolve", &stage);
+    PetscLogStagePush(stage);
+
     PetscScalar currentCurrentFissionDot, pastCurrentFissionDot;
     keff = 1.0; // Initial guess for keff
     keffHistory.clear();
@@ -77,6 +88,7 @@ PetscErrorCode PetscEigenSolver::solve(size_t maxIterations) {
 
     keffHistory.push_back(keff);
     std::cerr << "Warning: Maximum iterations reached without convergence." << std::endl;
-    return PETSC_SUCCESS;
-    // return PETSC_ERR_CONV_FAILED;
+
+    PetscLogStagePop();
+    PetscFunctionReturn(PETSC_SUCCESS);
 }

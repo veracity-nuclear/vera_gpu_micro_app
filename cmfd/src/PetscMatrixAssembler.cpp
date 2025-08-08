@@ -8,6 +8,9 @@ inline bool isNonZero(const PetscScalar& value)
 PetscErrorCode SimpleMatrixAssembler::_assembleM()
 {
     PetscFunctionBeginUser;
+    PetscLogStage stage;
+    PetscLogStageRegister("assembleM", &stage);
+    PetscLogStagePush(stage);
 
     // Create the matrix (not allocated yet)
     MatCreate(PETSC_COMM_WORLD, &MMat);
@@ -166,7 +169,8 @@ PetscErrorCode SimpleMatrixAssembler::_assembleM()
     PetscCall(MatAssemblyBegin(MMat, MAT_FINAL_ASSEMBLY));
     PetscCall(MatAssemblyEnd(MMat, MAT_FINAL_ASSEMBLY));
 
-    return PETSC_SUCCESS;
+    PetscLogStagePop();
+    PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 PetscErrorCode SimpleMatrixAssembler::_assembleFission(const FluxView& flux)
@@ -209,7 +213,7 @@ PetscErrorCode SimpleMatrixAssembler::_assembleFission(const FluxView& flux)
     PetscCall(VecAssemblyBegin(fissionVec));
     PetscCall(VecAssemblyEnd(fissionVec));
 
-    return PETSC_SUCCESS;
+    PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 PetscErrorCode COOMatrixAssembler::_assembleM()
@@ -269,15 +273,18 @@ PetscErrorCode COOMatrixAssembler::_assembleM()
     (That is, in total we add nGroups * nPosLeakageSurfs entries to the end of each COO vector.)
     */
 
-   static constexpr size_t posPosDisplacement = 0;
-   static constexpr size_t negPosDisplacement = 1;
-   static constexpr size_t negNegDisplacement = 2;
-   static constexpr size_t posNegDisplacement = 3;
-   static constexpr PetscInt entriesPerSurf = 4;
-   PetscInt maxNNZInRow = cmfdData.nGroups + entriesPerSurf * MAX_POS_SURF_PER_CELL;
-   PetscInt matSize = cmfdData.nCells * cmfdData.nGroups;
+    static constexpr size_t posPosDisplacement = 0;
+    static constexpr size_t negPosDisplacement = 1;
+    static constexpr size_t negNegDisplacement = 2;
+    static constexpr size_t posNegDisplacement = 3;
+    static constexpr PetscInt entriesPerSurf = 4;
+    PetscInt maxNNZInRow = cmfdData.nGroups + entriesPerSurf * MAX_POS_SURF_PER_CELL;
+    PetscInt matSize = cmfdData.nCells * cmfdData.nGroups;
 
-   PetscFunctionBeginUser;
+    PetscFunctionBeginUser;
+    PetscLogStage stage;
+    PetscLogStageRegister("assembleM", &stage);
+    PetscLogStagePush(stage);
 
     // // There are a lot of options here for splitting up the matrix into submatrices per mpi rank
     // //  (on the PETSc side), i.e., # of rows/cols per rank and number of zeros on and off the diagonal (per row).
@@ -502,7 +509,8 @@ PetscErrorCode COOMatrixAssembler::_assembleM()
         PetscCall(MatSetValuesCOO(MMat, values.data(), ADD_VALUES));
     }
 
-    return PETSC_SUCCESS;
+    PetscLogStagePop();
+    PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 PetscErrorCode COOMatrixAssembler::_assembleFission(const FluxView& flux)
@@ -561,11 +569,14 @@ PetscErrorCode COOMatrixAssembler::_assembleFission(const FluxView& flux)
     PetscCall(VecSetPreallocationCOO(fissionVec, nnz, rowIndices.data()));
     PetscCall(VecSetValuesCOO(fissionVec, values.data(), INSERT_VALUES));
 
-    return PETSC_SUCCESS;
+    PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 PetscErrorCode CSRMatrixAssembler::_assembleM()
 {
+    PetscLogStage stage;
+    PetscLogStageRegister("assembleM", &stage);
+    PetscLogStagePush(stage);
     // Don't want to access self->cmfdData in the lambda, so copy it to a reference
     auto& _cmfdData = cmfdData;
 
@@ -760,7 +771,8 @@ PetscErrorCode CSRMatrixAssembler::_assembleM()
     Kokkos::fence();
     PetscCall(MatCreateSeqAIJKokkosWithKokkosViews(PETSC_COMM_SELF, matSize, matSize, rowIndices, colIndices, values, &MMat));
 
-    return PETSC_SUCCESS;
+    PetscLogStagePop();
+    PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 PetscErrorCode CSRMatrixAssembler::_assembleFission(const FluxView& flux)
@@ -820,5 +832,5 @@ PetscErrorCode CSRMatrixAssembler::_assembleFission(const FluxView& flux)
     // The second input parameter is the block size, which I believe should be 1.
     PetscCall(VecCreateSeqKokkosWithArray(PETSC_COMM_SELF, 1, nRows, _fissionVectorView.data(), &fissionVec));
     // Maybe VecCreateMPIKokkosWithArray is better?
-    return PETSC_SUCCESS;
+    PetscFunctionReturn(PETSC_SUCCESS);
 }
