@@ -22,9 +22,9 @@ TEST(CylinderNodeTest, Getters) {
 
 TEST(CylinderNodeTest, AreaAndVolume) {
     CylinderNode cyl_node(1.0, 1.0, 2.0);
-    EXPECT_DOUBLE_EQ(cyl_node.get_inner_area(), 2.0 * PI); // 2 * PI * r_in * h
-    EXPECT_DOUBLE_EQ(cyl_node.get_outer_area(), 4.0 * PI); // 2 * PI * r_out * h
-    EXPECT_DOUBLE_EQ(cyl_node.get_volume(), 3.0 * PI); // PI * h * (r_out^2 - r_in^2)
+    EXPECT_DOUBLE_EQ(cyl_node.get_inner_area(), 2.0 * M_PI); // 2 * PI * r_in * h
+    EXPECT_DOUBLE_EQ(cyl_node.get_outer_area(), 4.0 * M_PI); // 2 * PI * r_out * h
+    EXPECT_DOUBLE_EQ(cyl_node.get_volume(), 3.0 * M_PI); // PI * h * (r_out^2 - r_in^2)
 }
 
 int main(int argc, char **argv) {
