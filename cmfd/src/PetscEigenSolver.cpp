@@ -1,21 +1,21 @@
 #include "PetscEigenSolver.hpp"
 
-PetscEigenSolver::PetscEigenSolver(AssemblerPtr&& _assemblerPtr, PCType pcType, PetscScalar initialGuess)
+PetscEigenSolver::PetscEigenSolver(AssemblerPtr&& _assemblerPtr, PetscScalar initialGuess)
     : assemblerPtr(std::move(_assemblerPtr))
 {
     const Mat& A = assemblerPtr->getM();
 
     PetscFunctionBeginUser;
-    PetscLogStage stage;
-    PetscLogStageRegister("KSPCreate", &stage);
-    PetscLogStagePush(stage);
 
-    KSPCreate(PETSC_COMM_WORLD, &ksp);
-    KSPSetOperators(ksp, A, A);
-    KSPSetTolerances(ksp, tol, PETSC_CURRENT, PETSC_CURRENT, PETSC_CURRENT);
-    // KSPGetPC(ksp, &pc);
-    // PCSetType(pc, pcType);
-    KSPSetFromOptions(ksp);
+    PetscCallCXXAbort(PETSC_COMM_SELF, KSPCreate(PETSC_COMM_WORLD, &ksp));
+    PetscCallCXXAbort(PETSC_COMM_SELF, KSPSetOperators(ksp, A, A));
+    PetscCallCXXAbort(PETSC_COMM_SELF, KSPSetTolerances(ksp, tol, PETSC_CURRENT, PETSC_CURRENT, PETSC_CURRENT));
+
+    // These defaults can be override by command line options.
+    PetscCallCXXAbort(PETSC_COMM_SELF, KSPGetPC(ksp, &pc));
+    PetscCallCXXAbort(PETSC_COMM_SELF, PCSetType(pc, PCJACOBI));
+
+    PetscCallCXXAbort(PETSC_COMM_SELF, KSPSetFromOptions(ksp));
 
     PetscCallCXXAbort(PETSC_COMM_SELF, assemblerPtr->instantiateVec(pastFission));
     PetscCallCXXAbort(PETSC_COMM_SELF, assemblerPtr->instantiateVec(currentFlux));
@@ -23,7 +23,6 @@ PetscEigenSolver::PetscEigenSolver(AssemblerPtr&& _assemblerPtr, PCType pcType, 
     // Initialize flux vector to the initial guess at all values
     VecSet(currentFlux, initialGuess);
 
-    PetscLogStagePop();
 }
 
 PetscEigenSolver::~PetscEigenSolver() {
@@ -38,9 +37,6 @@ PetscEigenSolver::~PetscEigenSolver() {
 
 PetscErrorCode PetscEigenSolver::solve(size_t maxIterations) {
     PetscFunctionBeginUser;
-    PetscLogStage stage;
-    PetscLogStageRegister("EigenSolve", &stage);
-    PetscLogStagePush(stage);
 
     PetscScalar currentCurrentFissionDot, pastCurrentFissionDot;
     keff = 1.0; // Initial guess for keff
@@ -78,6 +74,7 @@ PetscErrorCode PetscEigenSolver::solve(size_t maxIterations) {
         PetscCall(VecDot(pastFission, currentFission, &pastCurrentFissionDot));
 
         keff *= currentCurrentFissionDot / pastCurrentFissionDot;
+        assert(keff > 0.0 && "keff should always be positive");
 
         if (iter > 0 && std::abs(keff - keffHistory[iter-1]) < tol) {
             // Convergence achieved
@@ -89,6 +86,5 @@ PetscErrorCode PetscEigenSolver::solve(size_t maxIterations) {
     keffHistory.push_back(keff);
     std::cerr << "Warning: Maximum iterations reached without convergence." << std::endl;
 
-    PetscLogStagePop();
     PetscFunctionReturn(PETSC_SUCCESS);
 }

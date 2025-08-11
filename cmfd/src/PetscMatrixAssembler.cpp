@@ -8,9 +8,6 @@ inline bool isNonZero(const PetscScalar& value)
 PetscErrorCode SimpleMatrixAssembler::_assembleM()
 {
     PetscFunctionBeginUser;
-    PetscLogStage stage;
-    PetscLogStageRegister("assembleM", &stage);
-    PetscLogStagePush(stage);
 
     // Create the matrix (not allocated yet)
     MatCreate(PETSC_COMM_WORLD, &MMat);
@@ -169,7 +166,6 @@ PetscErrorCode SimpleMatrixAssembler::_assembleM()
     PetscCall(MatAssemblyBegin(MMat, MAT_FINAL_ASSEMBLY));
     PetscCall(MatAssemblyEnd(MMat, MAT_FINAL_ASSEMBLY));
 
-    PetscLogStagePop();
     PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -282,9 +278,6 @@ PetscErrorCode COOMatrixAssembler::_assembleM()
     PetscInt matSize = cmfdData.nCells * cmfdData.nGroups;
 
     PetscFunctionBeginUser;
-    PetscLogStage stage;
-    PetscLogStageRegister("assembleM", &stage);
-    PetscLogStagePush(stage);
 
     // // There are a lot of options here for splitting up the matrix into submatrices per mpi rank
     // //  (on the PETSc side), i.e., # of rows/cols per rank and number of zeros on and off the diagonal (per row).
@@ -509,7 +502,6 @@ PetscErrorCode COOMatrixAssembler::_assembleM()
         PetscCall(MatSetValuesCOO(MMat, values.data(), ADD_VALUES));
     }
 
-    PetscLogStagePop();
     PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -574,9 +566,6 @@ PetscErrorCode COOMatrixAssembler::_assembleFission(const FluxView& flux)
 
 PetscErrorCode CSRMatrixAssembler::_assembleM()
 {
-    PetscLogStage stage;
-    PetscLogStageRegister("assembleM", &stage);
-    PetscLogStagePush(stage);
     // Don't want to access self->cmfdData in the lambda, so copy it to a reference
     auto& _cmfdData = cmfdData;
 
@@ -771,7 +760,6 @@ PetscErrorCode CSRMatrixAssembler::_assembleM()
     Kokkos::fence();
     PetscCall(MatCreateSeqAIJKokkosWithKokkosViews(PETSC_COMM_SELF, matSize, matSize, rowIndices, colIndices, values, &MMat));
 
-    PetscLogStagePop();
     PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -826,8 +814,6 @@ PetscErrorCode CSRMatrixAssembler::_assembleFission(const FluxView& flux)
 
     PetscFunctionBeginUser;
     Kokkos::fence();
-
-
 
     // The second input parameter is the block size, which I believe should be 1.
     PetscCall(VecCreateSeqKokkosWithArray(PETSC_COMM_SELF, 1, nRows, _fissionVectorView.data(), &fissionVec));

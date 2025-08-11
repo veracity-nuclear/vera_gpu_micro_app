@@ -8,6 +8,7 @@ target_link_libraries(cmfd_lib
     HighFive::HighFive
     Kokkos::kokkos
     PETSc::PETSc
+    utils
 )
 
 add_executable(cmfd_exec

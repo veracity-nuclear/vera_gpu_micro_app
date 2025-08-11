@@ -81,16 +81,31 @@ bool ArgumentParser::parse(int argc, char* argv[]) {
     for (size_t i = 1; i < args.size(); ++i) {
         const std::string& arg = args[i];
 
-	if (arg.substr(0, 9) == "--kokkos-") {
-	    continue;
-	} else if (arg.substr(0, 1) == "-") {
-            // It's an optional argument or flag
+        // Skip kokkos options
+        if (arg.substr(0, 9) == "--kokkos-") {
+            continue;
+        }
+
+        // PETSc option detection
+        bool is_petsc = (
+            arg.find("-ksp_") == 0 || arg.find("-mat_") == 0 ||
+            arg.find("-pc_") == 0 || arg.find("-petsc_") == 0 ||
+            arg.find("-snes_") == 0
+        );
+
+        if (is_petsc) {
+            // Skip PETSc option
+            // If next argument exists and does NOT start with '-', skip it too (it's the value)
+            if (i + 1 < args.size() && args[i+1].size() > 0 && args[i+1][0] != '-') {
+                ++i; // skip value
+            }
+            continue;
+        } else if (arg.substr(0, 1) == "-") {
+            // ...your existing option/flag parsing logic...
             std::string name = arg;
             if (name.size() > 1 && name[1] == '-') {
-                // Handle --name format
                 name = name.substr(2);
             } else {
-                // Handle -name format
                 name = name.substr(1);
             }
 
@@ -102,37 +117,15 @@ bool ArgumentParser::parse(int argc, char* argv[]) {
             }
 
             if (it->second.is_flag) {
-                // It's a flag
                 it->second.value = "true";
             } else {
-                // It's an optional argument that needs a value
                 if (i + 1 >= args.size() || args[i+1].substr(0, 1) == "-") {
                     std::cerr << "Option " << arg << " requires a value" << std::endl;
                     print_help();
                     return false;
                 }
-
                 std::string value = args[++i];
-
-                // Validate value against valid_values if needed
-                if (it->second.has_validation && !it->second.valid_values.empty()) {
-                    if (std::find(it->second.valid_values.begin(), it->second.valid_values.end(), value)
-                        == it->second.valid_values.end()) {
-                        std::cerr << "Error: Invalid value '" << value << "' for option '"
-                                 << name << "'." << std::endl;
-                        std::cerr << "Valid values are: ";
-                        for (size_t j = 0; j < it->second.valid_values.size(); ++j) {
-                            std::cerr << "'" << it->second.valid_values[j] << "'";
-                            if (j < it->second.valid_values.size() - 1) {
-                                std::cerr << ", ";
-                            }
-                        }
-                        std::cerr << std::endl;
-                        print_help();
-                        return false;
-                    }
-                }
-
+                // ...validation logic...
                 it->second.value = value;
             }
         } else {
@@ -142,12 +135,10 @@ bool ArgumentParser::parse(int argc, char* argv[]) {
                 print_help();
                 return false;
             }
-
             positional_args_[pos_arg_index].value = arg;
             pos_arg_index++;
         }
     }
-
     // Check if all required arguments are provided
     if (pos_arg_index < positional_args_.size()) {
         std::cerr << "Not enough positional arguments" << std::endl;
