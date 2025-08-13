@@ -603,6 +603,12 @@ PetscErrorCode CSRMatrixAssembler::_assembleM()
     const PetscInt matSize = cmfdData.nCells * cmfdData.nGroups; // row or col
     const PetscInt numNonZero = matSize * maxNNZInRow;
 
+    PetscFunctionBeginUser;
+
+    PetscCall(MatCreate(PETSC_COMM_WORLD, &MMat));
+    PetscCall(MatSetType(MMat, MATSEQAIJKOKKOS));
+    // MatSeqAIJSetPreallocation(MMat, numNonZero, NULL);
+
     // Specifying the memory space to AssemblyMemorySpace upsets PETSc,
     // even though AssemblyMemorySpace should end up being the same as the
     // default memory space. This is almost certainly a soft bug in PETSc.
@@ -750,11 +756,6 @@ PetscErrorCode CSRMatrixAssembler::_assembleM()
         });
 
     } // Kokkos scope ends
-
-    PetscFunctionBeginUser;
-    // TODO (#26): The null allows you to specify the number of non-zero entries per row.
-    // This will improve memory/performance if implemented
-    PetscCall(MatCreateSeqAIJKokkos(PETSC_COMM_WORLD, matSize, matSize, numNonZero, NULL, &MMat));
 
     // Actually put the values into the matrix
     Kokkos::fence();

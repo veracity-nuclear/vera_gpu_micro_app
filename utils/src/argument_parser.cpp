@@ -90,7 +90,7 @@ bool ArgumentParser::parse(int argc, char* argv[]) {
         bool is_petsc = (
             arg.find("-ksp_") == 0 || arg.find("-mat_") == 0 ||
             arg.find("-pc_") == 0 || arg.find("-petsc_") == 0 ||
-            arg.find("-snes_") == 0
+            arg.find("-snes_") == 0 || arg.find("-on_error_abort") == 0
         );
 
         if (is_petsc) {

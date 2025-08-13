@@ -71,6 +71,64 @@ ViewType HDF5ToKokkosView(const HighFive::DataSet &dataset, const std::string &l
     return d_view;
 }
 
+inline PetscInt assignCellSurface(
+    const std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> &cellToSurf,
+    const Kokkos::View<PetscInt *, Kokkos::LayoutStride, Kokkos::HostSpace> &surfToOtherCell,
+    const PetscInt thisCell,
+    const PetscInt otherCell)
+{
+    /*
+      Determines the position of the surface that should be replaced in cellToSurf[thisCell] when there are more
+      than three surfaces for a cell in a direction (positive or negative). Returns the index of the surface to
+      replace (0, 1, or 2), or -1 if no replacement is needed.
+
+      |------------------|
+      |                  |
+      |surf1,2,3otherCell|
+      |                  |
+      |----surf1,2,3-----|
+      |                  |
+      |   this cell      |
+      |                  |
+      |---trial surf-----|
+      |                  |
+      |   other cell     |
+      |                  | trial surf/other cell could be surf/otherCell123
+      |------------------|
+
+      If the cellToSurf map we are editing is for positive surfaces (i.e., surfaces where the corresponding cell is the
+      positive cell (0th column in the surf2Cell map)), then thisCell is positive and otherCell is negative. The
+      surfToOtherCell map should be surf2NegCell.
+     */
+    const PetscInt surf1 = cellToSurf[thisCell][0];
+    const PetscInt surf2 = cellToSurf[thisCell][1];
+    const PetscInt surf3 = cellToSurf[thisCell][2];
+
+    const PetscInt surf1OtherCell = surfToOtherCell(surf1);
+    const PetscInt surf2OtherCell = surfToOtherCell(surf2);
+    const PetscInt surf3OtherCell = surfToOtherCell(surf3);
+
+    // If two surfaces in the existing list for thisCell are the same, we will replace the surface with the higher index.
+    // (Same means they have the same "other" cell since it is guaranteed that the "this" cell is the same)
+    if (surf1OtherCell == surf2OtherCell)
+        return (surf1 > surf2) ? 0 : 1;
+    if (surf1OtherCell == surf3OtherCell)
+        return (surf1 > surf3) ? 0 : 2;
+    if (surf2OtherCell == surf3OtherCell)
+        return (surf2 > surf3) ? 1 : 2;
+
+    // If the trial surface is the same as a surface in the list, we keep the surface with the lower index.
+    if (otherCell == surf1OtherCell)
+        return (surf1OtherCell < otherCell) ? 0 : -1;
+    if (otherCell == surf2OtherCell)
+        return (surf2OtherCell < otherCell) ? 1 : -1;
+    if (otherCell == surf3OtherCell)
+        return (surf3OtherCell < otherCell) ? 2 : -1;
+
+    // If none of the above are true, we have four surfaces for this cell that each have a different "other" cell.
+    throw std::runtime_error("More than 3 unique surfaces found for a single cell, which is unexpected.");
+}
+
 // This struct is used to store the data for the CMFD coarse mesh.
 template <typename AssemblySpace = Kokkos::DefaultExecutionSpace>
 struct CMFDData
@@ -134,20 +192,16 @@ struct CMFDData
 
     // Build a mapping from a cell to the surfaces in which the cell is positive (north, up, right).
     // Therefore the "pos" surf would be negative (south, down, left) for the cell. See test for an example.
-    // -1 Means no surface. We expect up to three surfaces per cell (3D cartesian).
+    //  Negative numbers means no surface. We expect up to three surfaces per cell (3D cartesian).
     // Uses members surf2Cell and nCells.
     void buildCellToSurfsMapping()
     {
-        cell2PosSurf = ViewCellToSurfs("cell2PosSurf", nCells, MAX_POS_SURF_PER_CELL);
-        auto h_cell2PosSurf = Kokkos::create_mirror_view(cell2PosSurf);
-        Kokkos::deep_copy(h_cell2PosSurf, -1);
+        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cell2PosSurfData(nCells, {-2, -2, -2});
+        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cell2NegSurfData(nCells, {-2, -2, -2});
 
-        cell2NegSurf = ViewCellToSurfs("cell2NegSurf", nCells, MAX_POS_SURF_PER_CELL);
-        auto h_cell2NegSurf = Kokkos::create_mirror_view(cell2NegSurf);
-        Kokkos::deep_copy(h_cell2NegSurf, -1);
-
-        auto h_surf2Cell = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), surf2Cell);
-        size_t nSurfaces = h_surf2Cell.extent(0);
+        size_t nSurfaces = surf2Cell.extent(0);
+        auto h_surf2PosCell = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), Kokkos::subview(surf2Cell, Kokkos::ALL(), 0));
+        auto h_surf2NegCell = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), Kokkos::subview(surf2Cell, Kokkos::ALL(), 1));
 
         // We need a separate vector to hold the surfaces where the exterior (-1) cell is positive
         // since we don't know how many there will be. Overestimate on the reserved size.
@@ -160,19 +214,24 @@ struct CMFDData
 
         for (size_t surfID = 0; surfID < nSurfaces; surfID++)
         {
-            const PetscInt posCell = h_surf2Cell(surfID, 0);
-            const PetscInt negCell = h_surf2Cell(surfID, 1);
+            const PetscInt posCell = h_surf2PosCell(surfID);
+            const PetscInt negCell = h_surf2NegCell(surfID);
 
             if (posCell >= 0)
             {
                 if (countPosSurfPerCell[posCell] < MAX_POS_SURF_PER_CELL)
                 {
-                    h_cell2PosSurf(posCell, countPosSurfPerCell[posCell]) = surfID;
+                    cell2PosSurfData[posCell][countPosSurfPerCell[posCell]] = surfID;
                     countPosSurfPerCell[posCell]++;
                 }
                 else
                 {
-                    throw std::runtime_error("More than 3 positive surfaces found for a single cell, which is unexpected.");
+                    PetscInt surfPosition = assignCellSurface(cell2PosSurfData, h_surf2NegCell, posCell, negCell);
+                    if (surfPosition >= 0)
+                    {
+
+                        cell2PosSurfData[posCell][surfPosition] = surfID;
+                    }
                 }
             }
             else {
@@ -183,17 +242,33 @@ struct CMFDData
             {
                 if (countNegSurfPerCell[negCell] < MAX_POS_SURF_PER_CELL)
                 {
-                    h_cell2NegSurf(negCell, countNegSurfPerCell[negCell]) = surfID;
+                    cell2NegSurfData[negCell][countNegSurfPerCell[negCell]] = surfID;
                     countNegSurfPerCell[negCell]++;
                 }
                 else
                 {
-                    throw std::runtime_error("More than 3 negative surfaces found for a single cell, which is unexpected.");
+                    PetscInt surfPosition = assignCellSurface(cell2NegSurfData, h_surf2PosCell, negCell, posCell);
+                    if (surfPosition >= 0)
+                    {
+                        cell2NegSurfData[negCell][surfPosition] = surfID;
+                    }
                 }
             }
         }
 
         // Copy to the device view stored in the struct
+        cell2PosSurf = ViewCellToSurfs("cell2PosSurf", nCells, MAX_POS_SURF_PER_CELL);
+        cell2NegSurf = ViewCellToSurfs("cell2NegSurf", nCells, MAX_POS_SURF_PER_CELL);
+        auto h_cell2PosSurf = Kokkos::create_mirror_view(cell2PosSurf);
+        auto h_cell2NegSurf = Kokkos::create_mirror_view(cell2NegSurf);
+        for (size_t i = 0; i < nCells; i++)
+        {
+            for (size_t j = 0; j < MAX_POS_SURF_PER_CELL; j++)
+            {
+                h_cell2PosSurf(i, j) = cell2PosSurfData[i][j];
+                h_cell2NegSurf(i, j) = cell2NegSurfData[i][j];
+            }
+        }
         Kokkos::deep_copy(cell2PosSurf, h_cell2PosSurf);
         Kokkos::deep_copy(cell2NegSurf, h_cell2NegSurf);
 
