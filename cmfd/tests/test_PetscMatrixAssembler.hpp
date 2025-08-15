@@ -85,7 +85,6 @@ public:
       MatView(diffMat, PETSC_VIEWER_STDOUT_WORLD);
 
       Mat& mat = diffMat;
-      Mat mat = goldMat;
       PetscInt ncols, nrows;
       PetscCallG(MatGetSize(mat, &nrows, &ncols));
 

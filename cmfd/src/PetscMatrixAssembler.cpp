@@ -622,7 +622,6 @@ PetscErrorCode CSRMatrixAssembler::_assembleM()
     // - Do atomics on ++ and -- terms
     // - Do ++, +-, and -+ terms and store --. Fence and then do -- terms atomically
     // - ... I'm sure there are more options.
-    static constexpr int method = 1;
 
     { // Kokkos scope
 
