@@ -110,11 +110,11 @@ inline PetscInt assignCellSurface(
 
     // If two surfaces in the existing list for thisCell are the same, we will replace the surface with the higher index.
     // (Same means they have the same "other" cell since it is guaranteed that the "this" cell is the same)
-    if (surf1OtherCell == surf2OtherCell)
+    if (surf1OtherCell == surf2OtherCell && surf1OtherCell != -1)
         return (surf1 > surf2) ? 0 : 1;
-    if (surf1OtherCell == surf3OtherCell)
+    if (surf1OtherCell == surf3OtherCell && surf1OtherCell != -1)
         return (surf1 > surf3) ? 0 : 2;
-    if (surf2OtherCell == surf3OtherCell)
+    if (surf2OtherCell == surf3OtherCell && surf2OtherCell != -1)
         return (surf2 > surf3) ? 1 : 2;
 
     // If the trial surface is the same as a surface in the list, we keep the surface with the lower index.

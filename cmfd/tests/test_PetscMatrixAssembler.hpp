@@ -80,11 +80,12 @@ public:
     if (norm > tolerance)
     {
       PetscCallG(PetscOptionsSetValue(NULL, "-draw_size", "1920,1080")); // Set the size of the draw window
-      // MatView(goldMat, PETSC_VIEWER_DRAW_WORLD);
-      // MatView(testMat, PETSC_VIEWER_DRAW_WORLD);
       MatView(diffMat, PETSC_VIEWER_DRAW_WORLD);
 
+      MatView(diffMat, PETSC_VIEWER_STDOUT_WORLD);
+
       Mat& mat = diffMat;
+      Mat mat = goldMat;
       PetscInt ncols, nrows;
       PetscCallG(MatGetSize(mat, &nrows, &ncols));
 
