@@ -119,11 +119,11 @@ inline PetscInt assignCellSurface(
 
     // If the trial surface is the same as a surface in the list, we keep the surface with the lower index.
     if (otherCell == surf1OtherCell)
-        return (surf1OtherCell < otherCell) ? 0 : -1;
+        return (surf1OtherCell < otherCell) ? 0 : -2;
     if (otherCell == surf2OtherCell)
-        return (surf2OtherCell < otherCell) ? 1 : -1;
+        return (surf2OtherCell < otherCell) ? 1 : -2;
     if (otherCell == surf3OtherCell)
-        return (surf3OtherCell < otherCell) ? 2 : -1;
+        return (surf3OtherCell < otherCell) ? 2 : -2;
 
     // If none of the above are true, we have four surfaces for this cell that each have a different "other" cell.
     throw std::runtime_error("More than 3 unique surfaces found for a single cell, which is unexpected.");
@@ -196,8 +196,8 @@ struct CMFDData
     // Uses members surf2Cell and nCells.
     void buildCellToSurfsMapping()
     {
-        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cell2PosSurfData(nCells, {-2, -2, -2});
-        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cell2NegSurfData(nCells, {-2, -2, -2});
+        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cell2PosSurfData(nCells, {-1, -1, -1});
+        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cell2NegSurfData(nCells, {-1, -1, -1});
 
         size_t nSurfaces = surf2Cell.extent(0);
         auto h_surf2PosCell = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), Kokkos::subview(surf2Cell, Kokkos::ALL(), 0));

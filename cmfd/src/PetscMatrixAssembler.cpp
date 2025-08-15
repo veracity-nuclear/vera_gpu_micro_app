@@ -132,6 +132,22 @@ PetscErrorCode SimpleMatrixAssembler::_assembleM()
         const PetscInt posCell = cmfdData.surf2Cell(surfaceIdx, 0);
         const PetscInt negCell = cmfdData.surf2Cell(surfaceIdx, 1);
 
+        // naively check if this is a duplicate surface
+        bool duplicateSurface = false;
+        for (PetscInt surfaceIdx2 = 0; surfaceIdx2 < surfaceIdx; ++surfaceIdx2)
+        {
+            const PetscInt posCell2 = cmfdData.surf2Cell(surfaceIdx2, 0);
+            const PetscInt negCell2 = cmfdData.surf2Cell(surfaceIdx2, 1);
+
+            if (posCell2 >= 0 && negCell2 >= 0 && posCell == posCell2 && negCell == negCell2)
+            {
+                duplicateSurface = true;
+                break;
+            }
+        }
+        if (duplicateSurface)
+            continue;
+
         for (PetscInt groupIdx = 0; groupIdx < cmfdData.nGroups; ++groupIdx)
         {
             const PetscScalar dhat = cmfdData.dHat(groupIdx, surfaceIdx);
@@ -291,105 +307,6 @@ PetscErrorCode COOMatrixAssembler::_assembleM()
     // MatCreateAIJKokkos(PETSC_COMM_WORLD, cmfdData.nGroups, cmfdData.nGroups,
     //     matSize, matSize, cmfdData.nGroups, NULL, 1, NULL, &MMat);
 
-    static constexpr int method = 2;
-    // METHOD 1: Use Vectors with emplace back to avoid storing zeros
-    if constexpr(method == 1)
-    {
-        std::vector<PetscInt> rowIndices, colIndices;
-        std::vector<PetscScalar> values;
-        rowIndices.reserve(maxNNZInRow * cmfdData.nCells);
-        colIndices.reserve(maxNNZInRow * cmfdData.nCells);
-        values.reserve(maxNNZInRow * cmfdData.nCells);
-
-        for (PetscInt scatterToIdx = 0; scatterToIdx < cmfdData.nGroups; ++scatterToIdx)
-        {
-            for (PetscInt scatterFromIdx = 0; scatterFromIdx < cmfdData.nGroups; ++scatterFromIdx)
-            {
-                for (PetscInt cellIdx = 0; cellIdx < cmfdData.nCells; ++cellIdx)
-                {
-                    const PetscScalar value = -1 * cmfdData.scatteringXS(scatterToIdx, scatterFromIdx, cellIdx) * cmfdData.volume(cellIdx);
-                    if (isNonZero(value))
-                    {
-                        rowIndices.emplace_back(cellIdx * cmfdData.nGroups + scatterFromIdx);
-                        colIndices.emplace_back(cellIdx * cmfdData.nGroups + scatterToIdx);
-                        values.emplace_back(value);
-                    }
-                }
-            }
-        }
-
-        for (PetscInt groupIdx = 0; groupIdx < cmfdData.nGroups; ++groupIdx)
-        {
-            for (PetscInt cellIdx = 0; cellIdx < cmfdData.nCells; ++cellIdx)
-            {
-                // Could do removal XS if we were inserting instead of adding
-                const PetscScalar value = cmfdData.transportXS(groupIdx, cellIdx) * cmfdData.volume(cellIdx);
-                if (isNonZero(value))
-                {
-                    const PetscInt diagIdx = cellIdx * cmfdData.nGroups + groupIdx;
-                    rowIndices.emplace_back(diagIdx);
-                    colIndices.emplace_back(diagIdx);
-                    values.emplace_back(value);
-                }
-            }
-        }
-
-        for (PetscInt surfaceIdx = 0; surfaceIdx < cmfdData.nSurfaces; ++surfaceIdx)
-        {
-            const PetscInt posCell = cmfdData.surf2Cell(surfaceIdx, 0);
-            const PetscInt negCell = cmfdData.surf2Cell(surfaceIdx, 1);
-
-            for (PetscInt groupIdx = 0; groupIdx < cmfdData.nGroups; ++groupIdx)
-            {
-                const PetscScalar dhat = cmfdData.dHat(groupIdx, surfaceIdx);
-                const PetscScalar dtilde = cmfdData.dTilde(groupIdx, surfaceIdx);
-
-                const PetscInt posCellMatIdx = (posCell) * cmfdData.nGroups + groupIdx;
-                const PetscInt negCellMatIdx = (negCell) * cmfdData.nGroups + groupIdx;
-
-                if (posCellMatIdx >= 0)
-                {
-                    const PetscScalar value = -1 * dhat + dtilde;
-                    if (isNonZero(value)) {
-                        rowIndices.emplace_back(posCellMatIdx);
-                        colIndices.emplace_back(posCellMatIdx);
-                        values.emplace_back(value);
-                    }
-                }
-                if (negCellMatIdx >= 0)
-                {
-                    const PetscScalar value = dhat + dtilde;
-                    if (isNonZero(value)) {
-                        rowIndices.emplace_back(negCellMatIdx);
-                        colIndices.emplace_back(negCellMatIdx);
-                        values.emplace_back(value);
-                    }
-                }
-                if (posCellMatIdx >= 0 && negCellMatIdx >= 0)
-                {
-                    const PetscScalar value1 = -1 * dhat - dtilde;
-                    if (isNonZero(value1)) {
-                        rowIndices.emplace_back(posCellMatIdx);
-                        colIndices.emplace_back(negCellMatIdx);
-                        values.emplace_back(value1);
-                    }
-
-                    const PetscScalar value2 = dhat - dtilde;
-                    if (isNonZero(value2)) {
-                        rowIndices.emplace_back(negCellMatIdx);
-                        colIndices.emplace_back(posCellMatIdx);
-                        values.emplace_back(value2);
-                    }
-                }
-            }
-        }
-        size_t numNonZero = values.size();
-
-
-        PetscCall(MatSetPreallocationCOO(MMat, numNonZero, rowIndices.data(), colIndices.data()));
-        PetscCall(MatSetValuesCOO(MMat, values.data(), ADD_VALUES));
-    }
-    else if constexpr(method == 2) // METHOD 2:
     // Use Kokkos views somewhat naively (use teams, scratch pad, etc. to optimize)
     // Just making sure this works for now
     // See the comment at the top of the method for a description of the layout
@@ -668,9 +585,6 @@ PetscErrorCode CSRMatrixAssembler::_assembleM()
         // as they both write to the diagonal of the matrix.
         Kokkos::fence(); // We could just make the values set above atomic. I'm not sure which is better.
 
-        // METHOD 1: Use atomics on ++ and -- terms as they can refer to the same cell
-        // on different iterations of the loop.
-        if constexpr(method == 1)
         {
             const PetscInt nGroups = _cmfdData.nGroups;
             Kokkos::parallel_for("CSRMatrixAssembler1: InLeakage", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<3>>({0, 0, 0}, {_cmfdData.nGroups, _cmfdData.nCells, MAX_POS_SURF_PER_CELL}),
