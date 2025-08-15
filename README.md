@@ -256,7 +256,26 @@ These datasets are inside `/CMFD_CoarseMesh` in the HDF5 file.
 
 #### CMFD_FineMesh
 
-This data is not yet implemented.
+The following data is used for micro CMFD to homogenize its own coarse mesh cross sections.
+These datasets are inside `/CMFD_FineMesh` in the HDF5 file.
+
+| Dataset Name | Type | Shape | Description |
+| ------------ | ---- | ----- | ----------- |
+| `nfinecells` | `int` | (n_xsregions) | The number of fine mesh cells in each XS region. |
+| `isFissionable` | `bool` | (n_xsregions) | Indicates if each XS region is fissionable (True) or not (False) |
+| `volume` | `float` | (n_xsregions) | The volume of each XS region. |
+| `flux` | `float` | (n_groups, n_fineregions) | The flux in each fine mesh cell for each energy group. |
+| `transport XS` | `float` | (n_xsregions, n_groups) | The transport cross section for each fine mesh cell in each XS region. |
+| `total XS` | `float` | (n_xsregions, n_groups) | The total cross section for each fine mesh cell in each XS region. |
+| `nu-fission XS` | `float` | (n_fissionable, n_groups) | The nu-fission cross section for each fine mesh cell in each XS region. |
+| `scattering XS` | `float` | (n_xsregions, n_groups) | The scattering cross section for each fine mesh cell in each XS region. |
+| `chi` | `float` | (n_fissionable, n_groups) | The chi for each fine mesh cell in each XS region. |
+
+For a single pin cell problem with 4 regions (coolant, clad, gap, fuel), each divided into 8 azimuthal regions, `nfinecells` will be `[0, 8, 16, 24, 32]` and `isFissionable` will be `[F, F, F, T]`.
+The `volume` array will have 4 values (one per XS region); the fine mesh volume for each region will be the XS region volume divided by the number of fine mesh cells in that region (8 in this example).
+The transport, total, and scattering cross sections are defined for every XS region.
+The nu-fission cross section and chi are only defined for fissionable regions.
+The removal cross section is calculated by homogenizing the total & scattering cross sections, then subtracting the homogenized self-scatter from the homogenized total XS.
 
 ### Conduction
 
