@@ -80,7 +80,7 @@ inline PetscInt assignCellSurface(
     /*
       Determines the position of the surface that should be replaced in cellToSurf[thisCell] when there are more
       than three surfaces for a cell in a direction (positive or negative). Returns the index of the surface to
-      replace (0, 1, or 2), or -1 if no replacement is needed.
+      replace (0, 1, or 2), or -2 if no replacement is needed.
 
       |------------------|
       |                  |

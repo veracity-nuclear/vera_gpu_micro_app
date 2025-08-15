@@ -210,3 +210,136 @@ TEST(surf2CellToCell2Surf, test)
             << "Mismatch at position " << i << ": " << h_posLeakageSurfs(i) << " (Expected: " << posLeakageSurfs[i] << ")";
     }
 }
+
+TEST(assignCellSurface, basicLogic)
+{
+    // I had an LLM generate a bunch of tests...
+
+    // Setup: 3 surfaces per cell, each with a different "other" cell
+    std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cellToSurf = {
+        {0, 1, 2}
+    };
+    // surfToOtherCell: surface 0 -> 10, 1 -> 11, 2 -> 12
+    Kokkos::View<PetscInt*, Kokkos::HostSpace> surfToOtherCell("surfToOtherCell", 3);
+    surfToOtherCell(0) = 10;
+    surfToOtherCell(1) = 11;
+    surfToOtherCell(2) = 12;
+
+    // No duplicates, no replacement needed
+    EXPECT_THROW(assignCellSurface(cellToSurf, surfToOtherCell, 0, 13), std::runtime_error);
+
+    // Duplicate "other" cell for surfaces 0 and 1
+    surfToOtherCell(1) = 10;
+    // surf0(0) vs surf1(1), surf1 > surf0, so replace 1
+    EXPECT_EQ(assignCellSurface(cellToSurf, surfToOtherCell, 0, 13), 1);
+
+    // Duplicate "other" cell for surfaces 0 and 2
+    surfToOtherCell(1) = 11;
+    surfToOtherCell(2) = 10;
+    // surf2(2) > surf0(0), so replace 2
+    EXPECT_EQ(assignCellSurface(cellToSurf, surfToOtherCell, 0, 13), 2);
+
+    // Duplicate "other" cell for surfaces 1 and 2
+    surfToOtherCell(0) = 10;
+    surfToOtherCell(1) = 12;
+    surfToOtherCell(2) = 12;
+    // surf2(2) > surf1(1), so replace 2
+    EXPECT_EQ(assignCellSurface(cellToSurf, surfToOtherCell, 0, 13), 2);
+
+    // Test trial surface matches an existing surface
+    surfToOtherCell(0) = 10;
+    surfToOtherCell(1) = 11;
+    surfToOtherCell(2) = 12;
+    // otherCell == surf1OtherCell
+    EXPECT_EQ(assignCellSurface(cellToSurf, surfToOtherCell, 0, 10), -2);
+    // otherCell == surf2OtherCell
+    EXPECT_EQ(assignCellSurface(cellToSurf, surfToOtherCell, 0, 11), -2);
+    // otherCell == surf3OtherCell
+    EXPECT_EQ(assignCellSurface(cellToSurf, surfToOtherCell, 0, 12), -2);
+
+        // Helper to build a view sized to (maxSurfId+1) and init to -999
+    auto makeView = [](std::initializer_list<std::pair<int,int>> pairs) {
+        int maxId = -1;
+        for (auto &p : pairs) maxId = std::max(maxId, p.first);
+        Kokkos::View<PetscInt*, Kokkos::HostSpace> v("surfToOtherCell", maxId + 1);
+        for (int i = 0; i <= maxId; ++i) v(i) = -999;
+        for (auto &p : pairs) v(p.first) = p.second;
+        return v;
+    };
+
+    // 1. Three unique others -> adding a 4th unique should throw
+    {
+        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cellToSurf = { {0,1,2} };
+        auto surfToOther = makeView({ {0,10},{1,11},{2,12} });
+        EXPECT_THROW(assignCellSurface(cellToSurf, surfToOther, 0, 13), std::runtime_error);
+    }
+
+    // 2. Duplicate (surf0,surf1) with surf1 > surf0 -> expect index 1
+    {
+        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cellToSurf = { {0,1,2} };
+        auto surfToOther = makeView({ {0,10},{1,10},{2,12} });
+        EXPECT_EQ(assignCellSurface(cellToSurf, surfToOther, 0, 13), 1);
+    }
+
+    // 3. Duplicate (surf0,surf1) with surf0 > surf1 (reverse ordering) -> expect index 0
+    {
+        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cellToSurf = { {2,1,0} };
+        auto surfToOther = makeView({ {2,55},{1,55},{0,70} });
+        // Duplicates between surfaces 2 and 1 -> higher surface ID (2) replaced => index 0
+        EXPECT_EQ(assignCellSurface(cellToSurf, surfToOther, 0, 99), 0);
+    }
+
+    // 4. Duplicate (surf0,surf2) path (surf2 > surf0) -> expect index 2
+    {
+        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cellToSurf = { {0,4,7} };
+        auto surfToOther = makeView({ {0,20},{4,30},{7,20} });
+        EXPECT_EQ(assignCellSurface(cellToSurf, surfToOther, 0, 88), 2);
+    }
+
+    // 5. Duplicate (surf0,surf2) with surf0 > surf2 (reverse ordering) -> expect index 0
+    {
+        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cellToSurf = { {9,3,4} };
+        auto surfToOther = makeView({ {9,90},{3,15},{4,90} });
+        // Duplicate between surfaces 9 and 4 -> higher surface ID 9 replaced => index 0
+        EXPECT_EQ(assignCellSurface(cellToSurf, surfToOther, 0, 777), 0);
+    }
+
+    // 6. Duplicate (surf1,surf2) with surf2 > surf1 -> expect index 2
+    {
+        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cellToSurf = { {5,8,11} };
+        auto surfToOther = makeView({ {5,10},{8,42},{11,42} });
+        EXPECT_EQ(assignCellSurface(cellToSurf, surfToOther, 0, 1234), 2);
+    }
+
+    // 7. Duplicate (surf1,surf2) with surf1 > surf2 (reverse ordering) -> expect index 1
+    {
+        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cellToSurf = { {4,13,7} };
+        auto surfToOther = makeView({ {4,1},{13,77},{7,77} });
+        // Duplicate between 13 and 7 -> higher surface ID 13 replaced => index 1
+        EXPECT_EQ(assignCellSurface(cellToSurf, surfToOther, 0, 555), 1);
+    }
+
+    // 8. All three share same other cell -> first duplicate branch triggers (surf0,surf1)
+    {
+        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cellToSurf = { {2,6,4} };
+        auto surfToOther = makeView({ {2,111},{6,111},{4,111} });
+        // Branch (surf1Other == surf2Other); higher surface ID (6) replaced => index 1
+        EXPECT_EQ(assignCellSurface(cellToSurf, surfToOther, 0, 200), 1);
+    }
+
+    // 9. Trial otherCell equal to existing (each position) -> expect -2
+    {
+        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cellToSurf = { {0,1,2} };
+        auto surfToOther = makeView({ {0,10},{1,11},{2,12} });
+        EXPECT_EQ(assignCellSurface(cellToSurf, surfToOther, 0, 10), -2);
+        EXPECT_EQ(assignCellSurface(cellToSurf, surfToOther, 0, 11), -2);
+        EXPECT_EQ(assignCellSurface(cellToSurf, surfToOther, 0, 12), -2);
+    }
+
+    // 10. Sentinel (-1) values: duplicates with -1 ignored; adding new unique triggers throw
+    {
+        std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cellToSurf = { {0,1,2} };
+        auto surfToOther = makeView({ {0,-1},{1,-1},{2,-1} });
+        EXPECT_THROW(assignCellSurface(cellToSurf, surfToOther, 0, 99), std::runtime_error);
+    }
+}
