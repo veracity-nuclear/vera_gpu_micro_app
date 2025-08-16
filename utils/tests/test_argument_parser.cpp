@@ -1,6 +1,7 @@
 #include "argument_parser.hpp"
 #include <cstring>
 #include <gtest/gtest.h>
+#include "petscksp.h"
 
 // Helper function to redirect stderr during tests
 class CaptureStderr {
@@ -252,6 +253,43 @@ TEST(BasicTest, GetArgs) {
     make_args(args, argc, argv);
 
     ASSERT_TRUE(parser.parse(argc, argv));
+
+    cleanup_args(argc, argv);
+}
+
+TEST(BasicTest, PetscArgs) {
+    ArgumentParser parser("test_program", "Test description");
+    parser.add_argument("input", "Input file");
+
+    std::vector<std::string> args = {"test_program", "in.txt", "-pc_type", "lu"};
+
+    int argc;
+    char** argv;
+    make_args(args, argc, argv);
+
+    // Ensure argv is null-terminated for c (Petsc) compatibility
+    argv[argc] = nullptr;
+
+    ASSERT_TRUE(parser.parse(argc, argv));
+
+    {
+        PetscInitialize(&argc, &argv, NULL, NULL);
+
+        PC pcTest;
+        PetscCallAbort(PETSC_COMM_SELF, PCCreate(PETSC_COMM_SELF, &pcTest));
+        PetscCallAbort(PETSC_COMM_SELF, PCSetType(pcTest, PCJACOBI));
+
+        // Sets the options from the command line
+        PetscCallAbort(PETSC_COMM_SELF, PCSetFromOptions(pcTest));
+
+        PCType testType;
+        PetscCallAbort(PETSC_COMM_SELF, PCGetType(pcTest, &testType));
+
+        ASSERT_STREQ(testType, PCLU) << "PETSc command line argument parsing failed";
+
+        PetscCallAbort(PETSC_COMM_SELF, PCDestroy(&pcTest));
+        PetscFinalize();
+    }
 
     cleanup_args(argc, argv);
 }

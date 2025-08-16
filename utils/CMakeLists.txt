@@ -9,6 +9,7 @@ target_include_directories(utils
 
 target_link_libraries(utils
     HighFive::HighFive
+    PETSc::PETSc
 )
 
 # --- Tests ---
