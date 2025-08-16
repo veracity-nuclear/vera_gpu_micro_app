@@ -213,7 +213,8 @@ TEST(surf2CellToCell2Surf, test)
 
 TEST(assignCellSurface, basicLogic)
 {
-    // I had an LLM generate a bunch of tests...
+    // This test checks the logic of assignCellSurface function
+    // An LLM generated these...
 
     // Setup: 3 surfaces per cell, each with a different "other" cell
     std::vector<std::array<PetscInt, MAX_POS_SURF_PER_CELL>> cellToSurf = {

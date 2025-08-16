@@ -268,7 +268,13 @@ TEST(BasicTest, PetscArgs) {
     make_args(args, argc, argv);
 
     // Ensure argv is null-terminated for c (Petsc) compatibility
-    argv[argc] = nullptr;
+    {
+        char** argv_with_null = new char*[argc + 1];
+        for (int i = 0; i < argc; ++i) argv_with_null[i] = argv[i];
+        argv_with_null[argc] = nullptr;
+        delete[] argv;
+        argv = argv_with_null;
+    }
 
     ASSERT_TRUE(parser.parse(argc, argv));
 
