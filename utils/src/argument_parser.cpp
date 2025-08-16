@@ -101,7 +101,6 @@ bool ArgumentParser::parse(int argc, char* argv[]) {
             }
             continue;
         } else if (arg.substr(0, 1) == "-") {
-            // ...your existing option/flag parsing logic...
             std::string name = arg;
             if (name.size() > 1 && name[1] == '-') {
                 name = name.substr(2);
@@ -117,15 +116,37 @@ bool ArgumentParser::parse(int argc, char* argv[]) {
             }
 
             if (it->second.is_flag) {
+                // It's a flag
                 it->second.value = "true";
             } else {
+                // It's an optional argument that needs a value
                 if (i + 1 >= args.size() || args[i+1].substr(0, 1) == "-") {
                     std::cerr << "Option " << arg << " requires a value" << std::endl;
                     print_help();
                     return false;
                 }
+
                 std::string value = args[++i];
-                // ...validation logic...
+
+                // Validate value against valid_values if needed
+                if (it->second.has_validation && !it->second.valid_values.empty()) {
+                    if (std::find(it->second.valid_values.begin(), it->second.valid_values.end(), value)
+                        == it->second.valid_values.end()) {
+                        std::cerr << "Error: Invalid value '" << value << "' for option '"
+                                 << name << "'." << std::endl;
+                        std::cerr << "Valid values are: ";
+                        for (size_t j = 0; j < it->second.valid_values.size(); ++j) {
+                            std::cerr << "'" << it->second.valid_values[j] << "'";
+                            if (j < it->second.valid_values.size() - 1) {
+                                std::cerr << ", ";
+                            }
+                        }
+                        std::cerr << std::endl;
+                        print_help();
+                        return false;
+                    }
+                }
+
                 it->second.value = value;
             }
         } else {
