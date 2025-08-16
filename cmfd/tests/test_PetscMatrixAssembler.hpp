@@ -81,6 +81,28 @@ public:
     {
       PetscCallG(PetscOptionsSetValue(NULL, "-draw_size", "1920,1080")); // Set the size of the draw window
       MatView(diffMat, PETSC_VIEWER_DRAW_WORLD);
+
+      MatView(diffMat, PETSC_VIEWER_STDOUT_WORLD);
+
+      Mat& mat = diffMat;
+      PetscInt ncols, nrows;
+      PetscCallG(MatGetSize(mat, &nrows, &ncols));
+
+      static constexpr PetscInt _max = 100;
+      for (PetscInt i = 0; i < std::min(_max, nrows); ++i)
+      {
+        const PetscInt *cols;
+        const PetscScalar *vals;
+        PetscInt ncols_row;
+        PetscCallG(MatGetRow(mat, i, &ncols_row, &cols, &vals));
+        std::cout << "Row " << i << ": ";
+        for (PetscInt j = 0; j < ncols_row; ++j)
+        {
+          std::cout << "(" << cols[j] << ", " << vals[j] << ") ";
+        }
+        std::cout << std::endl;
+        PetscCallG(MatRestoreRow(mat, i, &ncols_row, &cols, &vals));
+      }
     }
 
     ASSERT_LE(norm, tolerance) << "Matrices differ by " << norm << " (tolerance: " << tolerance << ")";

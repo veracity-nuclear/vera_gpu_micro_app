@@ -81,16 +81,30 @@ bool ArgumentParser::parse(int argc, char* argv[]) {
     for (size_t i = 1; i < args.size(); ++i) {
         const std::string& arg = args[i];
 
-	if (arg.substr(0, 9) == "--kokkos-") {
-	    continue;
-	} else if (arg.substr(0, 1) == "-") {
-            // It's an optional argument or flag
+        // Skip kokkos options
+        if (arg.substr(0, 9) == "--kokkos-") {
+            continue;
+        }
+
+        // PETSc option detection
+        bool is_petsc = (
+            arg.find("-ksp_") == 0 || arg.find("-mat_") == 0 ||
+            arg.find("-pc_") == 0 || arg.find("-petsc_") == 0 ||
+            arg.find("-snes_") == 0 || arg.find("-on_error_abort") == 0
+        );
+
+        if (is_petsc) {
+            // Skip PETSc option
+            // If next argument exists and does NOT start with '-', skip it too (it's the value)
+            if (i + 1 < args.size() && args[i+1].size() > 0 && args[i+1][0] != '-') {
+                ++i; // skip value
+            }
+            continue;
+        } else if (arg.substr(0, 1) == "-") {
             std::string name = arg;
             if (name.size() > 1 && name[1] == '-') {
-                // Handle --name format
                 name = name.substr(2);
             } else {
-                // Handle -name format
                 name = name.substr(1);
             }
 
@@ -142,12 +156,10 @@ bool ArgumentParser::parse(int argc, char* argv[]) {
                 print_help();
                 return false;
             }
-
             positional_args_[pos_arg_index].value = arg;
             pos_arg_index++;
         }
     }
-
     // Check if all required arguments are provided
     if (pos_arg_index < positional_args_.size()) {
         std::cerr << "Not enough positional arguments" << std::endl;

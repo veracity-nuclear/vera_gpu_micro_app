@@ -132,6 +132,22 @@ PetscErrorCode SimpleMatrixAssembler::_assembleM()
         const PetscInt posCell = cmfdData.surf2Cell(surfaceIdx, 0);
         const PetscInt negCell = cmfdData.surf2Cell(surfaceIdx, 1);
 
+        // naively check if this is a duplicate surface
+        bool duplicateSurface = false;
+        for (PetscInt surfaceIdx2 = 0; surfaceIdx2 < surfaceIdx; ++surfaceIdx2)
+        {
+            const PetscInt posCell2 = cmfdData.surf2Cell(surfaceIdx2, 0);
+            const PetscInt negCell2 = cmfdData.surf2Cell(surfaceIdx2, 1);
+
+            if (posCell2 >= 0 && negCell2 >= 0 && posCell == posCell2 && negCell == negCell2)
+            {
+                duplicateSurface = true;
+                break;
+            }
+        }
+        if (duplicateSurface)
+            continue;
+
         for (PetscInt groupIdx = 0; groupIdx < cmfdData.nGroups; ++groupIdx)
         {
             const PetscScalar dhat = cmfdData.dHat(groupIdx, surfaceIdx);
@@ -166,7 +182,7 @@ PetscErrorCode SimpleMatrixAssembler::_assembleM()
     PetscCall(MatAssemblyBegin(MMat, MAT_FINAL_ASSEMBLY));
     PetscCall(MatAssemblyEnd(MMat, MAT_FINAL_ASSEMBLY));
 
-    return PETSC_SUCCESS;
+    PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 PetscErrorCode SimpleMatrixAssembler::_assembleFission(const FluxView& flux)
@@ -209,7 +225,7 @@ PetscErrorCode SimpleMatrixAssembler::_assembleFission(const FluxView& flux)
     PetscCall(VecAssemblyBegin(fissionVec));
     PetscCall(VecAssemblyEnd(fissionVec));
 
-    return PETSC_SUCCESS;
+    PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 PetscErrorCode COOMatrixAssembler::_assembleM()
@@ -269,15 +285,15 @@ PetscErrorCode COOMatrixAssembler::_assembleM()
     (That is, in total we add nGroups * nPosLeakageSurfs entries to the end of each COO vector.)
     */
 
-   static constexpr size_t posPosDisplacement = 0;
-   static constexpr size_t negPosDisplacement = 1;
-   static constexpr size_t negNegDisplacement = 2;
-   static constexpr size_t posNegDisplacement = 3;
-   static constexpr PetscInt entriesPerSurf = 4;
-   PetscInt maxNNZInRow = cmfdData.nGroups + entriesPerSurf * MAX_POS_SURF_PER_CELL;
-   PetscInt matSize = cmfdData.nCells * cmfdData.nGroups;
+    static constexpr size_t posPosDisplacement = 0;
+    static constexpr size_t negPosDisplacement = 1;
+    static constexpr size_t negNegDisplacement = 2;
+    static constexpr size_t posNegDisplacement = 3;
+    static constexpr PetscInt entriesPerSurf = 4;
+    PetscInt maxNNZInRow = cmfdData.nGroups + entriesPerSurf * MAX_POS_SURF_PER_CELL;
+    PetscInt matSize = cmfdData.nCells * cmfdData.nGroups;
 
-   PetscFunctionBeginUser;
+    PetscFunctionBeginUser;
 
     // // There are a lot of options here for splitting up the matrix into submatrices per mpi rank
     // //  (on the PETSc side), i.e., # of rows/cols per rank and number of zeros on and off the diagonal (per row).
@@ -291,105 +307,6 @@ PetscErrorCode COOMatrixAssembler::_assembleM()
     // MatCreateAIJKokkos(PETSC_COMM_WORLD, cmfdData.nGroups, cmfdData.nGroups,
     //     matSize, matSize, cmfdData.nGroups, NULL, 1, NULL, &MMat);
 
-    static constexpr int method = 2;
-    // METHOD 1: Use Vectors with emplace back to avoid storing zeros
-    if constexpr(method == 1)
-    {
-        std::vector<PetscInt> rowIndices, colIndices;
-        std::vector<PetscScalar> values;
-        rowIndices.reserve(maxNNZInRow * cmfdData.nCells);
-        colIndices.reserve(maxNNZInRow * cmfdData.nCells);
-        values.reserve(maxNNZInRow * cmfdData.nCells);
-
-        for (PetscInt scatterToIdx = 0; scatterToIdx < cmfdData.nGroups; ++scatterToIdx)
-        {
-            for (PetscInt scatterFromIdx = 0; scatterFromIdx < cmfdData.nGroups; ++scatterFromIdx)
-            {
-                for (PetscInt cellIdx = 0; cellIdx < cmfdData.nCells; ++cellIdx)
-                {
-                    const PetscScalar value = -1 * cmfdData.scatteringXS(scatterToIdx, scatterFromIdx, cellIdx) * cmfdData.volume(cellIdx);
-                    if (isNonZero(value))
-                    {
-                        rowIndices.emplace_back(cellIdx * cmfdData.nGroups + scatterFromIdx);
-                        colIndices.emplace_back(cellIdx * cmfdData.nGroups + scatterToIdx);
-                        values.emplace_back(value);
-                    }
-                }
-            }
-        }
-
-        for (PetscInt groupIdx = 0; groupIdx < cmfdData.nGroups; ++groupIdx)
-        {
-            for (PetscInt cellIdx = 0; cellIdx < cmfdData.nCells; ++cellIdx)
-            {
-                // Could do removal XS if we were inserting instead of adding
-                const PetscScalar value = cmfdData.transportXS(groupIdx, cellIdx) * cmfdData.volume(cellIdx);
-                if (isNonZero(value))
-                {
-                    const PetscInt diagIdx = cellIdx * cmfdData.nGroups + groupIdx;
-                    rowIndices.emplace_back(diagIdx);
-                    colIndices.emplace_back(diagIdx);
-                    values.emplace_back(value);
-                }
-            }
-        }
-
-        for (PetscInt surfaceIdx = 0; surfaceIdx < cmfdData.nSurfaces; ++surfaceIdx)
-        {
-            const PetscInt posCell = cmfdData.surf2Cell(surfaceIdx, 0);
-            const PetscInt negCell = cmfdData.surf2Cell(surfaceIdx, 1);
-
-            for (PetscInt groupIdx = 0; groupIdx < cmfdData.nGroups; ++groupIdx)
-            {
-                const PetscScalar dhat = cmfdData.dHat(groupIdx, surfaceIdx);
-                const PetscScalar dtilde = cmfdData.dTilde(groupIdx, surfaceIdx);
-
-                const PetscInt posCellMatIdx = (posCell) * cmfdData.nGroups + groupIdx;
-                const PetscInt negCellMatIdx = (negCell) * cmfdData.nGroups + groupIdx;
-
-                if (posCellMatIdx >= 0)
-                {
-                    const PetscScalar value = -1 * dhat + dtilde;
-                    if (isNonZero(value)) {
-                        rowIndices.emplace_back(posCellMatIdx);
-                        colIndices.emplace_back(posCellMatIdx);
-                        values.emplace_back(value);
-                    }
-                }
-                if (negCellMatIdx >= 0)
-                {
-                    const PetscScalar value = dhat + dtilde;
-                    if (isNonZero(value)) {
-                        rowIndices.emplace_back(negCellMatIdx);
-                        colIndices.emplace_back(negCellMatIdx);
-                        values.emplace_back(value);
-                    }
-                }
-                if (posCellMatIdx >= 0 && negCellMatIdx >= 0)
-                {
-                    const PetscScalar value1 = -1 * dhat - dtilde;
-                    if (isNonZero(value1)) {
-                        rowIndices.emplace_back(posCellMatIdx);
-                        colIndices.emplace_back(negCellMatIdx);
-                        values.emplace_back(value1);
-                    }
-
-                    const PetscScalar value2 = dhat - dtilde;
-                    if (isNonZero(value2)) {
-                        rowIndices.emplace_back(negCellMatIdx);
-                        colIndices.emplace_back(posCellMatIdx);
-                        values.emplace_back(value2);
-                    }
-                }
-            }
-        }
-        size_t numNonZero = values.size();
-
-
-        PetscCall(MatSetPreallocationCOO(MMat, numNonZero, rowIndices.data(), colIndices.data()));
-        PetscCall(MatSetValuesCOO(MMat, values.data(), ADD_VALUES));
-    }
-    else if constexpr(method == 2) // METHOD 2:
     // Use Kokkos views somewhat naively (use teams, scratch pad, etc. to optimize)
     // Just making sure this works for now
     // See the comment at the top of the method for a description of the layout
@@ -502,7 +419,7 @@ PetscErrorCode COOMatrixAssembler::_assembleM()
         PetscCall(MatSetValuesCOO(MMat, values.data(), ADD_VALUES));
     }
 
-    return PETSC_SUCCESS;
+    PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 PetscErrorCode COOMatrixAssembler::_assembleFission(const FluxView& flux)
@@ -561,7 +478,7 @@ PetscErrorCode COOMatrixAssembler::_assembleFission(const FluxView& flux)
     PetscCall(VecSetPreallocationCOO(fissionVec, nnz, rowIndices.data()));
     PetscCall(VecSetValuesCOO(fissionVec, values.data(), INSERT_VALUES));
 
-    return PETSC_SUCCESS;
+    PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 PetscErrorCode CSRMatrixAssembler::_assembleM()
@@ -603,6 +520,12 @@ PetscErrorCode CSRMatrixAssembler::_assembleM()
     const PetscInt matSize = cmfdData.nCells * cmfdData.nGroups; // row or col
     const PetscInt numNonZero = matSize * maxNNZInRow;
 
+    PetscFunctionBeginUser;
+
+    PetscCall(MatCreate(PETSC_COMM_WORLD, &MMat));
+    PetscCall(MatSetType(MMat, MATSEQAIJKOKKOS));
+    // MatSeqAIJSetPreallocation(MMat, numNonZero, NULL);
+
     // Specifying the memory space to AssemblyMemorySpace upsets PETSc,
     // even though AssemblyMemorySpace should end up being the same as the
     // default memory space. This is almost certainly a soft bug in PETSc.
@@ -616,7 +539,6 @@ PetscErrorCode CSRMatrixAssembler::_assembleM()
     // - Do atomics on ++ and -- terms
     // - Do ++, +-, and -+ terms and store --. Fence and then do -- terms atomically
     // - ... I'm sure there are more options.
-    static constexpr int method = 1;
 
     { // Kokkos scope
 
@@ -663,9 +585,6 @@ PetscErrorCode CSRMatrixAssembler::_assembleM()
         // as they both write to the diagonal of the matrix.
         Kokkos::fence(); // We could just make the values set above atomic. I'm not sure which is better.
 
-        // METHOD 1: Use atomics on ++ and -- terms as they can refer to the same cell
-        // on different iterations of the loop.
-        if constexpr(method == 1)
         {
             const PetscInt nGroups = _cmfdData.nGroups;
             Kokkos::parallel_for("CSRMatrixAssembler1: InLeakage", Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<3>>({0, 0, 0}, {_cmfdData.nGroups, _cmfdData.nCells, MAX_POS_SURF_PER_CELL}),
@@ -751,16 +670,11 @@ PetscErrorCode CSRMatrixAssembler::_assembleM()
 
     } // Kokkos scope ends
 
-    PetscFunctionBeginUser;
-    // TODO (#26): The null allows you to specify the number of non-zero entries per row.
-    // This will improve memory/performance if implemented
-    PetscCall(MatCreateSeqAIJKokkos(PETSC_COMM_WORLD, matSize, matSize, numNonZero, NULL, &MMat));
-
     // Actually put the values into the matrix
     Kokkos::fence();
     PetscCall(MatCreateSeqAIJKokkosWithKokkosViews(PETSC_COMM_SELF, matSize, matSize, rowIndices, colIndices, values, &MMat));
 
-    return PETSC_SUCCESS;
+    PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 PetscErrorCode CSRMatrixAssembler::_assembleFission(const FluxView& flux)
@@ -815,10 +729,8 @@ PetscErrorCode CSRMatrixAssembler::_assembleFission(const FluxView& flux)
     PetscFunctionBeginUser;
     Kokkos::fence();
 
-
-
     // The second input parameter is the block size, which I believe should be 1.
     PetscCall(VecCreateSeqKokkosWithArray(PETSC_COMM_SELF, 1, nRows, _fissionVectorView.data(), &fissionVec));
     // Maybe VecCreateMPIKokkosWithArray is better?
-    return PETSC_SUCCESS;
+    PetscFunctionReturn(PETSC_SUCCESS);
 }
