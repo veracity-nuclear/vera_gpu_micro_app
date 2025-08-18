@@ -633,7 +633,7 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
         // Forward and backward sweeps
         for (int iseg = 0; iseg < rays(iray).nsegs(); iseg++) {
             // Forward segment sweep
-            auto& segment = segments(rays(iray).first_seg() + iseg);
+            auto segment = segments(rays(iray).first_seg() + iseg);
             int ireg = segment.fsr();
             RealType phid = (fsegflux - source(ireg, ig)) *
                 eval_exp_arg<ExecutionSpace, RealType>(exparg(iseg), xstr(ireg, ig), segment.length(), rsinpolang(ipol));
