@@ -633,19 +633,19 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
         // Forward and backward sweeps
         for (int iseg = 0; iseg < rays(iray).nsegs(); iseg++) {
             // Forward segment sweep
-            auto segment = segments(rays(iray).first_seg() + iseg);
-            int ireg = segment.fsr();
+            auto* segment = &segments(rays(iray).first_seg() + iseg);
+            int ireg = segment->fsr();
             RealType phid = (fsegflux - source(ireg, ig)) *
-                eval_exp_arg<ExecutionSpace, RealType>(exparg(iseg), xstr(ireg, ig), segment.length(), rsinpolang(ipol));
+                eval_exp_arg<ExecutionSpace, RealType>(exparg(iseg), xstr(ireg, ig), segment->length(), rsinpolang(ipol));
             fsegflux -= phid;
             tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, phid * angle_weights(rays(iray).angle(), ipol));
 
             // Backward segment sweep
             int bseg = rays(iray).nsegs() - iseg - 1;
-            segment = segments(rays(iray).first_seg() + bseg);
-            ireg = segment.fsr();
+            segment = &segments(rays(iray).first_seg() + bseg);
+            ireg = segment->fsr();
             phid = (bsegflux - source(ireg, ig)) *
-                eval_exp_arg<ExecutionSpace, RealType>(exparg(bseg), xstr(ireg, ig), segment.length(), rsinpolang(ipol));
+                eval_exp_arg<ExecutionSpace, RealType>(exparg(bseg), xstr(ireg, ig), segment->length(), rsinpolang(ipol));
             bsegflux -= phid;
             tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, phid * angle_weights(rays(iray).angle(), ipol));
         }
