@@ -333,7 +333,7 @@ TEST(s02_petsc, solve)
 {
   // See petsc/src/ksp/ksp/tutorials/ex1.c for reference
   double tol = 1.e-7;
-  std::string filename = "data/pin_7g_16a_3p_serial.h5";
+  std::string filename = "data/small_parallel.h5";
   std::vector<PetscScalar> bVecLocal, xVecLocalGold;
   Mat AMatPetsc;
   Vec bVecPetsc, xVecPetsc;
@@ -375,7 +375,16 @@ TEST(s02_petsc, solve)
   for (PetscInt i = 0; i < xVecLocalGold.size(); i++)
   {
     PetscCallG(VecGetValues(xVecPetsc, 1, &i, &value));
-    EXPECT_NEAR(value, xVecLocalGold[i], tol) << "Value mismatch at index " << i;
+
+    if (std::abs(value - xVecLocalGold[i]) > tol)
+    {
+      // print out a few ratios
+      for (PetscInt j = 0; j < 5; ++j)
+      {
+        std::cout << "Ratio at index " << j << ": " << xVecLocalGold[j] / value << std::endl;
+      }
+      ASSERT_NEAR(value, xVecLocalGold[i], tol) << "Value mismatch at index " << i;
+    }
   }
 
   PetscCallG(KSPDestroy(&ksp));
@@ -444,7 +453,6 @@ TEST(s03_kokkos, petscKokkosMat)
 TEST(s03_kokkos, solveKokkos)
 {
   double tol = 1.e-7;
-  // std::string filename = "data/pin_7g_16a_3p_serial.h5";
   std::string filename = "data/mini-core_7g_16a_3p_serial.h5";
   std::vector<PetscScalar> bVecLocal, xVecLocalGold;
   Mat AMatPetsc;

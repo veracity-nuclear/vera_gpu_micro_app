@@ -6,4 +6,5 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(
       "data/pin_7g_16a_3p_serial.h5",
       "data/2x2_7g_16a_3p_serial.h5",
-      "data/7x7_7g_16a_3p_serial.h5"));
+      "data/7x7_7g_16a_3p_serial.h5",
+      "data/small_parallel.h5"));
