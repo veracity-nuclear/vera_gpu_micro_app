@@ -453,8 +453,7 @@ TEST(s03_kokkos, petscKokkosMat)
 TEST(s03_kokkos, solveKokkos)
 {
   double tol = 1.e-7;
-  std::string filename = "data/pin_7g_16a_3p_serial.h5";
-  // std::string filename = "data/mini-core_7g_16a_3p_serial.h5";
+  std::string filename = "data/mini-core_7g_16a_3p_serial.h5";
   std::vector<PetscScalar> bVecLocal, xVecLocalGold;
   Mat AMatPetsc;
   Vec bVecPetsc, xVecPetsc;

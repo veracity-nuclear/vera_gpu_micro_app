@@ -45,4 +45,5 @@ OPTION
   param RAY->edit_ray_trace SBK F
   param CMFD->edit_cmfd_matrix SBK T
   param CMFD->edit_coarse_mesh SBK T
+  param CMFD->edit_fine_mesh SBK T
 .
