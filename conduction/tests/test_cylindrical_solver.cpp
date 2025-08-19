@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include "cylinder_node.hpp"
-#include "cylindrical_solver.hpp"
+#include "cylindrical_solver_serial.hpp"
 
 TEST(CylindricalSolverTest, ConstructorValid) {
     double height = 1.0;
@@ -14,7 +14,7 @@ TEST(CylindricalSolverTest, ConstructorValid) {
         std::make_shared<UO2>(),
         std::make_shared<Zircaloy>()
     };
-    EXPECT_NO_THROW(CylindricalSolver solver(nodes, materials)); // Valid cylindrical nodes
+    EXPECT_NO_THROW(CylindricalSolverSerial solver(nodes, materials)); // Valid cylindrical nodes
 }
 
 TEST(CylindricalSolverTest, ConstructorInvalid) {
@@ -29,7 +29,7 @@ TEST(CylindricalSolverTest, ConstructorInvalid) {
         std::make_shared<UO2>(),
         std::make_shared<Zircaloy>()
     };
-    EXPECT_THROW(CylindricalSolver solver(nodes, materials), std::runtime_error); // Invalid cylindrical nodes
+    EXPECT_THROW(CylindricalSolverSerial solver(nodes, materials), std::runtime_error); // Invalid cylindrical nodes
 }
 
 TEST(CylindricalSolverTest, TemperatureDistribution_1Region) {
@@ -42,12 +42,16 @@ TEST(CylindricalSolverTest, TemperatureDistribution_1Region) {
         std::make_shared<UO2>()
     };
 
-    CylindricalSolver solver(nodes, materials);
-    std::vector<double> qdot = {100 / nodes[0]->get_volume()};  // W/cm^3
+    CylindricalSolverSerial solver(nodes, materials);
+
+    std::vector<double> qdot(1);
+    qdot[0] = 100 / nodes[0]->get_volume();  // W/cm^3
+
     double T_outer = 600.0; // K
 
     std::vector<double> avg_temps = solver.solve(qdot, T_outer);
     std::vector<double> interface_temps = solver.get_interface_temperatures();
+
     double T_fuel_cl = interface_temps[0];
 
     // analytical solution for temperature at fuel centerline
@@ -103,15 +107,15 @@ TEST(CylindricalSolverTest, TemperatureDistribution_FuelPin_10Regions) {
         power.push_back(0.0); // W
     }
 
-    std::vector<double> qdot(nodes.size(), 0.0); // W/m^3
+    std::vector<double> qdot_vec(nodes.size(), 0.0); // W/m^3
     for (size_t i = 0; i < nodes.size() - 1; ++i) {
-        qdot[i] = power[i] / nodes[i]->get_volume(); // W/m^3
+        qdot_vec[i] = power[i] / nodes[i]->get_volume(); // W/m^3
     }
 
-    CylindricalSolver solver(nodes, materials);
+    CylindricalSolverSerial solver(nodes, materials);
     double T_outer = 600.0; // K
 
-    std::vector<double> avg_temps = solver.solve(qdot, T_outer);
+    std::vector<double> avg_temps = solver.solve(qdot_vec, T_outer);
     std::vector<double> interface_temps = solver.get_interface_temperatures();
 
     double T_fuel_cl = interface_temps[0];

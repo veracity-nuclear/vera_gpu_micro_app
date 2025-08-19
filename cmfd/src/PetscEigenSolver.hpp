@@ -25,7 +25,15 @@ struct PetscEigenSolver
     PetscEigenSolver() = default;
 
     // The assemblerPtr must be moved with std::move
-    PetscEigenSolver(AssemblerPtr&& assemblerPtr, PCType pcType = PCJACOBI, PetscScalar initialGuess = 1.0);
+    PetscEigenSolver(AssemblerPtr&& assemblerPtr, PetscScalar initialGuess = 1.0);
+
+    // Constructor that initializes the solver with a file path and assumes the CSRMatrixAssembler type.
+    PetscEigenSolver(const std::string& filePath)
+        : PetscEigenSolver([&filePath]() {
+            HighFive::File file(filePath, HighFive::File::ReadOnly);
+            HighFive::Group group = file.getGroup("CMFD_CoarseMesh");
+            return std::make_unique<CSRMatrixAssembler>(group);
+        }()) {}
 
     ~PetscEigenSolver();
 

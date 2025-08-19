@@ -34,7 +34,6 @@ protected:
   {
     Kokkos::initialize();
     PetscCallG(PetscInitialize(&argc_, &argv_, NULL, NULL));
-    PetscCallG(PetscLogDefaultBegin());
   }
 
   void TearDown() override

@@ -8,6 +8,7 @@ target_link_libraries(cmfd_lib
     HighFive::HighFive
     Kokkos::kokkos
     PETSc::PETSc
+    utils
 )
 
 add_executable(cmfd_exec
@@ -32,6 +33,7 @@ set(CMFD_TEST_SUITE_FILES
     test_PetscMatrixAssemblerHeavy
     test_PetscEigenSolverLight
     test_PetscEigenSolverHeavy
+    test_main
 )
 set(CMFD_TEST_SUITE_LABELS
     "BASIC\;CONTINUOUS\;HEAVY"
@@ -41,6 +43,7 @@ set(CMFD_TEST_SUITE_LABELS
     "HEAVY"
     "CONTINUOUS\;HEAVY"
     "HEAVY"
+    "BASIC\;CONTINUOUS\;HEAVY"
 )
 
 set(COMMON_TEST_MAIN_SRC ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_main.cpp)

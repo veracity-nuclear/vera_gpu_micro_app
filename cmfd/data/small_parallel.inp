@@ -1,4 +1,4 @@
-CASEID pin_7g_16a_3p_serial
+CASEID small_parallel
 
 MATERIAL
   mat  1 2 :: UO2-3.3
@@ -24,7 +24,11 @@ GEOM
   1
 
  core 360
-   1
+   1 1 1
+ 1 1 1 1 1
+ 1 1 1 1 1
+ 1 1 1 1 1
+   1 1 1
 
 XSEC
   xslib USER c5g7.xsl
@@ -34,12 +38,11 @@ OPTION
   solver 1 2
   cmfd T mgnode F 0.0 1.0 150 F
   ray 0.03 CHEBYSHEV-YAMAMOTO 16 3
-  !parallel 1 1 1 16
+  parallel 8 1 1 16 GRAPH
   conv_crit 2*1.e-8
   iter_lim 10000 1 1
   vis_edits F
-  param RAY->edit_ray_trace SBK T
-  param CMFD->linear_solver SIK 4
+  param RAY->edit_ray_trace SBK F
   param CMFD->edit_cmfd_matrix SBK T
   param CMFD->edit_coarse_mesh SBK T
   param CMFD->edit_fine_mesh SBK T
