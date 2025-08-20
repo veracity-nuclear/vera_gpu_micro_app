@@ -185,10 +185,10 @@ void ThermalHydraulics::solveAxialMarch(int channel_id) {
         double inlet_wv = data_->vapor_mass_flow[prev_idx];
         double inlet_hm = data_->mixture_enthalpy[prev_idx];
         double heat_input = data_->heat_flux[cell_idx] * data_->heated_perimeter * data_->node_height;
-        
+
         // Debug output for first node of selected channels
         if (k == 1 && (channel_id == 0 || channel_id == 4)) {
-            std::cout << "  Channel " << channel_id << ": heat_flux[" << cell_idx << "] = " 
+            std::cout << "  Channel " << channel_id << ": heat_flux[" << cell_idx << "] = "
                       << data_->heat_flux[cell_idx] << " W/m², heat_input = " << heat_input << " W" << std::endl;
         }
 
@@ -222,7 +222,7 @@ void ThermalHydraulics::solveAxialMarch(int channel_id) {
 
         // Calculate momentum flux using APEX formulation
         // spv = (1-x)²/((1-α)ρₗ) + x²/(αρₘ)
-        
+
         double specific_volume_momentum;
         if (outlet_x < 1e-10 && void_frac < 1e-6) {  // Single-phase liquid flow
             // Simplified single-phase momentum calculation
@@ -232,7 +232,7 @@ void ThermalHydraulics::solveAxialMarch(int channel_id) {
             specific_volume_momentum = (1.0 - outlet_x) * (1.0 - outlet_x) / ((1.0 - void_frac) * outlet_rhol) +
                                      outlet_x * outlet_x / (void_frac * properties_->getVaporDensity() + 1e-20);
         }
-        
+
         double total_mass_flux = (outlet_wl + outlet_wv) / data_->flow_area;
         data_->momentum_flux[curr_idx] = specific_volume_momentum * total_mass_flux * total_mass_flux;
 
@@ -246,7 +246,7 @@ void ThermalHydraulics::solveAxialMarch(int channel_id) {
 
         // Apply pressure drop with safeguard against negative pressure
         double new_pressure = data_->pressure[prev_idx] - pressure_drop;
-        
+
         // Clamp pressure to minimum realistic value (0.1 MPa = 100 kPa)
         data_->pressure[curr_idx] = std::max(new_pressure, 100000.0);
     }
@@ -266,14 +266,14 @@ void ThermalHydraulics::solveAxialMarch(int channel_id) {
 void ThermalHydraulics::solveCrossflowIteration() {
     // ANTS Theory: Solve transverse momentum equation for all surfaces
     // d(G_m_CF × V_m_star × S_ns)/dz = (S_ns/ell) × (ΔP_ns - F_ns_dblprime)
-    
+
     if (data_->getNumSurfaces() == 0) {
         return; // No surfaces to solve
     }
-    
+
     int n_surfaces = data_->getNumSurfaces();
     int n_axial = data_->getNumAxialNodes();
-    
+
     // Solve transverse momentum for each axial plane
     for (int k = 0; k <= n_axial; ++k) {
         solveCrossflowAtAxialPlane(k);
@@ -283,67 +283,67 @@ void ThermalHydraulics::solveCrossflowIteration() {
 void ThermalHydraulics::solveCrossflowAtAxialPlane(int axial_node) {
     // ANTS Theory: Solve nonlinear system of transverse momentum equations
     // For each surface: d(G_m_CF × V_m_star × S_ns)/dz = (S_ns/ell) × (ΔP_ns - F_ns_dblprime)
-    
+
     int n_surfaces = data_->getNumSurfaces();
     if (n_surfaces == 0) return;
-    
+
     // Build solution vectors
     std::vector<double> G_CF(n_surfaces);  // Crossflow mass flux for each surface
     std::vector<double> residual(n_surfaces);
     std::vector<std::vector<double>> jacobian(n_surfaces, std::vector<double>(n_surfaces));
-    
+
     // Initialize crossflow from previous iteration or zero
     for (int s = 0; s < n_surfaces; ++s) {
         int surface_idx = getSurfaceIndex(s, axial_node);
         G_CF[s] = data_->crossflow_mass_flux[surface_idx];
     }
-    
+
     // Newton-Raphson iteration for transverse momentum system
     bool converged = false;
     int max_inner_crossflow_iters = 10;
     double crossflow_tolerance = 1.0e-6;
-    
+
     for (int iter = 0; iter < max_inner_crossflow_iters; ++iter) {
         // Calculate residuals for all surfaces
         calculateTransverseMomentumResiduals(axial_node, G_CF, residual);
-        
+
         // Check convergence
         double max_residual = 0.0;
         for (int s = 0; s < n_surfaces; ++s) {
             max_residual = std::max(max_residual, std::abs(residual[s]));
         }
-        
+
         if (max_residual < crossflow_tolerance) {
             converged = true;
             break;
         }
-        
+
         // Build Jacobian matrix
         buildTransverseMomentumJacobian(axial_node, G_CF, jacobian);
-        
+
         // Solve linear system: J * δG = -R
         std::vector<double> delta_G(n_surfaces);
         solveLinearSystem(jacobian, residual, delta_G);
-        
+
         // Line search update with relaxation
         double lambda = 1.0;
         for (int s = 0; s < n_surfaces; ++s) {
             G_CF[s] -= lambda * delta_G[s];
         }
-        
+
         // Apply bounds to crossflow (prevent excessive values)
         for (int s = 0; s < n_surfaces; ++s) {
             double max_crossflow = 1000.0; // kg/m²-s reasonable limit
             G_CF[s] = std::max(-max_crossflow, std::min(max_crossflow, G_CF[s]));
         }
     }
-    
+
     // Store converged crossflow values
     for (int s = 0; s < n_surfaces; ++s) {
         int surface_idx = getSurfaceIndex(s, axial_node);
         data_->crossflow_mass_flux[surface_idx] = G_CF[s];
     }
-    
+
     // Debug output for convergence issues
     if (!converged && axial_node == 0) {
         std::cout << "Warning: Crossflow did not converge at axial plane " << axial_node << std::endl;
@@ -814,66 +814,66 @@ void ThermalHydraulics::resetNewtonIterationCount() {
     global_newton_iteration_count = 0;
 }
 
-void ThermalHydraulics::calculateTransverseMomentumResiduals(int axial_node, 
+void ThermalHydraulics::calculateTransverseMomentumResiduals(int axial_node,
                                                            const std::vector<double>& G_CF,
                                                            std::vector<double>& residual) {
     // ANTS Theory: Calculate residuals for transverse momentum equation
     // d(G_m_CF × V_m_star × S_ns)/dz = (S_ns/ell) × (ΔP_ns - F_ns_dblprime)
-    
+
     int n_surfaces = data_->getNumSurfaces();
-    
+
     for (int s = 0; s < n_surfaces; ++s) {
         // Get surface geometry
         double S_ns = data_->gap_width;  // Gap width
         double ell = data_->gap_spacing; // Transverse path length
-        
+
         // Get adjacent channel indices for this surface
         int ch_i, ch_j;
         getSurfaceChannels(s, ch_i, ch_j);
-        
+
         // Get pressures at adjacent channels
         int idx_i = getAxialIndex(ch_i, axial_node);
         int idx_j = getAxialIndex(ch_j, axial_node);
         double P_i = data_->pressure[idx_i];
         double P_j = data_->pressure[idx_j];
         double DeltaP_ns = P_i - P_j;
-        
+
         // Calculate mixture properties for form loss
         double void_i = data_->void_fraction[idx_i];
         double void_j = data_->void_fraction[idx_j];
         double rho_l_i = data_->liquid_density[idx_i];
         double rho_l_j = data_->liquid_density[idx_j];
         double rho_g = properties_->getVaporDensity();
-        
+
         // Mixture density (star denotes donor cell evaluation)
         double rho_m_star;
         if (G_CF[s] >= 0.0) {
             // Flow from i to j, use donor cell i
             rho_m_star = (1.0 - void_i) * rho_l_i + void_i * rho_g;
         } else {
-            // Flow from j to i, use donor cell j  
+            // Flow from j to i, use donor cell j
             rho_m_star = (1.0 - void_j) * rho_l_j + void_j * rho_g;
         }
-        
+
         // Form loss coefficient (gap loss)
         double K_ns = data_->loss_coefficient;
-        
+
         // Form loss pressure drop: F_ns_dblprime = 0.5 × K_ns × (G_m_CF × |G_m_CF|) / rho_m_star
         double F_ns_dblprime = 0.5 * K_ns * G_CF[s] * std::abs(G_CF[s]) / (rho_m_star + EPS);
-        
+
         // Momentum flux derivative (simplified for axial differences)
         double V_m_star = calculateMixtureVelocity(s, axial_node, G_CF[s]);
         double momentum_change = 0.0;
-        
+
         if (axial_node > 0) {
             // Calculate axial derivative d(G_m_CF × V_m_star × S_ns)/dz
             int prev_surface_idx = getSurfaceIndex(s, axial_node - 1);
             double G_CF_prev = data_->crossflow_mass_flux[prev_surface_idx];
             double V_m_prev = calculateMixtureVelocity(s, axial_node - 1, G_CF_prev);
-            
+
             momentum_change = (G_CF[s] * V_m_star * S_ns - G_CF_prev * V_m_prev * S_ns) / data_->node_height;
         }
-        
+
         // ANTS transverse momentum residual
         // R = d(G_m_CF × V_m_star × S_ns)/dz - (S_ns/ell) × (ΔP_ns - F_ns_dblprime)
         residual[s] = momentum_change - (S_ns / ell) * (DeltaP_ns - F_ns_dblprime);
@@ -885,29 +885,29 @@ void ThermalHydraulics::buildTransverseMomentumJacobian(int axial_node,
                                                       std::vector<std::vector<double>>& jacobian) {
     // ANTS Theory: Build Jacobian matrix for Newton-Raphson solution
     // J[i][j] = ∂R_i/∂G_CF_j
-    
+
     int n_surfaces = data_->getNumSurfaces();
     double perturbation = 1.0e-6;
-    
+
     // Initialize Jacobian
     for (int i = 0; i < n_surfaces; ++i) {
         for (int j = 0; j < n_surfaces; ++j) {
             jacobian[i][j] = 0.0;
         }
     }
-    
+
     // Calculate baseline residuals
     std::vector<double> residual_base(n_surfaces);
     calculateTransverseMomentumResiduals(axial_node, G_CF, residual_base);
-    
+
     // Numerical differentiation for Jacobian
     for (int j = 0; j < n_surfaces; ++j) {
         std::vector<double> G_CF_pert = G_CF;
         G_CF_pert[j] += perturbation;
-        
+
         std::vector<double> residual_pert(n_surfaces);
         calculateTransverseMomentumResiduals(axial_node, G_CF_pert, residual_pert);
-        
+
         for (int i = 0; i < n_surfaces; ++i) {
             jacobian[i][j] = (residual_pert[i] - residual_base[i]) / perturbation;
         }
@@ -917,18 +917,18 @@ void ThermalHydraulics::buildTransverseMomentumJacobian(int axial_node,
 double ThermalHydraulics::calculateMixtureVelocity(int surface_id, int axial_node, double G_CF) {
     // Calculate mixture velocity for crossflow momentum calculation
     // This is a simplified implementation - full version would use proper two-phase velocity
-    
+
     // Get adjacent channels
     int ch_i, ch_j;
     getSurfaceChannels(surface_id, ch_i, ch_j);
-    
+
     // Use donor cell properties
     int donor_channel = (G_CF >= 0.0) ? ch_i : ch_j;
     int idx = getAxialIndex(donor_channel, axial_node);
-    
-    double rho_mixture = (1.0 - data_->void_fraction[idx]) * data_->liquid_density[idx] + 
+
+    double rho_mixture = (1.0 - data_->void_fraction[idx]) * data_->liquid_density[idx] +
                         data_->void_fraction[idx] * properties_->getVaporDensity();
-    
+
     // Simple velocity estimate: V = G / ρ
     return std::abs(G_CF) / (rho_mixture + EPS);
 }
@@ -936,17 +936,17 @@ double ThermalHydraulics::calculateMixtureVelocity(int surface_id, int axial_nod
 void ThermalHydraulics::getSurfaceChannels(int surface_id, int& ch_i, int& ch_j) {
     // Map surface ID to adjacent channel IDs
     // This is a simplified mapping - full implementation would use connectivity data
-    
+
     // For 3x3 geometry with 12 surfaces, map to adjacent channels
     // Surface connectivity for 3x3 pin-centered subchannels
     const int surface_connectivity[][2] = {
         {0, 1}, {1, 2},           // Row 1 horizontal
-        {3, 4}, {4, 5},           // Row 2 horizontal  
+        {3, 4}, {4, 5},           // Row 2 horizontal
         {6, 7}, {7, 8},           // Row 3 horizontal
         {0, 3}, {1, 4}, {2, 5},   // Vertical connections
         {3, 6}, {4, 7}, {5, 8}    // Vertical connections
     };
-    
+
     if (surface_id < 12) {
         ch_i = surface_connectivity[surface_id][0];
         ch_j = surface_connectivity[surface_id][1];
@@ -962,7 +962,7 @@ void ThermalHydraulics::solveLinearSystem(const std::vector<std::vector<double>>
                                         std::vector<double>& x) {
     // Solve Ax = b using Gaussian elimination with partial pivoting
     int n = A.size();
-    
+
     // Create augmented matrix
     std::vector<std::vector<double>> aug(n, std::vector<double>(n + 1));
     for (int i = 0; i < n; ++i) {
@@ -971,7 +971,7 @@ void ThermalHydraulics::solveLinearSystem(const std::vector<std::vector<double>>
         }
         aug[i][n] = -b[i]; // Note: we want to solve J * δG = -R
     }
-    
+
     // Gaussian elimination with partial pivoting
     for (int k = 0; k < n - 1; ++k) {
         // Find pivot
@@ -981,12 +981,12 @@ void ThermalHydraulics::solveLinearSystem(const std::vector<std::vector<double>>
                 pivot_row = i;
             }
         }
-        
+
         // Swap rows
         if (pivot_row != k) {
             aug[k].swap(aug[pivot_row]);
         }
-        
+
         // Eliminate
         for (int i = k + 1; i < n; ++i) {
             if (std::abs(aug[k][k]) > EPS) {
@@ -997,7 +997,7 @@ void ThermalHydraulics::solveLinearSystem(const std::vector<std::vector<double>>
             }
         }
     }
-    
+
     // Back substitution
     x.resize(n);
     for (int i = n - 1; i >= 0; --i) {

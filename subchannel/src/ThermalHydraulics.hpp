@@ -122,7 +122,7 @@ private:
     int getNewtonIterationCount() const;
     void incrementNewtonIterationCount();
     void resetNewtonIterationCount();
-    
+
     // ANTS Transverse momentum solver
     void solveCrossflowAtAxialPlane(int axial_node);
     void calculateTransverseMomentumResiduals(int axial_node,

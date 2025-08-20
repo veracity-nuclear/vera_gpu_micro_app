@@ -121,17 +121,17 @@ void Solver::setSubchannelHeatRate(int subchannel_id, double linear_heat_rate) {
 
     // Calculate heat flux for this subchannel
     double heat_flux = linear_heat_rate / data_->heated_perimeter;
-    
+
     // Set heat flux for all axial cells in this subchannel
     int n_axial_nodes = data_->getNumAxialNodes();
     for (int k = 0; k < n_axial_nodes; ++k) {
         int cell_index = subchannel_id * n_axial_nodes + k;
         data_->heat_flux[cell_index] = heat_flux;
     }
-    
+
     // Debug output
-    std::cout << "Set subchannel " << subchannel_id << " heat rate: " << linear_heat_rate 
-              << " W/m -> heat_flux = " << heat_flux << " W/m² (cells " 
+    std::cout << "Set subchannel " << subchannel_id << " heat rate: " << linear_heat_rate
+              << " W/m -> heat_flux = " << heat_flux << " W/m² (cells "
               << subchannel_id * n_axial_nodes << "-" << (subchannel_id + 1) * n_axial_nodes - 1 << ")" << std::endl;
 }
 
