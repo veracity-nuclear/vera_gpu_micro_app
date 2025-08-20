@@ -3,6 +3,8 @@
 #include <string>
 #include <iomanip>
 #include <cassert>
+#include <algorithm>
+#include <vector>
 #include <highfive/H5Easy.hpp>
 #include <highfive/highfive.hpp>
 #include "c5g7_library.hpp"
@@ -11,7 +13,8 @@ template <typename ExecutionSpace, typename RealType>
 KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
     _filename(args.get_positional(0)),
     _file(HighFive::File(_filename, HighFive::File::ReadOnly)),
-    _device(args.get_option("device"))
+    _device(args.get_option("device")),
+    _ray_sort(args.get_option("ray_sort"))
 {
     // Read the rays
     _read_rays();
@@ -287,63 +290,75 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
     Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC _read_rays " + _device);
     auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
 
-    // Count the rays
+    // First, collect all ray information for potential sorting
+    struct RayInfo {
+        std::string angle_name;
+        std::string ray_name;
+        int angle_index;
+        int nsegs;
+        HighFive::Group ray_group;
+        
+        RayInfo(const std::string& ang_name, const std::string& r_name, int ang_idx, int nseg, HighFive::Group group)
+            : angle_name(ang_name), ray_name(r_name), angle_index(ang_idx), nsegs(nseg), ray_group(group) {}
+    };
+    
+    std::vector<RayInfo> ray_infos;
     _n_rays = 0;
+    
+    // Collect all ray information
     for (const auto& objName : domain.listObjectNames()) {
         if (objName.substr(0, 6) == "Angle_") {
             HighFive::Group angleGroup = domain.getGroup(objName);
+            auto angleIndex = std::stoi(objName.substr(8)) - 1;
+            
             for (const auto& rayName : angleGroup.listObjectNames()) {
                 if (rayName.substr(0, 8) == "LongRay_") {
+                    auto rayGroup = angleGroup.getGroup(rayName);
+                    int ray_nsegs = rayGroup.getDataSet("FSRs").read<std::vector<int>>().size();
+                    ray_infos.emplace_back(objName, rayName, angleIndex, ray_nsegs, rayGroup);
                     _n_rays++;
                 }
             }
         }
     }
 
+    // Apply ray sorting if requested
+    if (_ray_sort == "long") {
+        // Sort rays by number of segments (most segments first)
+        std::sort(ray_infos.begin(), ray_infos.end(), 
+                  [](const RayInfo& a, const RayInfo& b) {
+                      return a.nsegs > b.nsegs;
+                  });
+    } else if (_ray_sort == "short") {
+        // Sort rays by number of segments (fewest segments first)  
+        std::sort(ray_infos.begin(), ray_infos.end(),
+                  [](const RayInfo& a, const RayInfo& b) {
+                      return a.nsegs < b.nsegs;
+                  });
+    }
+    // If _ray_sort == "none", do nothing (default behavior)
+
     // Reserve space for rays
     _h_rays = HViewKokkosLongRay1D("rays", _n_rays);
 
-    // Set up the rays
-    int iray = 0;
+    // Set up the rays using the sorted order
     int nsegs = 0;
-    for (const auto& objName : domain.listObjectNames()) {
-        if (objName.substr(0, 6) == "Angle_") {
-            HighFive::Group angleGroup = domain.getGroup(objName);
-
-            // Read the data from the angle group
-            auto angleIndex = std::stoi(objName.substr(8)) - 1;
-
-            for (const auto& rayName : angleGroup.listObjectNames()) {
-                if (rayName.substr(0, 8) == "LongRay_") {
-                    auto rayGroup = angleGroup.getGroup(rayName);
-                    int ray_nsegs = rayGroup.getDataSet("FSRs").read<std::vector<int>>().size();
-                    _h_rays(iray) = KokkosLongRay(rayGroup, angleIndex, ray_nsegs, nsegs);
-                    nsegs += ray_nsegs;
-                    iray++;
-                }
-            }
-        }
+    for (int iray = 0; iray < _n_rays; iray++) {
+        const auto& ray_info = ray_infos[iray];
+        _h_rays(iray) = KokkosLongRay(ray_info.ray_group, ray_info.angle_index, ray_info.nsegs, nsegs);
+        nsegs += ray_info.nsegs;
     }
 
     // Reserve space for segment metadata
     _h_segments = HViewKokkosRaySegment1D("segments", nsegs);
 
-    // Set up segments
-    iray = 0;
-    for (const auto& objName : domain.listObjectNames()) {
-        if (objName.substr(0, 6) == "Angle_") {
-            HighFive::Group angleGroup = domain.getGroup(objName);
-            for (const auto& rayName : angleGroup.listObjectNames()) {
-                if (rayName.substr(0, 8) == "LongRay_") {
-                    auto rayGroup = angleGroup.getGroup(rayName);
-                    auto fsrs = rayGroup.getDataSet("FSRs").read<std::vector<int>>();
-                    auto segs = rayGroup.getDataSet("Segments").read<std::vector<double>>();
-                    for (size_t iseg = 0; iseg < fsrs.size(); iseg++) {
-                        _h_segments(_h_rays(iray).first_seg() + iseg) = KokkosRaySegment<RealType>(fsrs[iseg] - 1, static_cast<RealType>(segs[iseg]));
-                    }
-                    iray++;
-                }
-            }
+    // Set up segments using the sorted order
+    for (int iray = 0; iray < _n_rays; iray++) {
+        const auto& ray_info = ray_infos[iray];
+        auto fsrs = ray_info.ray_group.getDataSet("FSRs").read<std::vector<int>>();
+        auto segs = ray_info.ray_group.getDataSet("Segments").read<std::vector<double>>();
+        for (size_t iseg = 0; iseg < fsrs.size(); iseg++) {
+            _h_segments(_h_rays(iray).first_seg() + iseg) = KokkosRaySegment<RealType>(fsrs[iseg] - 1, static_cast<RealType>(segs[iseg]));
         }
     }
 

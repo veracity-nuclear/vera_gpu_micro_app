@@ -300,6 +300,47 @@ TEST(BasicTest, PetscArgs) {
     cleanup_args(argc, argv);
 }
 
+// Test the vera_gpu_moc_parser specifically with ray_sort option
+TEST(BasicTest, VeraGpuMocParserRaySortOption) {
+    ArgumentParser parser = ArgumentParser::vera_gpu_moc_parser("test_program");
+    
+    // Test with valid ray_sort values
+    std::vector<std::string> args = {"test_program", "input.h5", "xs.h5", "--ray_sort", "long"};
+    int argc;
+    char** argv;
+    make_args(args, argc, argv);
+    
+    ASSERT_TRUE(parser.parse(argc, argv));
+    
+    std::string ray_sort = parser.get_option("ray_sort");
+    ASSERT_EQ(ray_sort, "long");
+    
+    cleanup_args(argc, argv);
+    
+    // Test with default value
+    std::vector<std::string> args2 = {"test_program", "input.h5", "xs.h5"};
+    make_args(args2, argc, argv);
+    
+    ASSERT_TRUE(parser.parse(argc, argv));
+    
+    ray_sort = parser.get_option("ray_sort");
+    ASSERT_EQ(ray_sort, "none");
+    
+    cleanup_args(argc, argv);
+    
+    // Test with invalid value
+    std::vector<std::string> args3 = {"test_program", "input.h5", "xs.h5", "--ray_sort", "invalid"};
+    make_args(args3, argc, argv);
+    
+    CaptureStderr capture;
+    ASSERT_FALSE(parser.parse(argc, argv));
+    std::string error_output = capture.get_output();
+    
+    ASSERT_NE(error_output.find("Invalid value"), std::string::npos);
+    
+    cleanup_args(argc, argv);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

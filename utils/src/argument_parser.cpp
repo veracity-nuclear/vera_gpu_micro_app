@@ -275,6 +275,7 @@ ArgumentParser ArgumentParser::vera_gpu_moc_parser(const std::string& program_na
     parser.add_option("max_iter", "Maximum number of iterations", "5000");
     parser.add_option("k_conv_crit", "K-eff convergence criteria threshold", "1e-8");
     parser.add_option("f_conv_crit", "Fission source convergence criteria threshold", "1e-8");
+    parser.add_option("ray_sort", "Ray sorting method (none, long, short)", "none", {"none", "long", "short"});
 
     return parser;
 }
