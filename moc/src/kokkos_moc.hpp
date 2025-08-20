@@ -75,6 +75,7 @@ class KokkosMOC : public BaseMOC {
         std::string _filename;  // HDF5 file name
         HighFive::File _file; // HDF5 file object
         std::string _device;  // Name of the target Kokkos device
+        const ArgumentParser& _args;  // Command-line arguments
 
         // Sizes
         int _nfsr;  // Number of FSRs

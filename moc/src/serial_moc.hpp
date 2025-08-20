@@ -48,6 +48,7 @@ class SerialMOC : public BaseMOC {
         int _ng;  // Number of energy groups
         RealType _plane_height;  // Height of the plane
         std::string _filename;  // HDF5 file name
+        const ArgumentParser& _args;  // Command-line arguments
         HighFive::File _file; // HDF5 file object
         const ExpTable _exp_table;  // Exponential table for calculations
         std::vector<RealType> _fsr_vol;  // FSR volumes
