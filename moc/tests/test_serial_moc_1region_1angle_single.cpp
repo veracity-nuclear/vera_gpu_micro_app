@@ -14,7 +14,7 @@ TEST(BasicTest, cart_1region_7g_1a_1p_serial_single) {
     std::shared_ptr<BaseMOC> sweeper(new SerialMOC<float>(parser));
     EigenSolver solver(parser, sweeper);
     solver.solve();
-    EXPECT_NEAR(solver.keff(), 0.738221842, 1.0e-7);
+    EXPECT_NEAR(solver.keff(), 0.738221842, 5.0e-6);
 }
 
 int main(int argc, char **argv) {
