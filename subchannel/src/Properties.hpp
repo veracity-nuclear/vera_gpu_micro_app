@@ -10,7 +10,7 @@ namespace subchannel {
 
 /**
  * @brief Thermophysical properties and water property correlations
- * 
+ *
  * This class provides water and steam properties along with
  * drift-flux correlations for two-phase flow calculations.
  */
@@ -30,14 +30,14 @@ public:
     double saturatedVaporDensity(double temperature) const;
     double saturatedLiquidEnthalpy(double pressure) const;
     double saturatedVaporEnthalpy(double pressure) const;
-    
+
     // General water properties
     double liquidDensity(double temperature, double pressure) const;
     double liquidEnthalpy(double temperature, double pressure) const;
     double liquidTemperature(double pressure, double enthalpy) const;
     double vaporDensity(double temperature, double pressure) const;
     double vaporEnthalpy(double temperature, double pressure) const;
-    
+
     // Internal energy and pressure
     double internalEnergy(double temperature, double density) const;
     double waterPressure(double temperature, double density) const;
@@ -71,13 +71,13 @@ private:
     double alpha_0_;
     std::vector<double> c0_table_;
     std::vector<double> vg_table_;
-    
+
     int n_enthalpy_pts_;
     double d_enthalpy_;
     double h_0_;
     std::vector<double> rho_h_table_;
     std::vector<double> t_h_table_;
-    
+
     int n_temp_pts_;
     double d_temp_;
     double t_0_;
@@ -92,7 +92,7 @@ private:
     double h_liquid_;
     double h_vapor_;
     double h_fg_;
-    
+
     // Thermophysical property data
     static constexpr int NPTS = 32;
     static constexpr std::array<double, NPTS> viscosity_table_ = {
@@ -101,7 +101,7 @@ private:
         0.78152e-4, 0.77281e-4, 0.76423e-4, 0.75577e-4, 0.74741e-4, 0.73913e-4, 0.73094e-4, 0.72280e-4,
         0.71471e-4, 0.70665e-4, 0.69861e-4, 0.69056e-4, 0.68250e-4, 0.67440e-4, 0.66624e-4, 0.65810e-4
     };
-    
+
     static constexpr std::array<double, NPTS> surface_tension_table_ = {
         0.20404e-1, 0.19529e-1, 0.18693e-1, 0.17891e-1, 0.17122e-1, 0.16382e-1, 0.15670e-1, 0.14984e-1,
         0.14322e-1, 0.13682e-1, 0.13064e-1, 0.12467e-1, 0.11888e-1, 0.11328e-1, 0.10785e-1, 0.10258e-1,
@@ -112,7 +112,7 @@ private:
     // Helper functions
     double interpolateTable(const std::vector<double>& table, double index, int n_pts) const;
     void buildSteamTables();
-    
+
     // Newton-Raphson solver for property inversions
     double solveForTemperature(double target_pressure, double initial_guess) const;
     double solveForDensity(double temperature, double pressure, int phase_flag) const;

@@ -17,12 +17,12 @@ target_include_directories(ants_subchannel PUBLIC
 
 target_compile_features(ants_subchannel PUBLIC cxx_std_17)
 
-# ANTS 3x3 Verification Executable  
+# ANTS 3x3 Verification Executable
 add_executable(ants_3x3_verification
     tests/verification_3x3.cpp
 )
 
-target_link_libraries(ants_3x3_verification 
+target_link_libraries(ants_3x3_verification
     ants_subchannel
 )
 

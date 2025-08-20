@@ -63,7 +63,7 @@ The solver will print detailed solution information and conclude with:
 FINAL RESULTS (as requested):
 ============================================================
 Total/average bundle pressure drop [Pa]: [value]
-Exit void fraction (bundle-average) [-]: [value]  
+Exit void fraction (bundle-average) [-]: [value]
 Exit temperature [°C]: [value]
 Exit temperature [K]: [value]
 ============================================================
@@ -97,7 +97,7 @@ The verification case uses the following parameters:
 ### Core Classes
 
 1. **Constants.hpp**: Physical constants and conversion factors
-2. **Properties.hpp/.cpp**: Water/steam properties and drift-flux correlations  
+2. **Properties.hpp/.cpp**: Water/steam properties and drift-flux correlations
 3. **SubchannelData.hpp/.cpp**: Data structures for subchannel variables
 4. **ThermalHydraulics.hpp/.cpp**: Main T/H solver with physics models
 5. **Solver.hpp/.cpp**: Main solver interface and coordination
@@ -106,7 +106,7 @@ The verification case uses the following parameters:
 
 - **Modular design**: Clear separation of interfaces (hpp) and implementations (cpp)
 - **SI units internally**: Converts for human-readable prints as required
-- **Error handling**: Throws `std::runtime_error` with clear messages  
+- **Error handling**: Throws `std::runtime_error` with clear messages
 - **Minimal dependencies**: Uses only standard C++ library
 - **One class per file**: Following the original Fortran module structure
 
@@ -119,7 +119,7 @@ The included verification case represents a 3x3 pin arrangement with pin-centere
 ### Expected Behavior
 
 - Pressure drop dominated by two-phase friction and form losses
-- Void fraction development along heated length  
+- Void fraction development along heated length
 - Temperature rise consistent with energy balance
 - Convergent solution under mesh refinement
 
@@ -128,7 +128,7 @@ The included verification case represents a 3x3 pin arrangement with pin-centere
 ### Current Implementation
 
 - Single representative subchannel (3x3 topology not fully implemented)
-- Simplified property correlations (full IAPWS would be preferred)  
+- Simplified property correlations (full IAPWS would be preferred)
 - No actual crossflow momentum solver (placeholder implementation)
 
 ### Future Enhancements
@@ -144,7 +144,7 @@ The included verification case represents a 3x3 pin arrangement with pin-centere
 This C++ implementation was converted from the following Fortran modules in apex/src:
 
 - `th_mod.f90` → `ThermalHydraulics.hpp/.cpp`
-- `props_modb.f90` → `Properties.hpp/.cpp` 
+- `props_modb.f90` → `Properties.hpp/.cpp`
 - `util_mod.f90` → Integrated into `Properties.cpp`
 - `flux_modb.f90` (subchannel portions) → `SubchannelData.hpp/.cpp`
 - `solver_mod.f90` (subchannel portions) → `Solver.hpp/.cpp`

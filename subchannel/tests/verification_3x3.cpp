@@ -6,17 +6,17 @@ using namespace ants::subchannel;
 
 /**
  * @brief 3x3 pin-centered subchannel verification case
- * 
- * This test case represents a 3x3 pin arrangement with pin-centered 
+ *
+ * This test case represents a 3x3 pin arrangement with pin-centered
  * subchannel analysis. Each pin is centered in its own subchannel,
  * connected by gap surfaces that allow crossflow between adjacent
  * subchannels.
- * 
+ *
  * Layout (subchannel numbering):
  * [0] [1] [2]
- * [3] [4] [5]  
+ * [3] [4] [5]
  * [6] [7] [8]
- * 
+ *
  * Surfaces connect adjacent subchannels:
  * - Horizontal surfaces: 0-1, 1-2, 3-4, 4-5, 6-7, 7-8
  * - Vertical surfaces: 0-3, 1-4, 2-5, 3-6, 4-7, 5-8
@@ -33,7 +33,7 @@ int main() {
         // Problem setup - 3x3 pin arrangement
         int n_subchannels = 9;    // 9 pin-centered subchannels
         int n_surfaces = 12;      // 12 connecting surfaces (6 horizontal + 6 vertical)
-        int n_axial_nodes = 20;   // 20 axial nodes for good resolution
+        int n_axial_nodes = 25;   // 25 axial nodes to match verification case
 
         // Initialize solver
         solver.initialize(n_subchannels, n_surfaces, n_axial_nodes);
@@ -45,7 +45,7 @@ int main() {
         double wetted_perimeter_m = 0.01486;     // Same as heated for single-phase approximation
         double height_m = 3.81;                  // 381.0 cm -> m
         double gap_width_m = 0.0039;            // 0.39 cm -> m
-        double linear_heat_rate_W_m = 29100.0;  // 29.1 kW/m -> W/m per pin
+        double linear_heat_rate_W_m = 29100.0;  // 29.1 kW/m per pin - VERIFICATION PARAMETER
 
         // Set global geometry (height, gap width)
         solver.setGeometry(flow_area_m2, heated_perimeter_m, hydraulic_diameter_m, height_m, gap_width_m);
@@ -53,15 +53,14 @@ int main() {
         // Set individual subchannel geometry (all identical for this case)
         double total_flow_rate = 2.25;  // kg/s total
         double flow_per_channel = total_flow_rate / 9.0;  // kg/s per subchannel
-        
+
         for (int i = 0; i < n_subchannels; ++i) {
             solver.setSubchannelGeometry(i, flow_area_m2, heated_perimeter_m, wetted_perimeter_m, flow_per_channel);
-            solver.setSubchannelHeatRate(i, linear_heat_rate_W_m);
         }
 
         // Set up surface connections for 3x3 layout
         int surface_id = 0;
-        
+
         // Horizontal surfaces (left-right connections)
         // Row 1: 0-1, 1-2
         solver.setSurfaceConnection(surface_id++, 0, 1, gap_width_m);
@@ -72,7 +71,7 @@ int main() {
         // Row 3: 6-7, 7-8
         solver.setSurfaceConnection(surface_id++, 6, 7, gap_width_m);
         solver.setSurfaceConnection(surface_id++, 7, 8, gap_width_m);
-        
+
         // Vertical surfaces (top-bottom connections)
         // Col 1: 0-3, 3-6
         solver.setSurfaceConnection(surface_id++, 0, 3, gap_width_m);
@@ -85,12 +84,24 @@ int main() {
         solver.setSurfaceConnection(surface_id++, 5, 8, gap_width_m);
 
         // Set operating conditions (converted from specification)
-        double inlet_temperature_K = 278.0;     // 278.0 K (specified)
-        double inlet_pressure_Pa = 7.255e6;     // 7.255 MPa -> Pa
-        double mass_flow_rate_kg_s = 2.25;      // 2.25 kg/s total
+        double inlet_temperature_K = 278.0 + 273.15;   // 278.0°C -> K
+        double inlet_pressure_Pa = 7.255e6;             // 7.255 MPa -> Pa
+        double mass_flow_rate_kg_s = total_flow_rate / 9.0; // 0.25 kg/s per channel (total/9 channels)
 
-        solver.setOperatingConditions(inlet_temperature_K, inlet_pressure_Pa, 
+        solver.setOperatingConditions(inlet_temperature_K, inlet_pressure_Pa,
                                     mass_flow_rate_kg_s, linear_heat_rate_W_m);
+
+        // NOW set individual heat rates AFTER setOperatingConditions (which overwrites heat_flux with uniform values)
+        for (int i = 0; i < n_subchannels; ++i) {
+            // Turn off heat to center channel (channel 4)
+            if (i == 4) {
+                solver.setSubchannelHeatRate(i, 0.0);  // No heat in center channel
+                std::cout << "  Channel " << i << " heat rate: 0.0 kW/m (CENTER - NO HEATING)" << std::endl;
+            } else {
+                solver.setSubchannelHeatRate(i, linear_heat_rate_W_m);
+                std::cout << "  Channel " << i << " heat rate: " << linear_heat_rate_W_m / 1000.0 << " kW/m" << std::endl;
+            }
+        }
 
         // Set numerical parameters for convergence
         int max_outer_iter = 50;
@@ -126,9 +137,9 @@ int main() {
 
         // Print final summary in CSV format as requested
         std::cout << "\n" << std::string(60, '=') << std::endl;
-        std::cout << "FINAL RESULTS (as requested):" << std::endl;
+        std::cout << "FINAL RESULTS:" << std::endl;
         std::cout << std::string(60, '=') << std::endl;
-        
+
         std::cout << std::fixed << std::setprecision(6);
         std::cout << "Total/average bundle pressure drop [Pa]: " << solver.getBundleAveragePressureDrop() << std::endl;
         std::cout << "Exit void fraction (bundle-average) [-]: " << solver.getBundleAverageExitVoid() << std::endl;

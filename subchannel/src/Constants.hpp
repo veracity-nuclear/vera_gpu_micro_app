@@ -12,6 +12,15 @@ constexpr double GRAVITY_ACCEL = 9.80665;           // gravity acceleration [m/s
 constexpr double CRITICAL_PRESSURE = 22.09e6;       // critical pressure [Pa]
 constexpr double CONDENSATION_COEFF = 0.075;        // condensation coefficient [(1/degK)*(1/s)]
 
+// ANTS Theory constants (from mechanistic models)
+constexpr double ANTS_B1 = 1.5;                     // Chexal-Lellouche drift-flux constant
+constexpr double ANTS_B2 = 1.41;                    // Chexal-Lellouche drift-flux constant
+constexpr double ANTS_H0 = 0.075;                   // Condensation parameter [s^-1 K^-1]
+constexpr double ANTS_THETA_M = 5.0;                // Two-phase eddy multiplier
+constexpr double ANTS_K_M = 1.4;                    // Void drift scaling parameter
+constexpr double ANTS_FRICTION_A1 = 0.1892;         // Blasius friction factor coefficient
+constexpr double ANTS_FRICTION_N = 0.2;             // Blasius friction factor exponent
+
 // Conversion factors
 constexpr double PBR2SI = 6894.76;                  // [lbf/in^2] -> [Pa]
 constexpr double VBR2SI = 0.062429767;              // [ft^3/lbm] -> [m^3/kg]
