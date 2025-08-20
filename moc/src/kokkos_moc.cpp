@@ -363,7 +363,11 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
     }
 
     // Print a message with the number of rays and filename
-    std::cout << "Successfully set up " << _n_rays << " rays from file: " << _filename << std::endl;
+    std::cout << "Successfully set up " << _n_rays << " rays from file: " << _filename;
+    if (_ray_sort != "none") {
+        std::cout << " (sorted by " << _ray_sort << " segments)";
+    }
+    std::cout << std::endl;
     Kokkos::Profiling::popRegion();
 }
 

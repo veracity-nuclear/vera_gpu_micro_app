@@ -221,7 +221,11 @@ void SerialMOC<RealType>::_read_rays() {
     // If _ray_sort == "none", do nothing (default behavior)
     
     // Print a message with the number of rays and filename
-    std::cout << "Successfully set up " << nrays << " rays from file: " << _filename << std::endl;
+    std::cout << "Successfully set up " << nrays << " rays from file: " << _filename;
+    if (_ray_sort != "none") {
+        std::cout << " (sorted by " << _ray_sort << " segments)";
+    }
+    std::cout << std::endl;
 }
 
 // Get the total cross sections for each FSR from the library
