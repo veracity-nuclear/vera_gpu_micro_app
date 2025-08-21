@@ -1,49 +1,44 @@
-# ANTS Subchannel Solver Library
-add_library(ants_subchannel STATIC
-    src/Constants.hpp
-    src/Properties.hpp
-    src/Properties.cpp
-    src/SubchannelData.hpp
-    src/SubchannelData.cpp
-    src/ThermalHydraulics.hpp
-    src/ThermalHydraulics.cpp
-    src/Solver.hpp
-    src/Solver.cpp
+add_library(subchannel_lib
+    src/main.cpp
+    src/materials.cpp
 )
 
-target_include_directories(ants_subchannel PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
+target_link_libraries(subchannel_lib
+    HighFive::HighFive
+    Kokkos::kokkos
+    PETSc::PETSc
+    utils
 )
 
-target_compile_features(ants_subchannel PUBLIC cxx_std_17)
-
-# ANTS 3x3 Verification Executable
-add_executable(ants_3x3_verification
-    tests/verification_3x3.cpp
+add_executable(subchannel_exec
+    src/geometry.cpp
+    src/main.cpp
+    src/solver.cpp
+    src/th.cpp
 )
-
-target_link_libraries(ants_3x3_verification
-    ants_subchannel
-)
-
-target_compile_features(ants_3x3_verification PUBLIC cxx_std_17)
+target_link_libraries(subchannel_exec subchannel_lib)
 
 # --- Tests ---
 enable_testing()
-
-# Keep original test executable
-add_executable(subchannel_tests
-    tests/test_main.cpp
+set(TEST_EXECUTABLES
+    test_main
 )
-
-target_link_libraries(subchannel_tests
-    ants_subchannel
-    GTest::gtest
+set(TEST_LABELS
+    "BASIC\;CONTINUOUS\;HEAVY"
 )
-
-add_test(NAME subchannel_tests COMMAND subchannel_tests)
-set_tests_properties(subchannel_tests PROPERTIES LABELS "Subchannel;BASIC;CONTINUOUS;HEAVY")
-
-# Add ANTS verification test
-add_test(NAME ants_3x3_verification COMMAND ants_3x3_verification)
-set_tests_properties(ants_3x3_verification PROPERTIES LABELS "Subchannel;VERIFICATION;CONTINUOUS")
+list(LENGTH TEST_EXECUTABLES list_length)
+math(EXPR last_index "${list_length} - 1")
+foreach(i RANGE 0 ${last_index})
+    list(GET TEST_EXECUTABLES ${i} test)
+    list(GET TEST_LABELS ${i} labels)
+    add_executable(${test} ${CMAKE_CURRENT_SOURCE_DIR}/tests/${test}.cpp)
+    target_link_libraries(${test}
+        conduction_lib
+        GTest::gtest
+    )
+    target_include_directories(${test} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(${test} PRIVATE TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+    add_test(NAME ${test} COMMAND ${test})
+    set_tests_properties(${test} PROPERTIES LABELS "Subchannel;${labels}")
+    message(STATUS "Added subchannel micro-app test: ${test}")
+endforeach()
