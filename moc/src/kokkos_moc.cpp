@@ -297,24 +297,24 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
         int angle_index;
         int nsegs;
         HighFive::Group ray_group;
-        
+
         RayInfo(const std::string& ang_name, const std::string& r_name, int ang_idx, int nseg, HighFive::Group group)
             : angle_name(ang_name), ray_name(r_name), angle_index(ang_idx), nsegs(nseg), ray_group(group) {}
     };
-    
+
     std::vector<RayInfo> ray_infos;
     _n_rays = 0;
-    
+
     // Collect all ray information
     for (const auto& objName : domain.listObjectNames()) {
         if (objName.substr(0, 6) == "Angle_") {
             HighFive::Group angleGroup = domain.getGroup(objName);
             auto angleIndex = std::stoi(objName.substr(8)) - 1;
-            
+
             for (const auto& rayName : angleGroup.listObjectNames()) {
                 if (rayName.substr(0, 8) == "LongRay_") {
                     auto rayGroup = angleGroup.getGroup(rayName);
-                    int ray_nsegs = rayGroup.getDataSet("FSRs").read<std::vector<int>>().size();
+                    int ray_nsegs = rayGroup.getDataSet("FSRs").template read<std::vector<int>>().size();
                     ray_infos.emplace_back(objName, rayName, angleIndex, ray_nsegs, rayGroup);
                     _n_rays++;
                 }
@@ -325,12 +325,12 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
     // Apply ray sorting if requested
     if (_ray_sort == "long") {
         // Sort rays by number of segments (most segments first)
-        std::sort(ray_infos.begin(), ray_infos.end(), 
+        std::sort(ray_infos.begin(), ray_infos.end(),
                   [](const RayInfo& a, const RayInfo& b) {
                       return a.nsegs > b.nsegs;
                   });
     } else if (_ray_sort == "short") {
-        // Sort rays by number of segments (fewest segments first)  
+        // Sort rays by number of segments (fewest segments first)
         std::sort(ray_infos.begin(), ray_infos.end(),
                   [](const RayInfo& a, const RayInfo& b) {
                       return a.nsegs < b.nsegs;
@@ -355,8 +355,8 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
     // Set up segments using the sorted order
     for (int iray = 0; iray < _n_rays; iray++) {
         const auto& ray_info = ray_infos[iray];
-        auto fsrs = ray_info.ray_group.getDataSet("FSRs").read<std::vector<int>>();
-        auto segs = ray_info.ray_group.getDataSet("Segments").read<std::vector<double>>();
+        auto fsrs = ray_info.ray_group.getDataSet("FSRs").template read<std::vector<int>>();
+        auto segs = ray_info.ray_group.getDataSet("Segments").template read<std::vector<double>>();
         for (size_t iseg = 0; iseg < fsrs.size(); iseg++) {
             _h_segments(_h_rays(iray).first_seg() + iseg) = KokkosRaySegment<RealType>(fsrs[iseg] - 1, static_cast<RealType>(segs[iseg]));
         }
