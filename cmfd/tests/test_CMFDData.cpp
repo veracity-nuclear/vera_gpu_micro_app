@@ -26,7 +26,7 @@ TEST(readData, testHDF5ToKokkosView)
     }
 }
 
-TEST(readData, initialize)
+TEST(readData, initializeCoarseData)
 {
     std::string filename = "data/pin_7g_16a_3p_serial.h5";
     HighFive::File file(filename, HighFive::File::ReadOnly);
@@ -343,4 +343,161 @@ TEST(assignCellSurface, basicLogic)
         auto surfToOther = makeView({ {0,-1},{1,-1},{2,-1} });
         EXPECT_THROW(assignCellSurface(cellToSurf, surfToOther, 0, 99), std::runtime_error);
     }
+}
+
+TEST(readData, initializeFineData)
+{
+    std::string filename = "data/pin_7g_16a_3p_serial.h5";
+    HighFive::File file(filename, HighFive::File::ReadOnly);
+    HighFive::Group fineGroup = file.getGroup("CMFD_FineMesh");
+
+    // Read (reference) data directly via HighFive
+    std::vector<PetscInt> coarseToXSCells_vec, xsToFineCells_vec;
+    std::vector<PetscScalar> volumePerXSR_vec;
+    std::vector<std::vector<PetscScalar>> fineFlux_vec, transportXS_vec, totalXS_vec, nuFissionXS_vec, chi_vec;
+    std::vector<std::vector<std::vector<PetscScalar>>> scatteringXS_vec;
+
+    // isFissionable may be stored as int/bool; read as int for robustness
+    std::vector<bool> isFissionable_raw;
+    {
+        auto ds = fineGroup.getDataSet("isFissionable");
+        std::vector<std::string> tmp;
+        ds.read(tmp);
+        isFissionable_raw.resize(tmp.size());
+        for (size_t i = 0; i < tmp.size(); ++i)
+            isFissionable_raw[i] = (!tmp[i].empty() && tmp[i][0] == 'T');
+    }
+
+    fineGroup.getDataSet("nxscells").read(coarseToXSCells_vec);
+    fineGroup.getDataSet("nfinecells").read(xsToFineCells_vec);
+    fineGroup.getDataSet("volume").read(volumePerXSR_vec);
+    fineGroup.getDataSet("flux").read(fineFlux_vec);
+    fineGroup.getDataSet("transport XS").read(transportXS_vec);
+    fineGroup.getDataSet("total XS").read(totalXS_vec);
+    fineGroup.getDataSet("nu-fission XS").read(nuFissionXS_vec);
+    fineGroup.getDataSet("chi").read(chi_vec);
+    fineGroup.getDataSet("scattering XS").read(scatteringXS_vec);
+
+    // Construct FineMeshData (host + device)
+    FineMeshData<Kokkos::HostSpace> h_fine(fineGroup);
+    FineMeshData<> d_fine(fineGroup);
+
+    // Helper lambdas
+    auto compare1DScalar = [](auto view, const std::vector<PetscScalar> &ref, const char *msg) {
+        ASSERT_EQ(view.extent(0), ref.size()) << msg << " extent mismatch";
+        for (size_t i = 0; i < ref.size(); ++i)
+            ASSERT_DOUBLE_EQ(view(i), ref[i]) << msg << " mismatch at " << i;
+    };
+    auto compare1DInt = [](auto view, const std::vector<PetscInt> &ref, const char *msg) {
+        ASSERT_EQ(view.extent(0), ref.size()) << msg << " extent mismatch";
+        for (size_t i = 0; i < ref.size(); ++i)
+            ASSERT_EQ(view(i), ref[i]) << msg << " mismatch at " << i;
+    };
+    auto compare1DBool = [](auto view, const std::vector<bool> &ref, const char *msg) {
+        ASSERT_EQ(view.extent(0), ref.size()) << msg << " extent mismatch";
+        for (size_t i = 0; i < ref.size(); ++i)
+            ASSERT_EQ(view(i), ref[i]) << msg << " mismatch at " << i;
+    };
+    auto compare2D = [](auto view, const std::vector<std::vector<PetscScalar>> &ref, const char *msg) {
+        ASSERT_EQ(view.extent(0), ref.size()) << msg << " outer extent mismatch";
+        if (!ref.empty())
+            ASSERT_EQ(view.extent(1), ref[0].size()) << msg << " inner extent mismatch";
+        for (size_t i = 0; i < ref.size(); ++i)
+            for (size_t j = 0; j < ref[i].size(); ++j)
+                ASSERT_DOUBLE_EQ(view(i, j), ref[i][j]) << msg << " mismatch at (" << i << "," << j << ")";
+    };
+    auto compare3D = [](auto view, const std::vector<std::vector<std::vector<PetscScalar>>> &ref, const char *msg) {
+        ASSERT_EQ(view.extent(0), ref.size()) << msg << " dim0 mismatch";
+        if (!ref.empty()) ASSERT_EQ(view.extent(1), ref[0].size()) << msg << " dim1 mismatch";
+        if (!ref.empty() && !ref[0].empty()) ASSERT_EQ(view.extent(2), ref[0][0].size()) << msg << " dim2 mismatch";
+        for (size_t g1 = 0; g1 < ref.size(); ++g1)
+            for (size_t g2 = 0; g2 < ref[g1].size(); ++g2)
+                for (size_t k = 0; k < ref[g1][g2].size(); ++k)
+                    ASSERT_DOUBLE_EQ(view(g1, g2, k), ref[g1][g2][k])
+                        << msg << " mismatch at (" << g1 << "," << g2 << "," << k << ")";
+    };
+
+    // Host mirrors
+    auto h_coarseToXSCells = h_fine.coarseToXSCells;
+    auto h_xsToFineCells = h_fine.xsToFineCells;
+    auto h_isFissionable = h_fine.isFissionable;
+    auto h_volumePerXSR = h_fine.volumePerXSR;
+    auto h_fineFlux = h_fine.fineFlux;
+    auto h_transportXS = h_fine.transportXS;
+    auto h_totalXS = h_fine.totalXS;
+    auto h_nuFissionXS = h_fine.nuFissionXS;
+    auto h_chi = h_fine.chi;
+    auto h_scatteringXS = h_fine.scatteringXS;
+
+    // Compare host data
+    compare1DInt(h_coarseToXSCells, coarseToXSCells_vec, "coarseToXSCells");
+    compare1DInt(h_xsToFineCells, xsToFineCells_vec, "xsToFineCells");
+    compare1DBool(h_isFissionable, isFissionable_raw, "isFissionable");
+    compare1DScalar(h_volumePerXSR, volumePerXSR_vec, "volumePerXSR");
+    compare2D(h_fineFlux, fineFlux_vec, "fineFlux");
+    compare2D(h_transportXS, transportXS_vec, "transportXS");
+    compare2D(h_totalXS, totalXS_vec, "totalXS");
+    compare2D(h_nuFissionXS, nuFissionXS_vec, "nuFissionXS");
+    compare2D(h_chi, chi_vec, "chi");
+    compare3D(h_scatteringXS, scatteringXS_vec, "scatteringXS");
+
+    // Device mirrors -> host copies
+    auto d_coarseToXSCells_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.coarseToXSCells);
+    auto d_xsToFineCells_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.xsToFineCells);
+    auto d_isFissionable_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.isFissionable);
+    auto d_volumePerXSR_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.volumePerXSR);
+    auto d_fineFlux_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.fineFlux);
+    auto d_transportXS_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.transportXS);
+    auto d_totalXS_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.totalXS);
+    auto d_nuFissionXS_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.nuFissionXS);
+    auto d_chi_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.chi);
+    auto d_scatteringXS_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.scatteringXS);
+
+    // Compare device-loaded data
+    compare1DInt(d_coarseToXSCells_h, coarseToXSCells_vec, "device coarseToXSCells");
+    compare1DInt(d_xsToFineCells_h, xsToFineCells_vec, "device xsToFineCells");
+    compare1DBool(d_isFissionable_h, isFissionable_raw, "device isFissionable");
+    compare1DScalar(d_volumePerXSR_h, volumePerXSR_vec, "device volumePerXSR");
+    compare2D(d_fineFlux_h, fineFlux_vec, "device fineFlux");
+    compare2D(d_transportXS_h, transportXS_vec, "device transportXS");
+    compare2D(d_totalXS_h, totalXS_vec, "device totalXS");
+    compare2D(d_nuFissionXS_h, nuFissionXS_vec, "device nuFissionXS");
+    compare2D(d_chi_h, chi_vec, "device chi");
+    compare3D(d_scatteringXS_h, scatteringXS_vec, "device scatteringXS");
+
+    // Check scalar values
+    HighFive::Group coarseMesh = file.getGroup("CMFD_CoarseMesh");
+    PetscInt energyGroups, firstCell, lastCell;
+    coarseMesh.getDataSet("energy groups").read(energyGroups);
+    ASSERT_EQ(d_fine.nEnergyGroups, energyGroups) << "Energy groups mismatch";
+
+    coarseMesh.getDataSet("first cell").read(firstCell);
+    coarseMesh.getDataSet("last cell").read(lastCell);
+    PetscInt nCoarseCells = lastCell - firstCell + 1;
+    ASSERT_EQ(d_fine.nCoarseCells, nCoarseCells) << "Coarse cells mismatch";
+
+    PetscInt nXSCells = coarseToXSCells_vec.back();
+    ASSERT_EQ(d_fine.nXSCells, nXSCells) << "XS cells mismatch";
+
+    PetscInt nFineCells = xsToFineCells_vec.back();
+    ASSERT_EQ(d_fine.nFineCells, nFineCells) << "Fine cells mismatch";
+
+}
+
+// TODO: Use unique pointers on the CMFDData and FineMeshData so that we can test different assembly spaces
+// TODO: Put into a test fixture so we can test different files
+// For both of the above, see either test_PetscEigenSolver or test_PetscMatrixAssembler
+TEST(homogenization, fineFlux)
+{
+    using AssemblySpace = Kokkos::DefaultExecutionSpace;
+
+    std::string filename = "data/pin_7g_16a_3p_serial.h5";
+    HighFive::File file(filename, HighFive::File::ReadOnly);
+    HighFive::Group coarseGroup = file.getGroup("CMFD_CoarseMesh");
+    HighFive::Group fineGroup = file.getGroup("CMFD_FineMesh");
+
+    CMFDData<AssemblySpace> coarseData(coarseGroup);
+    FineMeshData<AssemblySpace> fineData(fineGroup);
+
+    FineMeshData<AssemblySpace>::View2D calculateCoarseFlux = fineData.homogenizeFineFlux();
 }

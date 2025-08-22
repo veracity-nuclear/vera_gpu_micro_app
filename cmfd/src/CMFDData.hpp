@@ -283,3 +283,128 @@ struct CMFDData
         Kokkos::deep_copy(posLeakageSurfs, h_posLeakageSurfs);
     }
 };
+
+template <typename AssemblySpace = Kokkos::DefaultExecutionSpace>
+struct FineMeshData
+{
+    using MemorySpace = typename AssemblySpace::memory_space;
+    static_assert(Kokkos::is_memory_space<MemorySpace>::value,
+                    "MemorySpace must be a Kokkos memory space");
+
+    using ViewIndexList = Kokkos::View<PetscInt *, MemorySpace>;
+    using ViewBoolList = Kokkos::View<bool *, MemorySpace>;
+    using View1D = Kokkos::View<PetscScalar *, MemorySpace>;
+    using View2D = Kokkos::View<PetscScalar **, MemorySpace>;
+    using View3D = Kokkos::View<PetscScalar ***, MemorySpace>;
+
+    size_t nEnergyGroups{}, nFineCells{}, nXSCells{}, nCoarseCells{};
+
+    ViewIndexList coarseToXSCells, xsToFineCells;
+    ViewBoolList isFissionable;
+    View1D volumePerXSR;
+    View2D fineFlux, transportXS, totalXS, nuFissionXS, chi;
+    View3D scatteringXS;
+
+    FineMeshData() = default;
+
+    // Constructor that reads the data from the HDF5 file.
+    FineMeshData(const HighFive::Group &fineMesh)
+    {
+        coarseToXSCells = HDF5ToKokkosView<ViewIndexList>(fineMesh.getDataSet("nxscells"), "coarseToXSCells");
+        xsToFineCells = HDF5ToKokkosView<ViewIndexList>(fineMesh.getDataSet("nfinecells"), "xsToFineCells");
+        volumePerXSR = HDF5ToKokkosView<View1D>(fineMesh.getDataSet("volume"), "volumePerXSR");
+        fineFlux = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("flux"), "fineFlux");
+        transportXS = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("transport XS"), "transportXS");
+        totalXS = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("total XS"), "totalXS");
+        nuFissionXS = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("nu-fission XS"), "nuFissionXS");
+        chi = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("chi"), "chi");
+        scatteringXS = HDF5ToKokkosView<View3D>(fineMesh.getDataSet("scattering XS"), "scatteringXS");
+
+        // isFissionable stored as 1-char strings "T"/"F"
+        {
+            auto ds = fineMesh.getDataSet("isFissionable");
+            std::vector<std::string> tmp;
+            ds.read(tmp);
+            isFissionable = ViewBoolList("isFissionable", tmp.size());
+            auto h = Kokkos::create_mirror_view(isFissionable);
+            for (size_t i = 0; i < tmp.size(); ++i)
+                h(i) = (!tmp[i].empty() && tmp[i][0] == 'T');
+            Kokkos::deep_copy(isFissionable, h);
+        }
+
+        nEnergyGroups = fineFlux.extent(0);
+        nFineCells = fineFlux.extent(1);
+        nXSCells = xsToFineCells.extent(0) - 1;
+        nCoarseCells = coarseToXSCells.extent(0) - 1;
+    }
+
+    // TODO: This will likely take in fineFlux as an input.
+    View2D homogenizeFineFlux() const
+    {
+        View2D coarseFluxes("coarseFlux", nEnergyGroups, nCoarseCells);
+
+        auto _coarseToXSCells = coarseToXSCells;
+        auto _xsToFineCells = xsToFineCells;
+        auto _fineFlux = fineFlux;
+        auto _volume = volumePerXSR;
+
+        auto _nCoarseCells = nCoarseCells;
+
+        struct FluxAndVolume
+        {
+            PetscScalar coarseFlux;
+            PetscScalar coarseVolume;
+
+            KOKKOS_INLINE_FUNCTION
+            FluxAndVolume() : coarseFlux(0.0), coarseVolume(0.0) {}
+        };
+
+        KOKKOS_INLINE_FUNCTION
+        friend void operator+=(FluxAndVolume &lhs, const FluxAndVolume &rhs)
+        {
+            lhs.coarseFlux += rhs.coarseFlux;
+            lhs.coarseVolume += rhs.coarseVolume;
+        }
+
+        // MAJOR TODO: flatten OR move fine iteration to normal loop OR outer use MDRangePolicy
+        // TODO: Is it worth it to take out volume?
+        // Is there a way to do this with shared memory that avoids recalculating volumes every energy group?
+        const Kokkos::TeamPolicy<> teamPolicyFlatEnergyAndCoarseCells(nEnergyGroups * nCoarseCells, Kokkos::AUTO);
+        auto functorHomogenizeFineFlux = KOKKOS_LAMBDA(const typename Kokkos::TeamPolicy<>::member_type &teamMember)
+        {
+            const PetscInt flatIndex = teamMember.league_rank();
+            const PetscInt energyGroup = flatIndex / _nCoarseCells;
+            const PetscInt coarseCellIdx = Kokkos::fmod(flatIndex, _nCoarseCells);
+
+            const PetscInt firstXSCell = _coarseToXSCells(coarseCellIdx);
+            const PetscInt lastXSCell = _coarseToXSCells(coarseCellIdx + 1);
+
+            FluxAndVolume coarseFluxAndCoarseVolume;
+
+            Kokkos::parallel_reduce(Kokkos::TeamThreadRange(teamMember, firstXSCell, lastXSCell), [=](const PetscInt xsCellIdx, FluxAndVolume &localCoarseFluxVolume)
+            {
+                const PetscInt firstFineCell = _xsToFineCells(xsCellIdx);
+                const PetscInt lastFineCell = _xsToFineCells(xsCellIdx + 1);
+                const PetscInt nFineCells = lastFineCell - firstFineCell;
+                const PetscFloat xsrVolume = _volume(xsCellIdx);
+                const PetscFloat fineVolume = xsrVolume / nFineCells;
+
+                PetscScalar xsrFlux = 0;
+                Kokkos::parallel_reduce(Kokkos::ThreadVectorRange(teamMember, nFineCells), [=](const PetscInt localFineCellIdx, PetscScalar &localXSRFlux)
+                {
+                    localXSRFlux += _fineFlux(energyGroup, firstFineCell + localFineCellIdx);
+                }, xsrFlux);
+
+                localCoarseFluxVolume.first += xsrFlux * fineVolume;
+                localCoarseFluxVolume.second += xsrVolume;
+
+            }, coarseFluxAndCoarseVolume);
+
+            coarseFluxes(energyGroup, coarseCellIdx) = coarseFluxAndCoarseVolume.first / coarseFluxAndCoarseVolume.second;
+        };
+
+        Kokkos::parallel_for(teamPolicyFlatEnergyAndCoarseCells, functorHomogenizeFineFlux);
+        Kokkos::fence();
+        return coarseFluxes;
+    }
+};
