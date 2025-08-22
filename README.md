@@ -284,10 +284,10 @@ See "Scattering Matrix Storage" below for details on the `scattering XS` group.
 
 #### Scattering Matrix Storage
 
-The `scattering XS` group contains datasets for each XS region, simply named with the region index formatted to 9 digits (e.g., `000000001`, `000000002`, etc.).
+The `scattering XS` group contains datasets for each coarse, simply named with the region index formatted to 9 digits (e.g., `000000001`, `000000002`, etc.).
 Inside each cell's group, there is `gMin`, `gMax`, and `xssc` datasets.
 `gMin` and `gMax` are the length of the number of groups.
-The `g`-th index of `gMin` gives the first group `g'` from which scattering occurs into `g`; similarly, the `g'-th index of `gMax` gives the last group `g''` from which scattering occurs into `g`.
+The `g`-th index of `gMin` gives the first group `g'` from which scattering occurs into `g`; similarly, the `g`-th index of `gMax` gives the last group `g''` from which scattering occurs into `g`.
 The `xssc` dataset is the 1D array of non-zero values; its length is equal to the sum of the differences between `gMax` and `gMin` for each group.
 
 ### Conduction
