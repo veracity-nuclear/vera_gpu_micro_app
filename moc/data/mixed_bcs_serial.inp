@@ -1,0 +1,42 @@
+CASEID mixed_bcs_serial
+
+MATERIAL
+  mat  1 2 :: UO2-3.3
+  mat  6 0 :: GuideTube
+  mat  7 0 :: Moderator
+
+GEOM
+ mod_dim 1.26 1.26 1.0
+! pinMesh 1 cyl 0.540 0.62 / 1.26 / 1.0 / 5 2 / 1 4*8 2*8 12 / 5 !Pin mesh
+  pinMesh 2 rec 1.26 / 1.26 / 1.0 / 2 / 2 / 1                   !Reflector mesh
+
+ pin 2 2 / 1 !UO2-3.3 Pin
+
+!Pin modular ray tracing
+ module 2 3*1
+  2
+
+ !Define lattices, assemblies and core
+ lattice 2 2*1
+  2
+
+ assembly 2
+  2
+
+ core 360
+   2
+
+XSEC
+  xslib USER c5g7.xsl
+
+OPTION
+  bound_cond 1 1 0 0 1 1
+  solver 1 2
+  cmfd F mgnode F 0.0 1.0 150 F
+  ray 0.03 CHEBYSHEV-YAMAMOTO 1 1
+  !parallel 1 1 1 16
+  conv_crit 2*1.e-8
+  iter_lim 10000 1 1
+  vis_edits F
+  param RAY->edit_ray_trace SBK T
+.

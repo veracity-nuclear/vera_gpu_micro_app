@@ -1,0 +1,8 @@
+function (create_labeled_test name path libs includes labels)
+    add_executable(${name} ${path}/${name}.cpp)
+    target_link_libraries(${name} ${libs})
+    target_include_directories(${name} PRIVATE ${includes})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "${labels}")
+    message(STATUS "Added test: ${name} with labels: ${labels}")
+endfunction()

@@ -1,0 +1,35 @@
+name: Testing VERA GPU Micro-Apps
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: bradenpecora/vera-gpu:0.0.1no-cuda
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Configure project
+        shell: bash
+        run: |
+          source /opt/spack-environment/activate.sh
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=mpicxx
+
+      - name: Build project
+        shell: bash
+        run: |
+          source /opt/spack-environment/activate.sh
+          cmake --build build --parallel 4
+
+      - name: Run tests
+        shell: bash
+        run: |
+          cd build
+          ctest -j4 --output-on-failure -L CONTINUOUS

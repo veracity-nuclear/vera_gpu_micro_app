@@ -1,0 +1,183 @@
+#include "materials.hpp"
+
+/*
+Correlations for temperature-dependent properties are taken from the CTF v4.4 Manual
+https://info.ornl.gov/sites/publications/Files/Pub203334.pdf
+
+Materials:
+  Solid:
+    - Zircaloy
+    - Fuel:
+      - UO2
+  Fluid:
+    - Argon
+    - Helium
+    - Hydrogen
+    - Krypton
+    - Nitrogen
+    - Xenon
+*/
+
+double Zircaloy::k(double T) const {
+    if (T < 0.0) {
+        throw std::out_of_range("Temperature in Kelvin cannot be less than 0.0");
+    }
+
+    return 7.51 + 2.09e-2 * T - 1.45e-5 * T * T + 7.67e-9 * T * T * T;
+}
+
+double Zircaloy::Cp(double T) const {
+    static const std::vector<double> T_vals = {
+        300.0, 400.0, 640.0, 1090.0, 1093.0, 1113.0, 1133.0, 1153.0, 1173.0,
+        1193.0, 1213.0, 1233.0, 1248.0, 2098.0, 2099.0
+    };
+    static const std::vector<double> Cp_vals = {
+        281.0, 302.0, 331.0, 375.0, 502.0, 590.0, 615.0, 719.0, 816.0,
+        770.0, 619.0, 469.0, 356.0, 356.0, 356.0
+    };
+
+    if (T < T_vals.front() || T > T_vals.back()) {
+        throw std::out_of_range("Temperature must be within 300.0 and 2100.0 K for Clad heat capacity");
+    }
+
+    auto upper = std::upper_bound(T_vals.begin(), T_vals.end(), T);
+    size_t i = std::distance(T_vals.begin(), upper) - 1;
+
+    double T0 = T_vals[i], T1 = T_vals[i + 1];
+    double Cp0 = Cp_vals[i], Cp1 = Cp_vals[i + 1];
+
+    return Cp0 + (Cp1 - Cp0) * (T - T0) / (T1 - T0);
+}
+
+void Zircaloy::update_node_radii(const std::shared_ptr<CylinderNode>& node, double T, double T_prev) const {
+    if (T < 0.0 || T_prev < 0.0) {
+        throw std::out_of_range("Temperature in Kelvin cannot be less than 0.0");
+    }
+
+    double total_strain;
+
+    // alpha phase
+    if (T <= 1073.0) {
+        total_strain = 6.72e-6 * T - 2.07e-3;
+    }
+
+    // transition zone
+    else if (T < 1273.0) {
+        // Use recursive calls to get alpha at the endpoints
+        double alpha = 6.72e-6 * 1073.0 - 2.07e-3;
+        double beta = 9.70e-6 * 1273.0 - 9.45e-3;
+
+        // Interpolate for the range 1073 to 1273 K (this is an approximation)
+        total_strain = alpha + (beta - alpha) * (T - 1073.0) / (1273.0 - 1073.0);
+
+    // beta phase
+    } else {
+        total_strain = 9.70e-6 * T - 9.45e-3; // valid for T < T_melting
+    }
+
+    // Update the node radii based on the calculated strain
+    node->set_inner_radius(node->get_initial_inner_radius() * (1.0 + total_strain));
+    node->set_outer_radius(node->get_initial_outer_radius() * (1.0 + total_strain));
+}
+
+double UO2::k(double T, double Bu, double gad) const {
+    if (T < 300.0 || T > 3000.0) {
+        throw std::out_of_range("Temperature must be within 300.0 and 3000.0 K for UO2 thermal conductivity");
+    }
+    if (Bu < 0.0 || Bu > 62.0) {
+        throw std::out_of_range("Burnup must be between 0.0 and 62.0 MWd/kgU for UO2 thermal conductivity");
+    }
+    if (gad < 0.0 || gad > 0.1) {
+        throw std::out_of_range("Gadolinium content must be between 0.0 and 0.10 wt. percent for UO2 thermal conductivity");
+    }
+
+    double h = 1 / (1.0 + 396.0 * std::exp(-6380.0 / T));
+    double k_phonon = 1 / (
+        0.0452 +
+        0.000246 * T +
+        0.00187 * Bu +
+        1.1599 * gad +
+        (1.0 - 0.9 * std::exp(-0.04 * Bu)) * 0.038 * h * std::pow(Bu, 0.28)
+    );
+    double k_electronic = 3.50e9 / (T * T) * std::exp(-16361.0 / T);
+
+    return k_phonon + k_electronic;
+}
+
+double UO2::Cp(double T, double Bu, double gad) const {
+    double OM = 2.0; // oxygen-to-metal ratio for UO2
+    double R = 8.314; // universal gas constant [J/mol-K]
+    double theta = 535.285; // Einstein temperature [K]
+    double E_D = 1.577e5; // Debye energy [J/mol]
+    double K1 = 296.7, K2 = 2.43e-2, K3 = 8.745e7; // empirical constants for UO2 heat capacity [J/kg-K]
+
+    return (
+        K1 * theta * theta * std::exp(theta / T) / (T * T * std::pow(std::exp(theta / T) - 1.0, 2.0)) +
+        K2 * T +
+        0.5 * OM * K3 * E_D / (R * T * T) * std::exp(-E_D / (R * T))
+    );
+}
+
+void UO2::update_node_radii(const std::shared_ptr<CylinderNode>& node, double T, double T_prev) const {
+    if (T < 0.0 || T_prev < 0.0) {
+        throw std::out_of_range("Temperature in Kelvin cannot be less than 0.0");
+    }
+
+    double delta_r_inner = 0.0, delta_r_outer = 0.0;
+
+    // thermal expansion
+    double strain = 1e-5 * (T - T_prev);
+    delta_r_inner += node->get_inner_radius() * strain;
+    delta_r_outer += node->get_outer_radius() * strain;
+
+    node->set_inner_radius(node->get_inner_radius() + delta_r_inner);
+    node->set_outer_radius(node->get_outer_radius() + delta_r_outer);
+}
+
+double Argon::k(double T) const {
+    const double a = 1.31e-3; // in BTU/hr-ft-F
+    const double b = 0.701;
+    double T_R = T * 9.0 / 5.0; // Convert K to °R
+    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
+    return k * 1.730735;   // Convert to W/m-K
+}
+
+double Helium::k(double T) const {
+    const double a = 1.314e-3; // in BTU/hr-ft-F
+    const double b = 0.668;
+    double T_R = T * 9.0 / 5.0; // Convert K to °R
+    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
+    return k * 1.730735;   // Convert to W/m-K
+}
+
+double Hydrogen::k(double T) const {
+    const double a = 5.834e-4; // in BTU/hr-ft-F
+    const double b = 0.8213;
+    double T_R = T * 9.0 / 5.0; // Convert K to °R
+    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
+    return k * 1.730735;   // Convert to W/m-K
+}
+
+double Krypton::k(double T) const {
+    const double a = 1.588e-5; // in BTU/hr-ft-F
+    const double b = 0.92331;
+    double T_R = T * 9.0 / 5.0; // Convert K to °R
+    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
+    return k * 1.730735;   // Convert to W/m-K
+}
+
+double Nitrogen::k(double T) const {
+    const double a = 7.35e-5; // in BTU/hr-ft-F
+    const double b = 0.846;
+    double T_R = T * 9.0 / 5.0; // Convert K to °R
+    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
+    return k * 1.730735;   // Convert to W/m-K
+}
+
+double Xenon::k(double T) const {
+    const double a = 1.395e-5; // in BTU/hr-ft-F
+    const double b = 0.872;
+    double T_R = T * 9.0 / 5.0; // Convert K to °R
+    double k = a * std::pow(T_R, b); // Conductivity in BTU/hr-ft-F
+    return k * 1.730735;   // Convert to W/m-K
+}
