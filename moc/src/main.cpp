@@ -124,6 +124,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Sweeper: " << parser.get_option("sweeper") << std::endl;
         std::cout << "Device: " << parser.get_option("device") << std::endl;
         std::cout << "Precision: " << parser.get_option("precision") << std::endl;
+        std::cout << "Ray sort: " << parser.get_option("ray_sort") << std::endl;
     } else {
         if (sweeper_type == "kokkos") {
             std::string device = parser.get_option("device");

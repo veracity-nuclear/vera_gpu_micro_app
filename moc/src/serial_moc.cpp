@@ -2,6 +2,7 @@
 #include <iostream>
 #include <string>
 #include <iomanip>
+#include <algorithm>
 #include <highfive/H5Easy.hpp>
 #include <highfive/highfive.hpp>
 #include <Kokkos_Core.hpp>
@@ -12,7 +13,8 @@
 template <typename RealType>
 SerialMOC<RealType>::SerialMOC(const ArgumentParser& args) :
     _filename(args.get_positional(0)),
-    _file(HighFive::File(_filename, HighFive::File::ReadOnly))
+    _file(HighFive::File(_filename, HighFive::File::ReadOnly)),
+    _ray_sort(args.get_option("ray_sort"))
 {
     // Read the rays
     _read_rays();
@@ -201,8 +203,29 @@ void SerialMOC<RealType>::_read_rays() {
             }
         }
     }
+    
+    // Apply ray sorting if requested
+    if (_ray_sort == "long") {
+        // Sort rays by number of segments (most segments first)
+        std::sort(_rays.begin(), _rays.end(), 
+                  [](const LongRay& a, const LongRay& b) {
+                      return a._fsrs.size() > b._fsrs.size();
+                  });
+    } else if (_ray_sort == "short") {
+        // Sort rays by number of segments (fewest segments first)  
+        std::sort(_rays.begin(), _rays.end(),
+                  [](const LongRay& a, const LongRay& b) {
+                      return a._fsrs.size() < b._fsrs.size();
+                  });
+    }
+    // If _ray_sort == "none", do nothing (default behavior)
+    
     // Print a message with the number of rays and filename
-    std::cout << "Successfully set up " << nrays << " rays from file: " << _filename << std::endl;
+    std::cout << "Successfully set up " << nrays << " rays from file: " << _filename;
+    if (_ray_sort != "none") {
+        std::cout << " (sorted by " << _ray_sort << " segments)";
+    }
+    std::cout << std::endl;
 }
 
 // Get the total cross sections for each FSR from the library
