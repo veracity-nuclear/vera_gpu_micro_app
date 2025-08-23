@@ -350,6 +350,7 @@ struct FineMeshData
 
         auto _nCoarseCells = nCoarseCells;
 
+        // POD struct for accumulating coarse flux and volume
         struct FluxAndVolume
         {
             PetscScalar coarseFlux;
@@ -357,18 +358,22 @@ struct FineMeshData
 
             KOKKOS_INLINE_FUNCTION
             FluxAndVolume() : coarseFlux(0.0), coarseVolume(0.0) {}
+
+            KOKKOS_INLINE_FUNCTION
+            FluxAndVolume(const PetscScalar flux, const PetscScalar volume)
+                : coarseFlux(flux), coarseVolume(volume) {}
+
+            KOKKOS_INLINE_FUNCTION
+            void operator+=(const FluxAndVolume &rhs)
+            {
+                coarseFlux += rhs.coarseFlux;
+                coarseVolume += rhs.coarseVolume;
+            }
         };
 
-        KOKKOS_INLINE_FUNCTION
-        friend void operator+=(FluxAndVolume &lhs, const FluxAndVolume &rhs)
-        {
-            lhs.coarseFlux += rhs.coarseFlux;
-            lhs.coarseVolume += rhs.coarseVolume;
-        }
-
-        // MAJOR TODO: flatten OR move fine iteration to normal loop OR outer use MDRangePolicy
-        // TODO: Is it worth it to take out volume?
-        // Is there a way to do this with shared memory that avoids recalculating volumes every energy group?
+        // TODO: Is it worth it to take out volume since we are calculating it redundantly?
+        // The above struct would be removed if so. Is there a way to do this with shared memory
+        // that avoids recalculating volumes every energy group? A once per team option?
         const Kokkos::TeamPolicy<> teamPolicyFlatEnergyAndCoarseCells(nEnergyGroups * nCoarseCells, Kokkos::AUTO);
         auto functorHomogenizeFineFlux = KOKKOS_LAMBDA(const typename Kokkos::TeamPolicy<>::member_type &teamMember)
         {
@@ -395,12 +400,12 @@ struct FineMeshData
                     localXSRFlux += _fineFlux(energyGroup, firstFineCell + localFineCellIdx);
                 }, xsrFlux);
 
-                localCoarseFluxVolume.first += xsrFlux * fineVolume;
-                localCoarseFluxVolume.second += xsrVolume;
+                const FluxAndVolume contribution(xsrFlux * fineVolume, xsrVolume);
+                localCoarseFluxVolume += contribution;
 
             }, coarseFluxAndCoarseVolume);
 
-            coarseFluxes(energyGroup, coarseCellIdx) = coarseFluxAndCoarseVolume.first / coarseFluxAndCoarseVolume.second;
+            coarseFluxes(energyGroup, coarseCellIdx) = coarseFluxAndCoarseVolume.coarseFlux / coarseFluxAndCoarseVolume.coarseVolume;
         };
 
         Kokkos::parallel_for(teamPolicyFlatEnergyAndCoarseCells, functorHomogenizeFineFlux);

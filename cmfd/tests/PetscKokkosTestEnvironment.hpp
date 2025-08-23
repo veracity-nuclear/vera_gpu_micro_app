@@ -53,6 +53,33 @@ void compare2DHostAndDevice(
     const Kokkos::View<PetscScalar **, Kokkos::DefaultExecutionSpace> &d_view,
     const std::string &message = "");
 
+template <typename DataType, typename ExecutionSpace>
+void compare2DViews(
+    const Kokkos::View<DataType **, ExecutionSpace> &view1,
+    const Kokkos::View<DataType **, ExecutionSpace> &view2,
+    const PetscScalar &rtol = 1e-10,
+    const PetscScalar &atol = 1e-10,
+    const std::string &message = "")
+{
+  ASSERT_EQ(view1.extent(0), view2.extent(0));
+  ASSERT_EQ(view1.extent(1), view2.extent(1));
+
+  auto d_view1 = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultHostExecutionSpace(), view1);
+  auto d_view2 = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultHostExecutionSpace(), view2);
+
+  for (size_t i = 0; i < d_view1.extent(0); ++i)
+  {
+    for (size_t j = 0; j < d_view1.extent(1); ++j)
+    {
+      const auto val1 = d_view1(i, j);
+      const auto val2 = d_view2(i, j);
+
+      ASSERT_NEAR(val1, val2, atol) << "Absolute Error @ (" << i << ", " << j << "): " << message;
+      ASSERT_LE((val1 - val2) / val2, rtol) << "Relative Error @ (" << i << ", " << j << "): " << message;
+    }
+  }
+}
+
 void vectorsAreParallel(
     const Vec &v1,
     const Vec &v2,
@@ -81,28 +108,28 @@ struct isPetscMatrixAssembler
 // and instead using the matrices and vectors from an HDF5 file
 struct DummyMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExecutionSpace>
 {
-    using AssemblySpace = Kokkos::DefaultHostExecutionSpace;
-    using AssemblyMemorySpace = Kokkos::HostSpace;
+  using AssemblySpace = Kokkos::DefaultHostExecutionSpace;
+  using AssemblyMemorySpace = Kokkos::HostSpace;
 
-    Vec fluxGold;
-    double kGold;
-    size_t nGroups, nCells;
+  Vec fluxGold;
+  double kGold;
+  size_t nGroups, nCells;
 
-    DummyMatrixAssembler() = default;
-    DummyMatrixAssembler(const HighFive::File &file);
-    ~DummyMatrixAssembler()
-    {
-      PetscCallCXXAbort(PETSC_COMM_SELF, VecDestroy(&fluxGold));
-    };
+  DummyMatrixAssembler() = default;
+  DummyMatrixAssembler(const HighFive::File &file);
+  ~DummyMatrixAssembler()
+  {
+    PetscCallCXXAbort(PETSC_COMM_SELF, VecDestroy(&fluxGold));
+  };
 
-    PetscErrorCode _assembleM() override
-    {
-      // No-op, MMat is already initialized in the constructor
-      return PETSC_SUCCESS;
-    }
-    PetscErrorCode _assembleFission(const FluxView &flux) override
-    {
-      // No-op, we don't need to assemble fission in this dummy assembler
-      return PETSC_SUCCESS;
-    }
+  PetscErrorCode _assembleM() override
+  {
+    // No-op, MMat is already initialized in the constructor
+    return PETSC_SUCCESS;
+  }
+  PetscErrorCode _assembleFission(const FluxView &flux) override
+  {
+    // No-op, we don't need to assemble fission in this dummy assembler
+    return PETSC_SUCCESS;
+  }
 };
