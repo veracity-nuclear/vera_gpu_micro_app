@@ -564,3 +564,19 @@ TEST(homogenization, scatterXS)
     FineMeshData<AssemblySpace>::View3D calculatedCoarseXS = fineData.homogenizeScatteringXS();
     compare3DViews<PetscScalar, AssemblySpace>(calculatedCoarseXS, coarseData.scatteringXS, 0.002, 7e-3, "Comparing homogenized coarse scattering XS vs. MPACT coarse scattering XS");
 }
+
+TEST(homogenization, chi)
+{
+    using AssemblySpace = Kokkos::DefaultExecutionSpace;
+
+    std::string filename = "data/pin_7g_16a_3p_serial.h5";
+    HighFive::File file(filename, HighFive::File::ReadOnly);
+    HighFive::Group coarseGroup = file.getGroup("CMFD_CoarseMesh");
+    HighFive::Group fineGroup = file.getGroup("CMFD_FineMesh");
+
+    CMFDData<AssemblySpace> coarseData(coarseGroup);
+    FineMeshData<AssemblySpace> fineData(fineGroup);
+
+    FineMeshData<AssemblySpace>::View2D calculatedCoarseChi = fineData.homogenizeChi();
+    compare2DViews<PetscScalar, AssemblySpace>(calculatedCoarseChi, coarseData.chi, 1e-14, 1e-14, "Comparing homogenized coarse chi vs. MPACT coarse chi");
+}

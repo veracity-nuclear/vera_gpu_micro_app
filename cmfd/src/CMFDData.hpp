@@ -331,10 +331,12 @@ struct FineMeshData
         volumePerXSR = HDF5ToKokkosView<View1D>(fineMesh.getDataSet("volume"), "volumePerXSR");
         fineFlux = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("flux"), "fineFlux");
         transportXS = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("transport XS"), "transportXS");
-        totalXS = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("total XS"), "totalXS");
         nuFissionXS = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("nu-fission XS"), "nuFissionXS");
         chi = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("chi"), "chi");
         scatteringXS = HDF5ToKokkosView<View3D>(fineMesh.getDataSet("scattering XS"), "scatteringXS");
+
+        // TODO Don't store total and just store removal
+        totalXS = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("total XS"), "totalXS");
 
         // isFissionable stored as 1-char strings "T"/"F"
         {
@@ -533,9 +535,9 @@ struct FineMeshData
                     localXSRFlux += _fineFlux(energyGroupFrom, thisFineCell);
                 }, xsrFlux);
 
-                const PetscScalar xsrFluxFineVolume = xsrFlux * fineVolume;
+                const PetscScalar xsrFlux_fineVolume = xsrFlux * fineVolume;
 
-                localRRVOverFluxV += FractionAccumulator(_scatteringXS(xsCellIdx, energyGroupFrom, energyGroupTo) * xsrFluxFineVolume, xsrFluxFineVolume);
+                localRRVOverFluxV += FractionAccumulator(_scatteringXS(xsCellIdx, energyGroupFrom, energyGroupTo) * xsrFlux_fineVolume, xsrFlux_fineVolume);
 
             }, reactionRateVolumeOverFluxVolume);
 
@@ -547,63 +549,72 @@ struct FineMeshData
         return coarseScatteringXS;
     }
 
-    // View2D homogenizeChi() const
-    // {
-    //     View2D coarseChi("coarseChi", nEnergyGroups, nCoarseCells);
+    View2D homogenizeChi() const
+    {
+        View2D coarseChi("coarseChi", nEnergyGroups, nCoarseCells);
 
-    //     auto _coarseToXSCells = coarseToXSCells;
-    //     auto _xsToFineCells = xsToFineCells;
-    //     auto _isFissionable = isFissionable;
-    //     auto _volume = volumePerXSR;
-    //     auto _fineFlux = fineFlux;
-    //     auto _nuFissionXS = nuFissionXS;
-    //     auto _chi = chi;
+        auto _coarseToXSCells = coarseToXSCells;
+        auto _xsToFineCells = xsToFineCells;
+        auto _volume = volumePerXSR;
+        auto _fineFlux = fineFlux;
+        auto _nuFissionXS = nuFissionXS;
+        auto _chi = chi;
+        auto _xsrToNthFission = xsCellToNthFissionable;
 
-    //     auto _nCoarseCells = nCoarseCells;
+        auto _nCoarseCells = nCoarseCells;
 
-    //     const Kokkos::TeamPolicy<> teamPolicyFlatEnergyAndCoarseCells(nEnergyGroups * nCoarseCells, Kokkos::AUTO);
-    //     auto functorHomogenizeChi = KOKKOS_LAMBDA(const typename Kokkos::TeamPolicy<>::member_type &teamMember)
-    //     {
-    //         const PetscInt flatIndex = teamMember.league_rank();
-    //         const PetscInt energyGroup = flatIndex / _nCoarseCells;
-    //         const PetscInt coarseCellIdx = Kokkos::fmod(flatIndex, _nCoarseCells);
+        const Kokkos::TeamPolicy<> teamPolicyFlatEnergyAndCoarseCells(nEnergyGroups * nCoarseCells, Kokkos::AUTO);
+        auto functorHomogenizeChi = KOKKOS_LAMBDA(const typename Kokkos::TeamPolicy<>::member_type &teamMember)
+        {
+            const PetscInt flatIndex = teamMember.league_rank();
+            const PetscInt energyGroup = flatIndex / _nCoarseCells;
+            const PetscInt coarseCellIdx = Kokkos::fmod(flatIndex, _nCoarseCells);
 
-    //         const PetscInt firstXSCell = _coarseToXSCells(coarseCellIdx);
-    //         const PetscInt lastXSCell = _coarseToXSCells(coarseCellIdx + 1);
+            const PetscInt firstXSCell = _coarseToXSCells(coarseCellIdx);
+            const PetscInt lastXSCell = _coarseToXSCells(coarseCellIdx + 1);
 
-    //         FractionAccumulator fissionNeutronsVolumeOverFluxVolume;
+            FractionAccumulator fissionNeutronVolumeWeightedChi;
 
-    //         Kokkos::parallel_reduce(Kokkos::TeamThreadRange(teamMember, firstXSCell, lastXSCell), [=](const PetscInt xsCellIdx, FractionAccumulator &localFissionNeutronsVOverFluxV)
-    //         {
-    //             const bool thisXSRisFissionable = _isFissionable(xsCellIdx);
-    //             if (thisXSRisFissionable)
-    //             {
-    //                 const PetscInt nthFissionableXSCell =
-    //                 const PetscInt firstFineCell = _xsToFineCells(xsCellIdx);
-    //                 const PetscInt lastFineCell = _xsToFineCells(xsCellIdx + 1);
-    //                 const PetscInt nFineCells = lastFineCell - firstFineCell;
-    //                 const PetscFloat xsrVolume = _volume(xsCellIdx);
-    //                 const PetscFloat fineVolume = xsrVolume / nFineCells; // The fineVolume is the same for all fine cells within a XS region.
+            Kokkos::parallel_reduce(Kokkos::TeamThreadRange(teamMember, firstXSCell, lastXSCell), [=](const PetscInt xsCellIdx, FractionAccumulator &localFissionNeutronsVOverFluxV)
+            {
+                const PetscInt nthFissionXSR = _xsrToNthFission(xsCellIdx);
+                if (nthFissionXSR > -1)
+                {
+                    const PetscInt firstFineCell = _xsToFineCells(xsCellIdx);
+                    const PetscInt lastFineCell = _xsToFineCells(xsCellIdx + 1);
+                    const PetscInt nFineCells = lastFineCell - firstFineCell;
+                    const PetscFloat xsrVolume = _volume(xsCellIdx);
+                    const PetscFloat fineVolume = xsrVolume / nFineCells; // The fineVolume is the same for all fine cells within a XS region.
 
-    //                 PetscScalar xsrFlux = 0;
-    //                 Kokkos::parallel_reduce(Kokkos::ThreadVectorRange(teamMember, nFineCells), [=](const PetscInt localFineCellIdx, PetscScalar &localXSRFlux)
-    //                 {
-    //                     const PetscInt thisFineCell = firstFineCell + localFineCellIdx;
-    //                     localXSRFlux += _fineFlux(energyGroup, thisFineCell);
-    //                 }, xsrFlux);
+                    PetscScalar xsrFlux = 0;
+                    Kokkos::parallel_reduce(Kokkos::ThreadVectorRange(teamMember, nFineCells), [=](const PetscInt localFineCellIdx, PetscScalar &localXSRFlux)
+                    {
+                        const PetscInt thisFineCell = firstFineCell + localFineCellIdx;
+                        localXSRFlux += _fineFlux(energyGroup, thisFineCell);
+                    }, xsrFlux);
 
-    //                 const PetscScalar xsrFluxFineVolume = xsrFlux * fineVolume;
-    //                 localFissionNeutronsVOverFluxV += FractionAccumulator(_scatteringXS(xsCellIdx, energyGroup, energyGroup) * xsrFluxFineVolume, xsrFluxFineVolume);
-    //             }
-    //         }, fissionNeutronsVolumeOverFluxVolume);
+                    const PetscScalar nuFissionXS_xsrFlux_volume = _nuFissionXS(nthFissionXSR, energyGroup) * xsrFlux * fineVolume;
+                    localFissionNeutronsVOverFluxV += FractionAccumulator(_chi(nthFissionXSR, energyGroup) * nuFissionXS_xsrFlux_volume, nuFissionXS_xsrFlux_volume);
+                }
+            }, fissionNeutronVolumeWeightedChi);
 
-    //         coarseChi(energyGroup, coarseCellIdx) = fissionNeutronsVolumeOverFluxVolume.fraction();
-    //     };
+            coarseChi(energyGroup, coarseCellIdx) = fissionNeutronVolumeWeightedChi.fraction();
+        };
 
-    //     Kokkos::parallel_for(teamPolicyFlatEnergyAndCoarseCells, functorHomogenizeChi);
-    //     Kokkos::fence();
-    //     return coarseChi;
-    // }
+        Kokkos::parallel_for(teamPolicyFlatEnergyAndCoarseCells, functorHomogenizeChi);
+        Kokkos::fence();
+        return coarseChi;
+    }
 
-    // TODO: Does it make more sense to homogenize everything at once?
+    // TODO: Does it make more sense to homogenize everything in the same kernel?
+    void homogenizeAll(CMFDData<AssemblySpace> &cmfdData) const
+    {
+        cmfdData.pastFlux = homogenizeFineFlux();
+        cmfdData.transportXS = homogenizeXS(transportXS);
+        // TODO removal XS
+        // cmfdData.removalXS = homogenizeXS(totalXS);
+        cmfdData.nuFissionXS = homogenizeXS(nuFissionXS);
+        cmfdData.scatteringXS = homogenizeScatteringXS();
+        cmfdData.chi = homogenizeChi();
+    }
 };

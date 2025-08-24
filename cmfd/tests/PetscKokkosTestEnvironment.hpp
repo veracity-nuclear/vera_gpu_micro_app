@@ -75,7 +75,8 @@ void compare2DViews(
       const auto val2 = d_view2(i, j);
 
       ASSERT_NEAR(val1, val2, atol) << "Absolute Error @ (" << i << ", " << j << "): " << message;
-      ASSERT_LE((val1 - val2) / val2, rtol) << "Relative Error @ (" << i << ", " << j << "): " << message;
+      if (val1 != 0.0 && val2 != 0.0)
+        ASSERT_LE((val1 - val2) / val2, rtol) << "Relative Error @ (" << i << ", " << j << "): " << message;
     }
   }
 }
