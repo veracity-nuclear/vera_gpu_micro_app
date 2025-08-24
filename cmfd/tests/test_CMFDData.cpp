@@ -62,7 +62,7 @@ TEST(readData, initializeCoarseData)
     size_t nSurfaces = surf2Cell.size();
 
     // Get data using the h_data
-    const CMFDData<Kokkos::HostSpace> h_data(CMFDCoarseMesh);
+    const CMFDData<Kokkos::DefaultHostExecutionSpace> h_data(CMFDCoarseMesh);
 
     ASSERT_EQ(h_data.nCells, nCells) << "Number of cells mismatch";
     ASSERT_EQ(h_data.nSurfaces, nSurfaces) << "Number of surfaces mismatch";
@@ -550,7 +550,7 @@ TEST_P(HomogenizationTest, FineFlux) {
 }
 
 TEST_P(HomogenizationTest, TransportXS) {
-    FineMeshData<AssemblySpace>::View2D calculatedCoarseXS = fineData->homogenizeXS(fineData->transportXS);
+    FineMeshData<AssemblySpace>::View2D calculatedCoarseXS = fineData->homogenizeTransportXS();
     compare2DViews<PetscScalar, AssemblySpace>(
         calculatedCoarseXS,
         coarseData->transportXS,
@@ -560,7 +560,7 @@ TEST_P(HomogenizationTest, TransportXS) {
 }
 
 TEST_P(HomogenizationTest, RemovalXS) {
-    FineMeshData<AssemblySpace>::View2D calculatedCoarseRemovalXS = fineData->homogenizeXS(fineData->removalXS);
+    FineMeshData<AssemblySpace>::View2D calculatedCoarseRemovalXS = fineData->homogenizeRemovalXS();
     compare2DViews<PetscScalar, AssemblySpace>(
         calculatedCoarseRemovalXS,
         coarseData->removalXS,
@@ -586,6 +586,16 @@ TEST_P(HomogenizationTest, Chi) {
         coarseData->chi,
         1e-14, 1e-14,
         "Comparing homogenized coarse chi vs. MPACT coarse chi"
+    );
+}
+
+TEST_P(HomogenizationTest, NuFissionXS) {
+    FineMeshData<AssemblySpace>::View2D calculatedCoarseNuFissionXS = fineData->homogenizeNuFissionXS();
+    compare2DViews<PetscScalar, AssemblySpace>(
+        calculatedCoarseNuFissionXS,
+        coarseData->nuFissionXS,
+        0.006, 7.1e-3,
+        "Comparing homogenized coarse nu-fission XS vs. MPACT coarse nu-fission XS"
     );
 }
 

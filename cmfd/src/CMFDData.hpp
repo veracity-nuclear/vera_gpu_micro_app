@@ -133,6 +133,8 @@ inline PetscInt assignCellSurface(
 template <typename AssemblySpace = Kokkos::DefaultExecutionSpace>
 struct CMFDData
 {
+    static_assert(Kokkos::is_execution_space<AssemblySpace>::value,
+                "AssemblySpace must be a Kokkos execution space");
     using MemorySpace = typename AssemblySpace::memory_space;
     static_assert(Kokkos::is_memory_space<MemorySpace>::value,
                   "MemorySpace must be a Kokkos memory space");
@@ -302,6 +304,8 @@ void initializeXSCellToNthFissionable(const std::vector<bool> &isFissionable, Vi
 template <typename AssemblySpace = Kokkos::DefaultExecutionSpace>
 struct FineMeshData
 {
+    static_assert(Kokkos::is_execution_space<AssemblySpace>::value,
+                  "AssemblySpace must be a Kokkos execution space");
     using MemorySpace = typename AssemblySpace::memory_space;
     static_assert(Kokkos::is_memory_space<MemorySpace>::value,
                     "MemorySpace must be a Kokkos memory space");
@@ -459,7 +463,7 @@ struct FineMeshData
         return coarseFluxes;
     }
 
-    View2D homogenizeXS(View2D xsrXS) const
+    View2D _homogenizeXS(View2D xsrXS) const
     {
         View2D coarseXS("coarseXS", nEnergyGroups, nCoarseCells);
 
@@ -509,6 +513,16 @@ struct FineMeshData
         Kokkos::parallel_for(teamPolicyFlatEnergyAndCoarseCells, functorHomogenizeXS);
         Kokkos::fence();
         return coarseXS;
+    }
+
+    View2D homogenizeTransportXS() const
+    {
+        return _homogenizeXS(transportXS);
+    }
+
+    View2D homogenizeRemovalXS() const
+    {
+        return _homogenizeXS(removalXS);
     }
 
     View3D homogenizeScatteringXS() const
@@ -626,13 +640,67 @@ struct FineMeshData
         return coarseChi;
     }
 
+    View2D homogenizeNuFissionXS() const
+    {
+        View2D coarseNuFissionXS("coarseNuFissionXS", nEnergyGroups, nCoarseCells);
+
+        auto _coarseToXSCells = coarseToXSCells;
+        auto _xsToFineCells = xsToFineCells;
+        auto _volume = volumePerXSR;
+        auto _fineFlux = fineFlux;
+        auto _nuFissionXS = nuFissionXS;
+        auto _xsrToNthFission = xsCellToNthFissionable;
+
+        auto _nCoarseCells = nCoarseCells;
+
+        const Kokkos::TeamPolicy<> teamPolicyFlatEnergyAndCoarseCells(nEnergyGroups * nCoarseCells, Kokkos::AUTO);
+        auto functorHomogenizeNuFissionXS = KOKKOS_LAMBDA(const typename Kokkos::TeamPolicy<>::member_type &teamMember)
+        {
+            const PetscInt flatIndex = teamMember.league_rank();
+            const PetscInt energyGroup = flatIndex / _nCoarseCells;
+            const PetscInt coarseCellIdx = Kokkos::fmod(flatIndex, _nCoarseCells);
+
+            const PetscInt firstXSCell = _coarseToXSCells(coarseCellIdx);
+            const PetscInt lastXSCell = _coarseToXSCells(coarseCellIdx + 1);
+
+            FractionAccumulator reactionRateVolumeOverFluxVolume;
+
+            Kokkos::parallel_reduce(Kokkos::TeamThreadRange(teamMember, firstXSCell, lastXSCell), [=](const PetscInt xsCellIdx, FractionAccumulator &localFissionNeutronsVOverFluxV)
+            {
+                const PetscInt nthFissionXSR = _xsrToNthFission(xsCellIdx);
+                const PetscInt firstFineCell = _xsToFineCells(xsCellIdx);
+                const PetscInt lastFineCell = _xsToFineCells(xsCellIdx + 1);
+                const PetscInt nFineCells = lastFineCell - firstFineCell;
+                const PetscFloat xsrVolume = _volume(xsCellIdx);
+                const PetscFloat fineVolume = xsrVolume / nFineCells; // The fineVolume is the same for all fine cells within a XS region.
+
+                PetscScalar xsrFlux = 0;
+                Kokkos::parallel_reduce(Kokkos::ThreadVectorRange(teamMember, nFineCells), [=](const PetscInt localFineCellIdx, PetscScalar &localXSRFlux)
+                {
+                    const PetscInt thisFineCell = firstFineCell + localFineCellIdx;
+                    localXSRFlux += _fineFlux(energyGroup, thisFineCell);
+                }, xsrFlux);
+
+                const PetscScalar xsrFluxVolume =  xsrFlux * fineVolume;
+                const PetscScalar nuFissionValue = (nthFissionXSR > -1) ? _nuFissionXS(nthFissionXSR, energyGroup) : 0.0;
+                localFissionNeutronsVOverFluxV += FractionAccumulator(nuFissionValue * xsrFluxVolume, xsrFluxVolume);
+            }, reactionRateVolumeOverFluxVolume);
+
+            coarseNuFissionXS(energyGroup, coarseCellIdx) = reactionRateVolumeOverFluxVolume.fraction();
+        };
+
+        Kokkos::parallel_for(teamPolicyFlatEnergyAndCoarseCells, functorHomogenizeNuFissionXS);
+        Kokkos::fence();
+        return coarseNuFissionXS;
+    }
+
     // TODO: Does it make more sense to homogenize everything in the same kernel?
     void homogenizeAll(CMFDData<AssemblySpace> &cmfdData) const
     {
         cmfdData.pastFlux = homogenizeFineFlux();
-        cmfdData.transportXS = homogenizeXS(transportXS);
-        cmfdData.removalXS = homogenizeXS(removalXS);
-        cmfdData.nuFissionXS = homogenizeXS(nuFissionXS);
+        cmfdData.transportXS = homogenizeTransportXS();
+        cmfdData.removalXS = homogenizeRemovalXS();
+        cmfdData.nuFissionXS = homogenizeNuFissionXS();
         cmfdData.scatteringXS = homogenizeScatteringXS();
         cmfdData.chi = homogenizeChi();
     }
