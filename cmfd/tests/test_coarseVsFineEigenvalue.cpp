@@ -56,6 +56,7 @@ TEST_P(CoarseVsFineEigenvalueTest, EigenvalueComparison) {
     kFromFine = fromFine->keff;
 
     EXPECT_NEAR(kFromMPACT, kGold, 1e-7) << "Error in MPACT coarse mesh solution";
+    // TODO (#64): The tolerances are currently too high.
     EXPECT_NEAR(kFromFine, kFromMPACT, 7e-4) << "Data from fine mesh did not have the same eigenvalue as that from the MPACT coarse mesh.";
 }
 
