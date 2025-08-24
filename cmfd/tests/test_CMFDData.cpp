@@ -348,36 +348,26 @@ TEST(assignCellSurface, basicLogic)
 TEST(fissionableCellToXSCell, basic)
 {
     using AssemblySpace = Kokkos::DefaultHostExecutionSpace;
-    using FMD = FineMeshData<AssemblySpace>;
-    using BoolList = FMD::ViewBoolList;
-    using IndexList = FMD::ViewIndexList;
+    using IndexList = FineMeshData<AssemblySpace>::ViewIndexList;
 
-    auto buildAndCheck = [](std::vector<bool> isFissionable, std::vector<PetscInt> truthFissionToXSCell) {
-        FMD fmd;
-        fmd.nXSCells = isFissionable.size();
+    auto buildAndCheck = [](const std::vector<bool> &isFissionable, const std::vector<PetscInt> &truthFissionToXSCell)
+    {
+        IndexList xsCellToNthFissionable;
+        initializeXSCellToNthFissionable<IndexList>(isFissionable, xsCellToNthFissionable);
 
-        fmd.isFissionable = BoolList("isFissionable", fmd.nXSCells);
-        {
-            auto h = Kokkos::create_mirror_view(fmd.isFissionable);
-            for (size_t i = 0; i < isFissionable.size(); ++i) h(i) = isFissionable[i];
-            Kokkos::deep_copy(fmd.isFissionable, h);
-        }
-        fmd.initializeFissionableCellToXSCell();
-
-        ASSERT_EQ(fmd.nFissionableCells, (PetscInt)truthFissionToXSCell.size()) << "Number of fissionable cells mismatch";
-        ASSERT_EQ(fmd.nthFissionableCellToXSCellIdx.extent(0), fmd.nFissionableCells) << "View size mismatch";
+        ASSERT_EQ(xsCellToNthFissionable.extent(0), truthFissionToXSCell.size());
         for (size_t i = 0; i < truthFissionToXSCell.size(); ++i)
-            EXPECT_EQ(fmd.nthFissionableCellToXSCellIdx(i), truthFissionToXSCell[i]) << "Mismatch at " << i;
+            ASSERT_EQ(xsCellToNthFissionable(i), truthFissionToXSCell[i]);
     };
 
-    buildAndCheck({0,0,0,0}, {});
-    buildAndCheck({1,1,1,1,1}, {0,1,2,3,4});
-    buildAndCheck({1,0,1,0,1,0,1}, {0, 2, 4, 6});
-    buildAndCheck({0,1,0,0,1,0,0,0,1}, {1, 4, 8});
-    buildAndCheck({0, 0, 1, 0, 1, 0, 0}, {2, 4});
-    buildAndCheck({1, 1, 1, 1, 1, 0, 0, 0}, {0, 1, 2, 3, 4});
+    buildAndCheck({0, 0, 0, 0}, {-1, -1, -1, -1});
+    buildAndCheck({1, 1, 1, 1, 1}, {0, 1, 2, 3, 4});
+    buildAndCheck({1, 0, 1, 0, 1, 0, 1}, {0, -1, 1, -1, 2, -1, 3});
+    buildAndCheck({0, 1, 0, 0, 1, 0, 0, 0, 1}, {-1, 0, -1, -1, 1, -1, -1, -1, 2});
+    buildAndCheck({0, 0, 1, 0, 1, 0, 0}, {-1, -1, 0, -1, 1, -1, -1});
+    buildAndCheck({1, 1, 1, 1, 1, 0, 0, 0}, {0, 1, 2, 3, 4, -1, -1, -1});
     buildAndCheck({1}, {0});
-    buildAndCheck({0}, {});
+    buildAndCheck({0}, {-1});
 }
 
 TEST(readData, initializeFineData)
@@ -391,17 +381,6 @@ TEST(readData, initializeFineData)
     std::vector<PetscScalar> volumePerXSR_vec;
     std::vector<std::vector<PetscScalar>> fineFlux_vec, transportXS_vec, totalXS_vec, nuFissionXS_vec, chi_vec;
     std::vector<std::vector<std::vector<PetscScalar>>> scatteringXS_vec;
-
-    // isFissionable may be stored as int/bool; read as int for robustness
-    std::vector<bool> isFissionable_raw;
-    {
-        auto ds = fineGroup.getDataSet("isFissionable");
-        std::vector<std::string> tmp;
-        ds.read(tmp);
-        isFissionable_raw.resize(tmp.size());
-        for (size_t i = 0; i < tmp.size(); ++i)
-            isFissionable_raw[i] = (!tmp[i].empty() && tmp[i][0] == 'T');
-    }
 
     fineGroup.getDataSet("nxscells").read(coarseToXSCells_vec);
     fineGroup.getDataSet("nfinecells").read(xsToFineCells_vec);
@@ -428,11 +407,6 @@ TEST(readData, initializeFineData)
         for (size_t i = 0; i < ref.size(); ++i)
             ASSERT_EQ(view(i), ref[i]) << msg << " mismatch at " << i;
     };
-    auto compare1DBool = [](auto view, const std::vector<bool> &ref, const char *msg) {
-        ASSERT_EQ(view.extent(0), ref.size()) << msg << " extent mismatch";
-        for (size_t i = 0; i < ref.size(); ++i)
-            ASSERT_EQ(view(i), ref[i]) << msg << " mismatch at " << i;
-    };
     auto compare2D = [](auto view, const std::vector<std::vector<PetscScalar>> &ref, const char *msg) {
         ASSERT_EQ(view.extent(0), ref.size()) << msg << " outer extent mismatch";
         if (!ref.empty())
@@ -455,7 +429,6 @@ TEST(readData, initializeFineData)
     // Host mirrors
     auto h_coarseToXSCells = h_fine.coarseToXSCells;
     auto h_xsToFineCells = h_fine.xsToFineCells;
-    auto h_isFissionable = h_fine.isFissionable;
     auto h_volumePerXSR = h_fine.volumePerXSR;
     auto h_fineFlux = h_fine.fineFlux;
     auto h_transportXS = h_fine.transportXS;
@@ -467,7 +440,6 @@ TEST(readData, initializeFineData)
     // Compare host data
     compare1DInt(h_coarseToXSCells, coarseToXSCells_vec, "coarseToXSCells");
     compare1DInt(h_xsToFineCells, xsToFineCells_vec, "xsToFineCells");
-    compare1DBool(h_isFissionable, isFissionable_raw, "isFissionable");
     compare1DScalar(h_volumePerXSR, volumePerXSR_vec, "volumePerXSR");
     compare2D(h_fineFlux, fineFlux_vec, "fineFlux");
     compare2D(h_transportXS, transportXS_vec, "transportXS");
@@ -479,7 +451,6 @@ TEST(readData, initializeFineData)
     // Device mirrors -> host copies
     auto d_coarseToXSCells_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.coarseToXSCells);
     auto d_xsToFineCells_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.xsToFineCells);
-    auto d_isFissionable_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.isFissionable);
     auto d_volumePerXSR_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.volumePerXSR);
     auto d_fineFlux_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.fineFlux);
     auto d_transportXS_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.transportXS);
@@ -491,7 +462,6 @@ TEST(readData, initializeFineData)
     // Compare device-loaded data
     compare1DInt(d_coarseToXSCells_h, coarseToXSCells_vec, "device coarseToXSCells");
     compare1DInt(d_xsToFineCells_h, xsToFineCells_vec, "device xsToFineCells");
-    compare1DBool(d_isFissionable_h, isFissionable_raw, "device isFissionable");
     compare1DScalar(d_volumePerXSR_h, volumePerXSR_vec, "device volumePerXSR");
     compare2D(d_fineFlux_h, fineFlux_vec, "device fineFlux");
     compare2D(d_transportXS_h, transportXS_vec, "device transportXS");
@@ -518,12 +488,25 @@ TEST(readData, initializeFineData)
     ASSERT_EQ(d_fine.nFineCells, nFineCells) << "Fine cells mismatch";
 
     // Check if initializeFissionableCellToXSCell has been run
-    ASSERT_GT(d_fine.nFissionableCells, 0) << "nFissionableCells not set";
-    ASSERT_EQ(d_fine.nthFissionableCellToXSCellIdx.extent(0), d_fine.nFissionableCells) << "View size mismatch";
-    ASSERT_EQ(d_fine.nFissionableCells, d_fine.chi.extent(0));
-    ASSERT_EQ(d_fine.nFissionableCells, d_fine.nuFissionXS.extent(0));
+    ASSERT_EQ(h_fine.xsCellToNthFissionable.extent(0), nXSCells);
+    ASSERT_EQ(d_fine.xsCellToNthFissionable.extent(0), nXSCells);
 
-    // Check other extents of chi and nuFission
+    // Find the number of fissionable XS cells according to xsCellToNthFissionable
+    PetscInt nFissionable = -1;
+    for (size_t i = nXSCells; i-- > 0; )
+    {
+        nFissionable = h_fine.xsCellToNthFissionable(i);
+        // exit on first since xsCellToNthFissionable is in order
+        if (nFissionable != -1)
+        {
+            nFissionable++;
+            break;
+        }
+    }
+
+    // Check  extents of chi and nuFission
+    ASSERT_EQ(d_fine.chi.extent(0), nFissionable);
+    ASSERT_EQ(d_fine.nuFissionXS.extent(0), nFissionable);
     ASSERT_EQ(d_fine.chi.extent(1), d_fine.nEnergyGroups);
     ASSERT_EQ(d_fine.nuFissionXS.extent(1), d_fine.nEnergyGroups);
 }

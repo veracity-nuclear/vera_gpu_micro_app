@@ -284,6 +284,21 @@ struct CMFDData
     }
 };
 
+template <typename ViewIndexList = Kokkos::View<PetscInt *, Kokkos::DefaultExecutionSpace>>
+void initializeXSCellToNthFissionable(const std::vector<bool> &isFissionable, ViewIndexList &xsCellToNthFissionable)
+{
+    xsCellToNthFissionable = ViewIndexList("xsCellToNthFissionable", isFissionable.size());
+    auto h_xsCellToNthFissionable = Kokkos::create_mirror_view(xsCellToNthFissionable);
+
+    PetscInt nFissionableCells = 0;
+    for (size_t xsCellIdx = 0; xsCellIdx < isFissionable.size(); ++xsCellIdx)
+        if (isFissionable[xsCellIdx])
+            h_xsCellToNthFissionable(xsCellIdx) = nFissionableCells++;
+        else
+            h_xsCellToNthFissionable(xsCellIdx) = -1;
+    Kokkos::deep_copy(xsCellToNthFissionable, h_xsCellToNthFissionable);
+}
+
 template <typename AssemblySpace = Kokkos::DefaultExecutionSpace>
 struct FineMeshData
 {
@@ -292,7 +307,6 @@ struct FineMeshData
                     "MemorySpace must be a Kokkos memory space");
 
     using ViewIndexList = Kokkos::View<PetscInt *, MemorySpace>;
-    using ViewBoolList = Kokkos::View<bool *, MemorySpace>;
     using View1D = Kokkos::View<PetscScalar *, MemorySpace>;
     using View2D = Kokkos::View<PetscScalar **, MemorySpace>;
     using View3D = Kokkos::View<PetscScalar ***, MemorySpace>;
@@ -300,39 +314,12 @@ struct FineMeshData
     size_t nEnergyGroups{}, nFineCells{}, nXSCells{}, nCoarseCells{};
 
     ViewIndexList coarseToXSCells, xsToFineCells;
-    ViewBoolList isFissionable;
     View1D volumePerXSR;
     View2D fineFlux, transportXS, totalXS, nuFissionXS, chi;
     View3D scatteringXS;
 
     // Calculated in the constructor
-    size_t nFissionableCells{};
-    ViewIndexList nthFissionableCellToXSCellIdx;
-
-    void initializeFissionableCellToXSCell()
-    {
-        auto h_isFissionable = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), isFissionable);
-
-        // This view is oversized if there are any nonfissionable cells, we'll resize later.
-        nthFissionableCellToXSCellIdx = ViewIndexList("nthFissionableCellToXSCellIdx", nXSCells);
-        auto h_nthFissionableCellToXSCellIdx = Kokkos::create_mirror_view(nthFissionableCellToXSCellIdx);
-
-        nFissionableCells = 0;
-        for (size_t xsCellIdx = 0; xsCellIdx < nXSCells; xsCellIdx++)
-        {
-            if (h_isFissionable(xsCellIdx))
-            {
-                h_nthFissionableCellToXSCellIdx(nFissionableCells) = xsCellIdx;
-                nFissionableCells++;
-            }
-        }
-
-        Kokkos::deep_copy(nthFissionableCellToXSCellIdx, h_nthFissionableCellToXSCellIdx);
-
-        // Resize to the actual number of fissionable cells
-        Kokkos::resize(nthFissionableCellToXSCellIdx, nFissionableCells);
-        Kokkos::fence();
-    }
+    ViewIndexList xsCellToNthFissionable;
 
     FineMeshData() = default;
 
@@ -351,22 +338,24 @@ struct FineMeshData
 
         // isFissionable stored as 1-char strings "T"/"F"
         {
-            auto ds = fineMesh.getDataSet("isFissionable");
-            std::vector<std::string> tmp;
-            ds.read(tmp);
-            isFissionable = ViewBoolList("isFissionable", tmp.size());
-            auto h = Kokkos::create_mirror_view(isFissionable);
-            for (size_t i = 0; i < tmp.size(); ++i)
-                h(i) = (!tmp[i].empty() && tmp[i][0] == 'T');
-            Kokkos::deep_copy(isFissionable, h);
+            HighFive::DataSet isFissionableDataSet = fineMesh.getDataSet("isFissionable");
+            std::vector<std::string> isFissionableString;
+            isFissionableDataSet.read(isFissionableString);
+            std::vector<bool> isFissionableBool(isFissionableString.size());
+            for (size_t i = 0; i < isFissionableString.size(); ++i)
+            {
+                if (isFissionableString[i] != "T" && isFissionableString[i] != "F")
+                    throw std::runtime_error("Error reading isFissionable data from HDF5 file. Expected 'T' or 'F', got '" + isFissionableString[i] + "'.");
+                isFissionableBool[i] = (isFissionableString[i] == "T");
+            }
+
+            initializeXSCellToNthFissionable<ViewIndexList>(isFissionableBool, xsCellToNthFissionable);
         }
 
         nEnergyGroups = fineFlux.extent(0);
         nFineCells = fineFlux.extent(1);
         nXSCells = xsToFineCells.extent(0) - 1;
         nCoarseCells = coarseToXSCells.extent(0) - 1;
-
-        initializeFissionableCellToXSCell();
     }
 
     struct FractionAccumulator
@@ -564,8 +553,11 @@ struct FineMeshData
 
     //     auto _coarseToXSCells = coarseToXSCells;
     //     auto _xsToFineCells = xsToFineCells;
-    //     auto _fineFlux = fineFlux;
+    //     auto _isFissionable = isFissionable;
     //     auto _volume = volumePerXSR;
+    //     auto _fineFlux = fineFlux;
+    //     auto _nuFissionXS = nuFissionXS;
+    //     auto _chi = chi;
 
     //     auto _nCoarseCells = nCoarseCells;
 
@@ -583,21 +575,26 @@ struct FineMeshData
 
     //         Kokkos::parallel_reduce(Kokkos::TeamThreadRange(teamMember, firstXSCell, lastXSCell), [=](const PetscInt xsCellIdx, FractionAccumulator &localFissionNeutronsVOverFluxV)
     //         {
-    //             const PetscInt firstFineCell = _xsToFineCells(xsCellIdx);
-    //             const PetscInt lastFineCell = _xsToFineCells(xsCellIdx + 1);
-    //             const PetscInt nFineCells = lastFineCell - firstFineCell;
-    //             const PetscFloat xsrVolume = _volume(xsCellIdx);
-    //             const PetscFloat fineVolume = xsrVolume / nFineCells; // The fineVolume is the same for all fine cells within a XS region.
-
-    //             PetscScalar xsrFlux = 0;
-    //             Kokkos::parallel_reduce(Kokkos::ThreadVectorRange(teamMember, nFineCells), [=](const PetscInt localFineCellIdx, PetscScalar &localXSRFlux)
+    //             const bool thisXSRisFissionable = _isFissionable(xsCellIdx);
+    //             if (thisXSRisFissionable)
     //             {
-    //                 const PetscInt thisFineCell = firstFineCell + localFineCellIdx;
-    //                 localXSRFlux += _fineFlux(energyGroup, thisFineCell);
-    //             }, xsrFlux);
+    //                 const PetscInt nthFissionableXSCell =
+    //                 const PetscInt firstFineCell = _xsToFineCells(xsCellIdx);
+    //                 const PetscInt lastFineCell = _xsToFineCells(xsCellIdx + 1);
+    //                 const PetscInt nFineCells = lastFineCell - firstFineCell;
+    //                 const PetscFloat xsrVolume = _volume(xsCellIdx);
+    //                 const PetscFloat fineVolume = xsrVolume / nFineCells; // The fineVolume is the same for all fine cells within a XS region.
 
-    //             const PetscScalar xsrFluxFineVolume = xsrFlux * fineVolume;
-    //             localFissionNeutronsVOverFluxV += FractionAccumulator(_scatteringXS(xsCellIdx, energyGroup, energyGroup) * xsrFluxFineVolume, xsrFluxFineVolume);
+    //                 PetscScalar xsrFlux = 0;
+    //                 Kokkos::parallel_reduce(Kokkos::ThreadVectorRange(teamMember, nFineCells), [=](const PetscInt localFineCellIdx, PetscScalar &localXSRFlux)
+    //                 {
+    //                     const PetscInt thisFineCell = firstFineCell + localFineCellIdx;
+    //                     localXSRFlux += _fineFlux(energyGroup, thisFineCell);
+    //                 }, xsrFlux);
+
+    //                 const PetscScalar xsrFluxFineVolume = xsrFlux * fineVolume;
+    //                 localFissionNeutronsVOverFluxV += FractionAccumulator(_scatteringXS(xsCellIdx, energyGroup, energyGroup) * xsrFluxFineVolume, xsrFluxFineVolume);
+    //             }
     //         }, fissionNeutronsVolumeOverFluxVolume);
 
     //         coarseChi(energyGroup, coarseCellIdx) = fissionNeutronsVolumeOverFluxVolume.fraction();
