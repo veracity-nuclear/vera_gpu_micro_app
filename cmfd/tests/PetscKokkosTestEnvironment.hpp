@@ -80,6 +80,38 @@ void compare2DViews(
   }
 }
 
+template<typename DataType, typename ExecutionSpace>
+void compare3DViews(
+  const Kokkos::View<DataType ***, ExecutionSpace> &view1,
+  const Kokkos::View<DataType ***, ExecutionSpace> &view2,
+  const PetscScalar &rtol = 1e-10,
+  const PetscScalar &atol = 1e-10,
+  const std::string &message = "")
+{
+  ASSERT_EQ(view1.extent(0), view2.extent(0));
+  ASSERT_EQ(view1.extent(1), view2.extent(1));
+  ASSERT_EQ(view1.extent(2), view2.extent(2));
+
+  auto d_view1 = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultHostExecutionSpace(), view1);
+  auto d_view2 = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultHostExecutionSpace(), view2);
+
+  for (size_t i = 0; i < d_view1.extent(0); ++i)
+  {
+    for (size_t j = 0; j < d_view1.extent(1); ++j)
+    {
+      for (size_t k = 0; k < d_view1.extent(2); ++k)
+      {
+        const auto val1 = d_view1(i, j, k);
+        const auto val2 = d_view2(i, j, k);
+
+        ASSERT_NEAR(val1, val2, atol) << "Absolute Error @ (" << i << ", " << j << ", " << k << "): " << message;
+        if (val1 != 0.0 && val2 != 0.0)
+          ASSERT_LE((val1 - val2) / val2, rtol) << "Relative Error @ (" << i << ", " << j << ", " << k << "): " << message;
+      }
+    }
+  }
+}
+
 void vectorsAreParallel(
     const Vec &v1,
     const Vec &v2,
