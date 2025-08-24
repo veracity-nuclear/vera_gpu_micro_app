@@ -379,7 +379,7 @@ TEST(readData, initializeFineData)
     // Read (reference) data directly via HighFive
     std::vector<PetscInt> coarseToXSCells_vec, xsToFineCells_vec;
     std::vector<PetscScalar> volumePerXSR_vec;
-    std::vector<std::vector<PetscScalar>> fineFlux_vec, transportXS_vec, totalXS_vec, nuFissionXS_vec, chi_vec;
+    std::vector<std::vector<PetscScalar>> fineFlux_vec, transportXS_vec, nuFissionXS_vec, chi_vec;
     std::vector<std::vector<std::vector<PetscScalar>>> scatteringXS_vec;
 
     fineGroup.getDataSet("nxscells").read(coarseToXSCells_vec);
@@ -387,13 +387,12 @@ TEST(readData, initializeFineData)
     fineGroup.getDataSet("volume").read(volumePerXSR_vec);
     fineGroup.getDataSet("flux").read(fineFlux_vec);
     fineGroup.getDataSet("transport XS").read(transportXS_vec);
-    fineGroup.getDataSet("total XS").read(totalXS_vec);
     fineGroup.getDataSet("nu-fission XS").read(nuFissionXS_vec);
     fineGroup.getDataSet("chi").read(chi_vec);
     fineGroup.getDataSet("scattering XS").read(scatteringXS_vec);
 
     // Construct FineMeshData (host + device)
-    FineMeshData<Kokkos::HostSpace> h_fine(fineGroup);
+    FineMeshData<Kokkos::DefaultHostExecutionSpace> h_fine(fineGroup);
     FineMeshData<> d_fine(fineGroup);
 
     // Helper lambdas
@@ -432,7 +431,6 @@ TEST(readData, initializeFineData)
     auto h_volumePerXSR = h_fine.volumePerXSR;
     auto h_fineFlux = h_fine.fineFlux;
     auto h_transportXS = h_fine.transportXS;
-    auto h_totalXS = h_fine.totalXS;
     auto h_nuFissionXS = h_fine.nuFissionXS;
     auto h_chi = h_fine.chi;
     auto h_scatteringXS = h_fine.scatteringXS;
@@ -443,7 +441,6 @@ TEST(readData, initializeFineData)
     compare1DScalar(h_volumePerXSR, volumePerXSR_vec, "volumePerXSR");
     compare2D(h_fineFlux, fineFlux_vec, "fineFlux");
     compare2D(h_transportXS, transportXS_vec, "transportXS");
-    compare2D(h_totalXS, totalXS_vec, "totalXS");
     compare2D(h_nuFissionXS, nuFissionXS_vec, "nuFissionXS");
     compare2D(h_chi, chi_vec, "chi");
     compare3D(h_scatteringXS, scatteringXS_vec, "scatteringXS");
@@ -454,7 +451,6 @@ TEST(readData, initializeFineData)
     auto d_volumePerXSR_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.volumePerXSR);
     auto d_fineFlux_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.fineFlux);
     auto d_transportXS_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.transportXS);
-    auto d_totalXS_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.totalXS);
     auto d_nuFissionXS_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.nuFissionXS);
     auto d_chi_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.chi);
     auto d_scatteringXS_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.scatteringXS);
@@ -465,7 +461,6 @@ TEST(readData, initializeFineData)
     compare1DScalar(d_volumePerXSR_h, volumePerXSR_vec, "device volumePerXSR");
     compare2D(d_fineFlux_h, fineFlux_vec, "device fineFlux");
     compare2D(d_transportXS_h, transportXS_vec, "device transportXS");
-    compare2D(d_totalXS_h, totalXS_vec, "device totalXS");
     compare2D(d_nuFissionXS_h, nuFissionXS_vec, "device nuFissionXS");
     compare2D(d_chi_h, chi_vec, "device chi");
     compare3D(d_scatteringXS_h, scatteringXS_vec, "device scatteringXS");
@@ -547,6 +542,22 @@ TEST(homogenization, transportXS)
 
     FineMeshData<AssemblySpace>::View2D calculatedCoarseXS = fineData.homogenizeXS(fineData.transportXS);
     compare2DViews<PetscScalar, AssemblySpace>(calculatedCoarseXS, coarseData.transportXS, 2e-4, 1e-2, "Comparing homogenized coarse XS vs. MPACT coarse XS");
+}
+
+TEST(homogenization, removalXS)
+{
+    using AssemblySpace = Kokkos::DefaultExecutionSpace;
+
+    std::string filename = "data/pin_7g_16a_3p_serial.h5";
+    HighFive::File file(filename, HighFive::File::ReadOnly);
+    HighFive::Group coarseGroup = file.getGroup("CMFD_CoarseMesh");
+    HighFive::Group fineGroup = file.getGroup("CMFD_FineMesh");
+
+    CMFDData<AssemblySpace> coarseData(coarseGroup);
+    FineMeshData<AssemblySpace> fineData(fineGroup);
+
+    FineMeshData<AssemblySpace>::View2D calculatedCoarseXS = fineData.homogenizeXS(fineData.removalXS);
+    compare2DViews<PetscScalar, AssemblySpace>(calculatedCoarseXS, coarseData.removalXS, 2e-3, 1e-2, "Comparing homogenized coarse removal XS vs. MPACT coarse removal XS");
 }
 
 TEST(homogenization, scatterXS)

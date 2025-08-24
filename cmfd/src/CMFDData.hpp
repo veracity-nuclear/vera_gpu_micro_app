@@ -315,11 +315,30 @@ struct FineMeshData
 
     ViewIndexList coarseToXSCells, xsToFineCells;
     View1D volumePerXSR;
-    View2D fineFlux, transportXS, totalXS, nuFissionXS, chi;
+    View2D fineFlux, transportXS, nuFissionXS, chi;
     View3D scatteringXS;
 
     // Calculated in the constructor
+    View2D removalXS;
     ViewIndexList xsCellToNthFissionable;
+
+    // Kokkos gets upset if parallel dispatch is used directly within constructor.
+    void calculateRemovalXS()
+    {
+        removalXS = View2D("removalXS", nXSCells, nEnergyGroups);
+
+        auto _removalXS = removalXS;
+        auto _transportXS = transportXS;
+        auto _scatteringXS = scatteringXS;
+        Kokkos::parallel_for(
+            "Compute Removal XS",
+            Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<2>>({0, 0}, {nXSCells, nEnergyGroups}),
+            KOKKOS_LAMBDA(const PetscInt xsRegion, const PetscInt energyGroup)
+            {
+                _removalXS(xsRegion, energyGroup) = _transportXS(xsRegion, energyGroup) - _scatteringXS(xsRegion, energyGroup, energyGroup);
+            }
+        );
+    }
 
     FineMeshData() = default;
 
@@ -330,13 +349,19 @@ struct FineMeshData
         xsToFineCells = HDF5ToKokkosView<ViewIndexList>(fineMesh.getDataSet("nfinecells"), "xsToFineCells");
         volumePerXSR = HDF5ToKokkosView<View1D>(fineMesh.getDataSet("volume"), "volumePerXSR");
         fineFlux = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("flux"), "fineFlux");
-        transportXS = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("transport XS"), "transportXS");
         nuFissionXS = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("nu-fission XS"), "nuFissionXS");
         chi = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("chi"), "chi");
         scatteringXS = HDF5ToKokkosView<View3D>(fineMesh.getDataSet("scattering XS"), "scatteringXS");
 
-        // TODO Don't store total and just store removal
-        totalXS = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("total XS"), "totalXS");
+        nEnergyGroups = fineFlux.extent(0);
+        nFineCells = fineFlux.extent(1);
+        nXSCells = xsToFineCells.extent(0) - 1;
+        nCoarseCells = coarseToXSCells.extent(0) - 1;
+
+        // transportXS can probably be deallocated if we are just using removal
+        transportXS = HDF5ToKokkosView<View2D>(fineMesh.getDataSet("transport XS"), "transportXS");
+
+        calculateRemovalXS();
 
         // isFissionable stored as 1-char strings "T"/"F"
         {
@@ -353,11 +378,6 @@ struct FineMeshData
 
             initializeXSCellToNthFissionable<ViewIndexList>(isFissionableBool, xsCellToNthFissionable);
         }
-
-        nEnergyGroups = fineFlux.extent(0);
-        nFineCells = fineFlux.extent(1);
-        nXSCells = xsToFineCells.extent(0) - 1;
-        nCoarseCells = coarseToXSCells.extent(0) - 1;
     }
 
     struct FractionAccumulator
@@ -611,8 +631,7 @@ struct FineMeshData
     {
         cmfdData.pastFlux = homogenizeFineFlux();
         cmfdData.transportXS = homogenizeXS(transportXS);
-        // TODO removal XS
-        // cmfdData.removalXS = homogenizeXS(totalXS);
+        cmfdData.removalXS = homogenizeXS(removalXS);
         cmfdData.nuFissionXS = homogenizeXS(nuFissionXS);
         cmfdData.scatteringXS = homogenizeScatteringXS();
         cmfdData.chi = homogenizeChi();
