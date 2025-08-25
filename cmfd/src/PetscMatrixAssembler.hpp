@@ -35,7 +35,7 @@ struct PetscMatrixAssembler : public MatrixAssemblerInterface
     static_assert(Kokkos::is_memory_space<AssemblyMemorySpace>::value,
                   "AssemblyMemorySpace must be a Kokkos memory space");
 
-    using CMFDDataType = CMFDData<AssemblyMemorySpace>;
+    using CMFDDataType = CMFDData<AssemblySpace>;
     using FluxView = typename CMFDDataType::View1D;
 
     CMFDDataType cmfdData;
@@ -45,27 +45,38 @@ struct PetscMatrixAssembler : public MatrixAssemblerInterface
     Vec fissionVec;
     Mat MMat;
 
-    PetscMatrixAssembler() = default;
-    PetscMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
-        : cmfdData(CMFDCoarseMesh)
+    PetscErrorCode initialize()
     {
+        PetscFunctionBegin;
         // Create the vector (not allocated yet)
-        PetscCallCXXAbort(PETSC_COMM_SELF, VecCreate(PETSC_COMM_WORLD, &fissionVec));
+        PetscCall(VecCreate(PETSC_COMM_WORLD, &fissionVec));
 
         // Set the type of the vector (etc.) based on PETSc CLI options.
         // Default is AIJ sparse matrix.
-        PetscCallCXXAbort(PETSC_COMM_SELF, VecSetFromOptions(fissionVec));
+        PetscCall(VecSetFromOptions(fissionVec));
 
         // We are always using the Kokkos Vec type so data are
         // are accessible as views.
-        PetscCallCXXAbort(PETSC_COMM_SELF, VecSetType(fissionVec, VECKOKKOS));
+        PetscCall(VecSetType(fissionVec, VECKOKKOS));
 
         // Set the vector dimensions (just for compatibility checks))
         // The PETSC_DECIDEs are for sub matrices split across multiple MPI ranks.
         nRows = cmfdData.nCells * cmfdData.nGroups;
-        PetscCallCXXAbort(PETSC_COMM_SELF, VecSetSizes(fissionVec, PETSC_DECIDE, nRows));
+        PetscCall(VecSetSizes(fissionVec, PETSC_DECIDE, nRows));
 
-        // We defer Mat creation to _assembleM() which is called by the derived class constructor
+        PetscFunctionReturn(PETSC_SUCCESS);
+    }
+
+    PetscMatrixAssembler() = default;
+    PetscMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
+        : cmfdData(CMFDCoarseMesh)
+    {
+        PetscCallCXXAbort(PETSC_COMM_SELF, initialize());
+    }
+    PetscMatrixAssembler(CMFDDataType &&data)
+        : cmfdData(std::move(data))
+    {
+        PetscCallCXXAbort(PETSC_COMM_SELF, initialize());
     }
 
     ~PetscMatrixAssembler()
@@ -106,10 +117,15 @@ struct SimpleMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostEx
 {
     using AssemblySpace = Kokkos::DefaultHostExecutionSpace;
     using AssemblyMemorySpace = Kokkos::HostSpace;
+    using CMFDDataType = CMFDData<AssemblySpace>;
 
     SimpleMatrixAssembler() = default;
     SimpleMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
         : PetscMatrixAssembler<AssemblySpace>(CMFDCoarseMesh) {
+            PetscCallCXXAbort(PETSC_COMM_SELF, _assembleM());
+        }
+    SimpleMatrixAssembler(CMFDDataType &&data)
+        : PetscMatrixAssembler<AssemblySpace>(std::move(data)) {
             PetscCallCXXAbort(PETSC_COMM_SELF, _assembleM());
         }
 
@@ -122,10 +138,15 @@ struct COOMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExecu
 {
     using AssemblySpace = Kokkos::DefaultHostExecutionSpace;
     using AssemblyMemorySpace = Kokkos::HostSpace;
+    using CMFDDataType = CMFDData<AssemblySpace>;
 
     COOMatrixAssembler() = default;
     COOMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
         : PetscMatrixAssembler<AssemblySpace>(CMFDCoarseMesh) {
+            PetscCallCXXAbort(PETSC_COMM_SELF, _assembleM());
+        }
+    COOMatrixAssembler(CMFDDataType &&data)
+        : PetscMatrixAssembler<AssemblySpace>(std::move(data)) {
             PetscCallCXXAbort(PETSC_COMM_SELF, _assembleM());
         }
 
@@ -138,10 +159,17 @@ struct CSRMatrixAssembler : public PetscMatrixAssembler<>
 {
     using AssemblySpace = Kokkos::DefaultExecutionSpace;
     using AssemblyMemorySpace = AssemblySpace::memory_space;
+    using CMFDDataType = CMFDData<AssemblySpace>;
 
     CSRMatrixAssembler() = default;
     CSRMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
         : PetscMatrixAssembler<AssemblySpace>(CMFDCoarseMesh) {
+            PetscCallCXXAbort(PETSC_COMM_SELF, _assembleM());
+
+            _fissionVectorView = Kokkos::View<PetscScalar *, AssemblyMemorySpace>("VecValuesKokkos", nRows);
+        }
+    CSRMatrixAssembler(CMFDDataType &&data)
+        : PetscMatrixAssembler<AssemblySpace>(std::move(data)) {
             PetscCallCXXAbort(PETSC_COMM_SELF, _assembleM());
 
             _fissionVectorView = Kokkos::View<PetscScalar *, AssemblyMemorySpace>("VecValuesKokkos", nRows);
