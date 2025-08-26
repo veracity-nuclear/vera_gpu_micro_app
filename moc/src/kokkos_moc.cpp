@@ -503,48 +503,20 @@ void KokkosMOC<ExecutionSpace, RealType>::update_source(const std::vector<double
 // General template implementation (fallback)
 template <typename ExecutionSpace>
 Kokkos::TeamPolicy<ExecutionSpace> _configure_team_policy(int n_rays, int npol, int ng) {
-    int n_teams, team_size;
-    #ifdef KOKKOS_ENABLE_CUDA
-    if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
-        n_teams = static_cast<long int>(n_rays);
-        team_size = npol * ng;
-    } else
-    #endif
-    {
-        n_teams = static_cast<long int>(n_rays) *  npol * ng;
-        team_size = 1;
-    }
-    return Kokkos::TeamPolicy<ExecutionSpace>(n_teams, team_size, 1);
+    return Kokkos::TeamPolicy<ExecutionSpace>(static_cast<long int>(n_rays * npol * ng), 1, 1);
 }
 
-template <typename ExecSpace>
 struct RayIndexCalculator {
     KOKKOS_INLINE_FUNCTION
     static void calculate(int league_rank, int team_rank,
                          int npol, int ng,
                          int& iray, int& ipol, int& ig) {
-        // Default implementation
-        int flat_idx = league_rank;
-        iray = flat_idx / (npol * ng);
-        ipol = (flat_idx / ng) % npol;
-        ig = flat_idx % ng;
+        int prod = npol * ng;
+        iray = league_rank / prod;
+        ig = (league_rank % prod) / npol;
+        ipol = league_rank % npol;
     }
 };
-
-// Specialization for Cuda backend
-#ifdef KOKKOS_ENABLE_CUDA
-template <>
-struct RayIndexCalculator<Kokkos::Cuda> {
-    KOKKOS_INLINE_FUNCTION
-    static void calculate(int league_rank, int team_rank,
-                         int npol, int ng,
-                         int& iray, int& ipol, int& ig) {
-        iray = league_rank;
-        ig = team_rank / npol;
-        ipol = team_rank % npol;
-    }
-};
-#endif
 
 template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
@@ -651,7 +623,7 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
         int iray, ipol, ig;
 
         // Use the specialized helper to calculate indices - no branches!
-        RayIndexCalculator<ExecutionSpace>::calculate(
+        RayIndexCalculator::calculate(
             teamMember.league_rank(), teamMember.team_rank(),
             npol, ng, iray, ipol, ig);
         const auto* ray = &rays(iray);
