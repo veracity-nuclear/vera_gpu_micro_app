@@ -14,7 +14,7 @@ std::vector<double> Water::h(std::vector<double> T) {
 }
 
 double Water::T(double h) {
-    return h / Cp(h) + 273.15; // K, only true because specific heat is constant
+    return h / 4.22 + 273.15; // K, only true because specific heat is constant
 }
 
 std::vector<double> Water::T(std::vector<double> h) {
