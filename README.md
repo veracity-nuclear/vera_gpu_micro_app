@@ -261,6 +261,7 @@ These datasets are inside `/CMFD_FineMesh` in the HDF5 file.
 
 | Dataset Name | Type | Shape | Description |
 | ------------ | ---- | ----- | ----------- |
+| `nxscells` | `int` | (n_coarse_cells) | The number of XS regions in each coarse mesh cell. |
 | `nfinecells` | `int` | (n_xsregions) | The number of fine mesh cells in each XS region. |
 | `isFissionable` | `bool` | (n_xsregions) | Indicates if each XS region is fissionable (True) or not (False) |
 | `volume` | `float` | (n_xsregions) | The volume of each XS region. |
@@ -271,7 +272,7 @@ These datasets are inside `/CMFD_FineMesh` in the HDF5 file.
 | `scattering XS` | `float` | (n_xsregions, n_groups) | The scattering cross section for each fine mesh cell in each XS region. |
 | `chi` | `float` | (n_fissionable, n_groups) | The chi for each fine mesh cell in each XS region. |
 
-For a single pin cell problem with 4 regions (coolant, clad, gap, fuel), each divided into 8 azimuthal regions, `nfinecells` will be `[0, 8, 16, 24, 32]` and `isFissionable` will be `[F, F, F, T]`.
+For a single pin cell problem with 4 regions (coolant, clad, gap, fuel), each divided into 8 azimuthal regions, `nxscells` will be `[0, 4]`, `nfinecells` will be `[0, 8, 16, 24, 32]` and `isFissionable` will be `[F, F, F, T]`.
 The `volume` array will have 4 values (one per XS region); the fine mesh volume for each region will be the XS region volume divided by the number of fine mesh cells in that region (8 in this example).
 The transport, total, and scattering cross sections are defined for every XS region.
 The nu-fission cross section and chi are only defined for fissionable regions.

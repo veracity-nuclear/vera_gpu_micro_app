@@ -26,7 +26,7 @@ TEST(readData, testHDF5ToKokkosView)
     }
 }
 
-TEST(readData, initialize)
+TEST(readData, initializeCoarseData)
 {
     std::string filename = "data/pin_7g_16a_3p_serial.h5";
     HighFive::File file(filename, HighFive::File::ReadOnly);
@@ -62,7 +62,7 @@ TEST(readData, initialize)
     size_t nSurfaces = surf2Cell.size();
 
     // Get data using the h_data
-    const CMFDData<Kokkos::HostSpace> h_data(CMFDCoarseMesh);
+    const CMFDData<Kokkos::DefaultHostExecutionSpace> h_data(CMFDCoarseMesh);
 
     ASSERT_EQ(h_data.nCells, nCells) << "Number of cells mismatch";
     ASSERT_EQ(h_data.nSurfaces, nSurfaces) << "Number of surfaces mismatch";
@@ -344,3 +344,268 @@ TEST(assignCellSurface, basicLogic)
         EXPECT_THROW(assignCellSurface(cellToSurf, surfToOther, 0, 99), std::runtime_error);
     }
 }
+
+TEST(fissionableCellToXSCell, basic)
+{
+    using AssemblySpace = Kokkos::DefaultHostExecutionSpace;
+    using IndexList = FineMeshData<AssemblySpace>::ViewIndexList;
+
+    auto buildAndCheck = [](const std::vector<bool> &isFissionable, const std::vector<PetscInt> &truthFissionToXSCell)
+    {
+        IndexList xsCellToNthFissionable;
+        initializeXSCellToNthFissionable<IndexList>(isFissionable, xsCellToNthFissionable);
+
+        ASSERT_EQ(xsCellToNthFissionable.extent(0), truthFissionToXSCell.size());
+        for (size_t i = 0; i < truthFissionToXSCell.size(); ++i)
+            ASSERT_EQ(xsCellToNthFissionable(i), truthFissionToXSCell[i]);
+    };
+
+    buildAndCheck({0, 0, 0, 0}, {-1, -1, -1, -1});
+    buildAndCheck({1, 1, 1, 1, 1}, {0, 1, 2, 3, 4});
+    buildAndCheck({1, 0, 1, 0, 1, 0, 1}, {0, -1, 1, -1, 2, -1, 3});
+    buildAndCheck({0, 1, 0, 0, 1, 0, 0, 0, 1}, {-1, 0, -1, -1, 1, -1, -1, -1, 2});
+    buildAndCheck({0, 0, 1, 0, 1, 0, 0}, {-1, -1, 0, -1, 1, -1, -1});
+    buildAndCheck({1, 1, 1, 1, 1, 0, 0, 0}, {0, 1, 2, 3, 4, -1, -1, -1});
+    buildAndCheck({1}, {0});
+    buildAndCheck({0}, {-1});
+}
+
+TEST(readData, initializeFineData)
+{
+    std::string filename = "data/pin_7g_16a_3p_serial.h5";
+    HighFive::File file(filename, HighFive::File::ReadOnly);
+    HighFive::Group fineGroup = file.getGroup("CMFD_FineMesh");
+
+    // Read (reference) data directly via HighFive
+    std::vector<PetscInt> coarseToXSCells_vec, xsToFineCells_vec;
+    std::vector<PetscScalar> volumePerXSR_vec;
+    std::vector<std::vector<PetscScalar>> fineFlux_vec, transportXS_vec, nuFissionXS_vec, chi_vec;
+    std::vector<std::vector<std::vector<PetscScalar>>> scatteringXS_vec;
+
+    fineGroup.getDataSet("nxscells").read(coarseToXSCells_vec);
+    fineGroup.getDataSet("nfinecells").read(xsToFineCells_vec);
+    fineGroup.getDataSet("volume").read(volumePerXSR_vec);
+    fineGroup.getDataSet("flux").read(fineFlux_vec);
+    fineGroup.getDataSet("transport XS").read(transportXS_vec);
+    fineGroup.getDataSet("nu-fission XS").read(nuFissionXS_vec);
+    fineGroup.getDataSet("chi").read(chi_vec);
+    fineGroup.getDataSet("scattering XS").read(scatteringXS_vec);
+
+    // Construct FineMeshData (host + device)
+    FineMeshData<Kokkos::DefaultHostExecutionSpace> h_fine(fineGroup);
+    FineMeshData<> d_fine(fineGroup);
+
+    // Helper lambdas
+    auto compare1DScalar = [](auto view, const std::vector<PetscScalar> &ref, const char *msg) {
+        ASSERT_EQ(view.extent(0), ref.size()) << msg << " extent mismatch";
+        for (size_t i = 0; i < ref.size(); ++i)
+            ASSERT_DOUBLE_EQ(view(i), ref[i]) << msg << " mismatch at " << i;
+    };
+    auto compare1DInt = [](auto view, const std::vector<PetscInt> &ref, const char *msg) {
+        ASSERT_EQ(view.extent(0), ref.size()) << msg << " extent mismatch";
+        for (size_t i = 0; i < ref.size(); ++i)
+            ASSERT_EQ(view(i), ref[i]) << msg << " mismatch at " << i;
+    };
+    auto compare2D = [](auto view, const std::vector<std::vector<PetscScalar>> &ref, const char *msg) {
+        ASSERT_EQ(view.extent(0), ref.size()) << msg << " outer extent mismatch";
+        if (!ref.empty())
+            ASSERT_EQ(view.extent(1), ref[0].size()) << msg << " inner extent mismatch";
+        for (size_t i = 0; i < ref.size(); ++i)
+            for (size_t j = 0; j < ref[i].size(); ++j)
+                ASSERT_DOUBLE_EQ(view(i, j), ref[i][j]) << msg << " mismatch at (" << i << "," << j << ")";
+    };
+    auto compare3D = [](auto view, const std::vector<std::vector<std::vector<PetscScalar>>> &ref, const char *msg) {
+        ASSERT_EQ(view.extent(0), ref.size()) << msg << " dim0 mismatch";
+        if (!ref.empty()) ASSERT_EQ(view.extent(1), ref[0].size()) << msg << " dim1 mismatch";
+        if (!ref.empty() && !ref[0].empty()) ASSERT_EQ(view.extent(2), ref[0][0].size()) << msg << " dim2 mismatch";
+        for (size_t g1 = 0; g1 < ref.size(); ++g1)
+            for (size_t g2 = 0; g2 < ref[g1].size(); ++g2)
+                for (size_t k = 0; k < ref[g1][g2].size(); ++k)
+                    ASSERT_DOUBLE_EQ(view(g1, g2, k), ref[g1][g2][k])
+                        << msg << " mismatch at (" << g1 << "," << g2 << "," << k << ")";
+    };
+
+    // Host mirrors
+    auto h_coarseToXSCells = h_fine.coarseToXSCells;
+    auto h_xsToFineCells = h_fine.xsToFineCells;
+    auto h_volumePerXSR = h_fine.volumePerXSR;
+    auto h_fineFlux = h_fine.fineFlux;
+    auto h_transportXS = h_fine.transportXS;
+    auto h_nuFissionXS = h_fine.nuFissionXS;
+    auto h_chi = h_fine.chi;
+    auto h_scatteringXS = h_fine.scatteringXS;
+
+    // Compare host data
+    compare1DInt(h_coarseToXSCells, coarseToXSCells_vec, "coarseToXSCells");
+    compare1DInt(h_xsToFineCells, xsToFineCells_vec, "xsToFineCells");
+    compare1DScalar(h_volumePerXSR, volumePerXSR_vec, "volumePerXSR");
+    compare2D(h_fineFlux, fineFlux_vec, "fineFlux");
+    compare2D(h_transportXS, transportXS_vec, "transportXS");
+    compare2D(h_nuFissionXS, nuFissionXS_vec, "nuFissionXS");
+    compare2D(h_chi, chi_vec, "chi");
+    compare3D(h_scatteringXS, scatteringXS_vec, "scatteringXS");
+
+    // Device mirrors -> host copies
+    auto d_coarseToXSCells_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.coarseToXSCells);
+    auto d_xsToFineCells_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.xsToFineCells);
+    auto d_volumePerXSR_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.volumePerXSR);
+    auto d_fineFlux_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.fineFlux);
+    auto d_transportXS_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.transportXS);
+    auto d_nuFissionXS_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.nuFissionXS);
+    auto d_chi_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.chi);
+    auto d_scatteringXS_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.scatteringXS);
+
+    // Compare device-loaded data
+    compare1DInt(d_coarseToXSCells_h, coarseToXSCells_vec, "device coarseToXSCells");
+    compare1DInt(d_xsToFineCells_h, xsToFineCells_vec, "device xsToFineCells");
+    compare1DScalar(d_volumePerXSR_h, volumePerXSR_vec, "device volumePerXSR");
+    compare2D(d_fineFlux_h, fineFlux_vec, "device fineFlux");
+    compare2D(d_transportXS_h, transportXS_vec, "device transportXS");
+    compare2D(d_nuFissionXS_h, nuFissionXS_vec, "device nuFissionXS");
+    compare2D(d_chi_h, chi_vec, "device chi");
+    compare3D(d_scatteringXS_h, scatteringXS_vec, "device scatteringXS");
+
+    // Check scalar values
+    HighFive::Group coarseMesh = file.getGroup("CMFD_CoarseMesh");
+    PetscInt energyGroups, firstCell, lastCell;
+    coarseMesh.getDataSet("energy groups").read(energyGroups);
+    ASSERT_EQ(d_fine.nEnergyGroups, energyGroups) << "Energy groups mismatch";
+
+    coarseMesh.getDataSet("first cell").read(firstCell);
+    coarseMesh.getDataSet("last cell").read(lastCell);
+    PetscInt nCoarseCells = lastCell - firstCell + 1;
+    ASSERT_EQ(d_fine.nCoarseCells, nCoarseCells) << "Coarse cells mismatch";
+
+    PetscInt nXSCells = coarseToXSCells_vec.back();
+    ASSERT_EQ(d_fine.nXSCells, nXSCells) << "XS cells mismatch";
+
+    PetscInt nFineCells = xsToFineCells_vec.back();
+    ASSERT_EQ(d_fine.nFineCells, nFineCells) << "Fine cells mismatch";
+
+    // Check if initializeFissionableCellToXSCell has been run
+    ASSERT_EQ(h_fine.xsCellToNthFissionable.extent(0), nXSCells);
+    ASSERT_EQ(d_fine.xsCellToNthFissionable.extent(0), nXSCells);
+
+    // Find the number of fissionable XS cells according to xsCellToNthFissionable
+    PetscInt nFissionable = -1;
+    for (size_t i = nXSCells; i-- > 0; )
+    {
+        nFissionable = h_fine.xsCellToNthFissionable(i);
+        // exit on first since xsCellToNthFissionable is in order
+        if (nFissionable != -1)
+        {
+            nFissionable++;
+            break;
+        }
+    }
+
+    // Check  extents of chi and nuFission
+    ASSERT_EQ(d_fine.chi.extent(0), nFissionable);
+    ASSERT_EQ(d_fine.nuFissionXS.extent(0), nFissionable);
+    ASSERT_EQ(d_fine.chi.extent(1), d_fine.nEnergyGroups);
+    ASSERT_EQ(d_fine.nuFissionXS.extent(1), d_fine.nEnergyGroups);
+}
+
+class HomogenizationTest : public ::testing::TestWithParam<std::string> {
+protected:
+    using AssemblySpace = Kokkos::DefaultExecutionSpace;
+
+    void SetUp() override {
+        fileName = GetParam();
+        HighFive::File file(fileName, HighFive::File::ReadOnly);
+        HighFive::Group coarseGroup = file.getGroup("CMFD_CoarseMesh");
+        HighFive::Group fineGroup = file.getGroup("CMFD_FineMesh");
+
+        coarseData = std::make_unique<CMFDData<AssemblySpace>>(coarseGroup);
+        fineData = std::make_unique<FineMeshData<AssemblySpace>>(fineGroup);
+
+        ::testing::TestWithParam<std::string>::SetUp();
+    }
+
+    void TearDown() override {
+        fineData.reset();
+        coarseData.reset();
+
+        ::testing::TestWithParam<std::string>::TearDown();
+    }
+
+    std::string fileName;
+    std::unique_ptr<CMFDData<AssemblySpace>> coarseData;
+    std::unique_ptr<FineMeshData<AssemblySpace>> fineData;
+};
+
+TEST_P(HomogenizationTest, FineFlux) {
+    FineMeshData<AssemblySpace>::View2D calculatedCoarseFlux = fineData->homogenizeFineFlux();
+
+    // TODO (#64): We have the relative and absolute tolerances set pretty high.
+    // Aaron and I (Braden) looked at the coarse and fine outputs generated by MPACT and
+    // could not find a great reason for the discrepancy. The data from the file are converged
+    // to precision further than the tolerances we are using.
+    compare2DViews<PetscScalar, AssemblySpace>(
+        calculatedCoarseFlux,
+        coarseData->pastFlux,
+        0.002, 0.06, // (#64) Tolerances are high
+        "Comparing homogenized coarse flux vs. MPACT coarse flux"
+    );
+}
+
+TEST_P(HomogenizationTest, TransportXS) {
+    FineMeshData<AssemblySpace>::View2D calculatedCoarseXS = fineData->homogenizeTransportXS();
+    compare2DViews<PetscScalar, AssemblySpace>(
+        calculatedCoarseXS,
+        coarseData->transportXS,
+        2e-4, 1e-2, // (#64) Tolerances are high
+        "Comparing homogenized coarse XS vs. MPACT coarse XS"
+    );
+}
+
+TEST_P(HomogenizationTest, RemovalXS) {
+    FineMeshData<AssemblySpace>::View2D calculatedCoarseRemovalXS = fineData->homogenizeRemovalXS();
+    compare2DViews<PetscScalar, AssemblySpace>(
+        calculatedCoarseRemovalXS,
+        coarseData->removalXS,
+        2e-3, 1e-2, // (#64) Tolerances are high
+        "Comparing homogenized coarse removal XS vs. MPACT coarse removal XS"
+    );
+}
+
+TEST_P(HomogenizationTest, ScatterXS) {
+    FineMeshData<AssemblySpace>::View3D calculatedCoarseScatterXS = fineData->homogenizeScatteringXS();
+    compare3DViews<PetscScalar, AssemblySpace>(
+        calculatedCoarseScatterXS,
+        coarseData->scatteringXS,
+        0.002, 7.1e-3, // (#64) Tolerances are high
+        "Comparing homogenized coarse scatter XS vs. MPACT coarse scatter XS"
+    );
+}
+
+TEST_P(HomogenizationTest, Chi) {
+    FineMeshData<AssemblySpace>::View2D calculatedCoarseChi = fineData->homogenizeChi();
+    compare2DViews<PetscScalar, AssemblySpace>(
+        calculatedCoarseChi,
+        coarseData->chi,
+        1e-14, 1e-14,
+        "Comparing homogenized coarse chi vs. MPACT coarse chi"
+    );
+}
+
+TEST_P(HomogenizationTest, NuFissionXS) {
+    FineMeshData<AssemblySpace>::View2D calculatedCoarseNuFissionXS = fineData->homogenizeNuFissionXS();
+    compare2DViews<PetscScalar, AssemblySpace>(
+        calculatedCoarseNuFissionXS,
+        coarseData->nuFissionXS,
+        0.006, 7.1e-3, // (#64) Tolerances are high
+        "Comparing homogenized coarse nu-fission XS vs. MPACT coarse nu-fission XS"
+    );
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    HomogenizationTests,
+    HomogenizationTest,
+    ::testing::Values(
+        "data/pin_7g_16a_3p_serial.h5",
+        "data/2x2_7g_16a_3p_serial.h5",
+        "data/7x7_7g_16a_3p_serial.h5",
+        "data/small_parallel.h5"
+    )
+);
