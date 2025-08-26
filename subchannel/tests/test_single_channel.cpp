@@ -4,7 +4,6 @@
 #include <iomanip>
 #include <string>
 #include <vector>
-#include "constants.hpp"
 #include "geometry.hpp"
 #include "materials.hpp"
 #include "solver.hpp"

@@ -3,7 +3,6 @@
 #include <iostream>
 #include <memory>
 #include <vector>
-#include "constants.hpp"
 #include "geometry.hpp"
 #include "materials.hpp"
 #include "th.hpp"
