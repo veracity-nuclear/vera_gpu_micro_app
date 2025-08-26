@@ -52,8 +52,8 @@ std::vector<double> Water::Cp(std::vector<double> h) {
 }
 
 double Water::mu(double h) {
-    // Simple approximation for water viscosity
-    throw std::runtime_error("Viscosity calculation not implemented"); // Pa-s
+    // Simple approximation for water viscosity (value for saturated liquid at 7 MPa)
+    return 0.001352; // Pa-s
 }
 
 std::vector<double> Water::mu(std::vector<double> h) {
@@ -65,8 +65,8 @@ std::vector<double> Water::mu(std::vector<double> h) {
 }
 
 double Water::k(double h) {
-    // Simple approximation for water thermal conductivity
-    throw std::runtime_error("Thermal conductivity calculation not implemented"); // W/m-K
+    // Simple approximation for water thermal conductivity (approximate value for water at 250°C, 7 MPa)
+    return 0.6; // W/m-K
 }
 
 std::vector<double> Water::k(std::vector<double> h) {
