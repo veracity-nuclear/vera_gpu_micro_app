@@ -11,7 +11,7 @@ public:
     double flow_area() const { return Af; }
     double hydraulic_diameter() const { return Dh; }
     double gap_width() const { return gap_W; }
-    double heated_perimeter() const { return Af / dz(); }
+    double heated_perimeter() const { return 4.0 * Af / Dh; }
     double dz() const { return H / nz; }
     size_t naxial() const { return nz; }
 
