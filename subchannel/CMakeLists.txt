@@ -1,6 +1,8 @@
 add_library(subchannel_lib
-    src/main.cpp
+    src/geometry.cpp
     src/materials.cpp
+    src/solver.cpp
+    src/th.cpp
 )
 
 target_link_libraries(subchannel_lib
@@ -10,18 +12,10 @@ target_link_libraries(subchannel_lib
     utils
 )
 
-add_executable(subchannel_exec
-    src/geometry.cpp
-    src/main.cpp
-    src/solver.cpp
-    src/th.cpp
-)
-target_link_libraries(subchannel_exec subchannel_lib)
-
 # --- Tests ---
 enable_testing()
 set(TEST_EXECUTABLES
-    test_main
+    test_single_channel
 )
 set(TEST_LABELS
     "BASIC\;CONTINUOUS\;HEAVY"
@@ -33,7 +27,7 @@ foreach(i RANGE 0 ${last_index})
     list(GET TEST_LABELS ${i} labels)
     add_executable(${test} ${CMAKE_CURRENT_SOURCE_DIR}/tests/${test}.cpp)
     target_link_libraries(${test}
-        conduction_lib
+        subchannel_lib
         GTest::gtest
     )
     target_include_directories(${test} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

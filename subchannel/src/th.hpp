@@ -1,11 +1,13 @@
-#ifndef ANTS_SUBCHANNEL_THERMAL_HYDRAULICS_HPP
-#define ANTS_SUBCHANNEL_THERMAL_HYDRAULICS_HPP
+#pragma once
 
+#include <iostream>
+#include <vector>
+#include <memory>
 
-class ThermalHydraulics {
-public:
-    ThermalHydraulics();
-    ~ThermalHydraulics() = default;
-};
+#include "geometry.hpp"
 
-#endif // ANTS_SUBCHANNEL_THERMAL_HYDRAULICS_HPP
+namespace TH {
+
+void solve_enthalpy(std::vector<double>& h, const std::vector<double>& W_l, double lhr, const Geometry& geom);
+
+} // namespace TH
