@@ -344,7 +344,7 @@ KokkosMOC<ExecutionSpace, RealType>::_read_ray_infos() {
 }
 
 template <typename ExecutionSpace, typename RealType>
-KokkosMOC<ExecutionSpace, RealType>::HViewKokkosLongRay1D
+typename KokkosMOC<ExecutionSpace, RealType>::HViewKokkosLongRay1D
 KokkosMOC<ExecutionSpace, RealType>::_read_rays(
     std::vector<KokkosMOC<ExecutionSpace, RealType>::RayInfo> ray_infos
 ) {
@@ -363,7 +363,7 @@ KokkosMOC<ExecutionSpace, RealType>::_read_rays(
 }
 
 template <typename ExecutionSpace, typename RealType>
-KokkosMOC<ExecutionSpace, RealType>::HViewKokkosRaySegment1D
+typename KokkosMOC<ExecutionSpace, RealType>::HViewKokkosRaySegment1D
 KokkosMOC<ExecutionSpace, RealType>::_read_segments(
     std::vector<KokkosMOC<ExecutionSpace, RealType>::RayInfo> ray_infos
 ) {
