@@ -26,4 +26,5 @@ Solver::Solver(
 
 void Solver::solve() {
     TH::solve_enthalpy(h, W_l, lhr, *geom);
+    TH::solve_pressure(P, W_l, fluid->rho(h), fluid->mu(h), *geom);
 }

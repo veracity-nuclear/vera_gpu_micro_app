@@ -24,6 +24,7 @@ public:
 
     std::vector<double> get_surface_enthalpies() const { return h; }
     std::vector<double> get_surface_temperatures() const { return fluid->T(h); }
+    std::vector<double> get_surface_pressures() const { return P; }
 
 private:
     double T_inlet;

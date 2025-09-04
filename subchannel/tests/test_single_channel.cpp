@@ -39,23 +39,41 @@ TEST(SubchannelTest, SingleChannel) {
 
     std::vector<double> h = solver.get_surface_enthalpies();
     std::vector<double> T = solver.get_surface_temperatures();
+    std::vector<double> P = solver.get_surface_pressures();
 
     // Print table of results
     std::cout << std::fixed << std::setprecision(2) << std::endl;
     std::cout << "Subchannel: 0" << std::endl;
-    std::cout << std::setw(6) << "Surf" << std::setw(12) << "Enthalpy" << std::setw(12) << "Temp." << std::endl;
-    std::cout << std::setw(6) << "" << std::setw(12) << "(J/kg)" << std::setw(12) << "(K)" << std::endl;
+    std::cout << std::setw(6) << "Surf"
+              << std::setw(12) << "Enthalpy"
+              << std::setw(12) << "Temp."
+              << std::setw(12) << "Press." << std::endl;
+    std::cout << std::setw(6) << ""
+              << std::setw(12) << "(J/kg)"
+              << std::setw(12) << "(K)"
+              << std::setw(12) << "(kPa)" << std::endl;
     for (size_t k = 0; k < naxial + 1; ++k) {
-        std::cout << std::setw(6) << k << std::setw(12) << h[k] << std::setw(12) << fluid.T(h[k]) << std::endl;
+        std::cout << std::setw(6) << k
+                  << std::setw(12) << h[k]
+                  << std::setw(12) << fluid.T(h[k])
+                  << std::setw(12) << P[k] / 1000.0 << std::endl;
     }
     std::cout << std::endl;
 
     double total_heat = linear_heat_rate * geometry.height();
     double expected_deltaT = total_heat / (inlet_mass_flow * fluid.Cp(fluid.h(inlet_temperature)));
     double actual_deltaT = T.back() - T.front();
+    std::cout << "Total temperature rise: " << actual_deltaT << " K" << std::endl;
 
     // check total temperature rise in subchannel
     EXPECT_NEAR(actual_deltaT, expected_deltaT, 1e-6);
+
+    double total_pressure_drop = P.front() - P.back();
+    double expected_pressure_drop = 616719.382; // placeholder for now
+    std::cout << "Total pressure drop: " << total_pressure_drop / 1000.0 << " kPa" << std::endl;
+
+    // check total pressure drop in subchannel
+    EXPECT_NEAR(total_pressure_drop, expected_pressure_drop, 1e-3);
 }
 
 int main(int argc, char **argv) {
