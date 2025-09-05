@@ -4,6 +4,8 @@
 #include <iomanip>
 #include <string>
 #include <vector>
+
+#include "vectors.hpp"
 #include "geometry.hpp"
 #include "materials.hpp"
 #include "solver.hpp"
@@ -37,9 +39,9 @@ TEST(SubchannelTest, SingleChannel) {
     );
     solver.solve();
 
-    std::vector<double> h = solver.get_surface_enthalpies();
-    std::vector<double> T = solver.get_surface_temperatures();
-    std::vector<double> P = solver.get_surface_pressures();
+    Vector1D h = solver.get_surface_enthalpies();
+    Vector1D T = solver.get_surface_temperatures();
+    Vector1D P = solver.get_surface_pressures();
 
     // Print table of results
     std::cout << std::fixed << std::setprecision(2) << std::endl;

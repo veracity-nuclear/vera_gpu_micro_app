@@ -5,8 +5,8 @@ double Water::h(double T) {
     return Cp(0) * (T - 273.15); // kJ/kg
 }
 
-std::vector<double> Water::h(std::vector<double> T) {
-    std::vector<double> h_values;
+Vector1D Water::h(Vector1D T) {
+    Vector1D h_values;
     for (double T_i : T) {
         h_values.push_back(h(T_i));
     }
@@ -17,8 +17,8 @@ double Water::T(double h) {
     return h / 4.22 + 273.15; // K, only true because specific heat is constant
 }
 
-std::vector<double> Water::T(std::vector<double> h) {
-    std::vector<double> T_values;
+Vector1D Water::T(Vector1D h) {
+    Vector1D T_values;
     for (double h_i : h) {
         T_values.push_back(T(h_i));
     }
@@ -30,8 +30,8 @@ double Water::rho(double h) {
     return 958.0; // kg/m^3
 }
 
-std::vector<double> Water::rho(std::vector<double> h) {
-    std::vector<double> rho_values;
+Vector1D Water::rho(Vector1D h) {
+    Vector1D rho_values;
     for (double h_i : h) {
         rho_values.push_back(rho(h_i));
     }
@@ -43,8 +43,8 @@ double Water::Cp(double h) {
     return 4.22; // kJ/kg-K
 }
 
-std::vector<double> Water::Cp(std::vector<double> h) {
-    std::vector<double> Cp_values;
+Vector1D Water::Cp(Vector1D h) {
+    Vector1D Cp_values;
     for (double h_i : h) {
         Cp_values.push_back(Cp(h_i));
     }
@@ -56,8 +56,8 @@ double Water::mu(double h) {
     return 0.001352; // Pa-s
 }
 
-std::vector<double> Water::mu(std::vector<double> h) {
-    std::vector<double> mu_values;
+Vector1D Water::mu(Vector1D h) {
+    Vector1D mu_values;
     for (double h_i : h) {
         mu_values.push_back(mu(h_i));
     }
@@ -69,8 +69,8 @@ double Water::k(double h) {
     return 0.6; // W/m-K
 }
 
-std::vector<double> Water::k(std::vector<double> h) {
-    std::vector<double> k_values;
+Vector1D Water::k(Vector1D h) {
+    Vector1D k_values;
     for (double h_i : h) {
         k_values.push_back(k(h_i));
     }

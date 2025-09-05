@@ -1,6 +1,6 @@
 #include "th.hpp"
 
-void TH::solve_enthalpy(std::vector<double>& h, const std::vector<double>& W_l, double lhr, const Geometry& geom) {
+void TH::solve_enthalpy(Vector1D& h, const Vector1D& W_l, double lhr, const Geometry& geom) {
 
     // Perform calculations for each axial plane
     for (size_t k = 1; k < geom.naxial() + 1; ++k) {
@@ -9,10 +9,10 @@ void TH::solve_enthalpy(std::vector<double>& h, const std::vector<double>& W_l, 
 }
 
 void TH::solve_pressure(
-    std::vector<double>& P,
-    const std::vector<double>& W_l,
-    const std::vector<double>& rho,
-    const std::vector<double>& mu,
+    Vector1D& P,
+    const Vector1D& W_l,
+    const Vector1D& rho,
+    const Vector1D& mu,
     const Geometry& geom
 ) {
 
