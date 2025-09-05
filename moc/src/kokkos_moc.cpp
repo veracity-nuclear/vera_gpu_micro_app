@@ -86,10 +86,6 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
         _max_segments = std::max(_max_segments, _h_rays(i).nsegs());
     }
 
-    // Copy the rays
-    _d_rays = DViewKokkosLongRay1D("device segments", _h_rays.size());
-    Kokkos::deep_copy(_d_rays, _h_rays);
-
     // Read the FSR volumes and plane height
     {
         auto fsr_vol = _file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read<std::vector<double>>();
@@ -214,6 +210,10 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
         _h_rays(i).set_angflux_bc_indices(bc_frwd_start, bc_frwd_end, bc_bkwd_start, bc_bkwd_end);
     }
     Kokkos::deep_copy(_h_old_angflux, _h_angflux);
+
+    // Copy the rays
+    _d_rays = DViewKokkosLongRay1D("device segments", _h_rays.size());
+    Kokkos::deep_copy(_d_rays, _h_rays);
     _h_rays = decltype(_h_rays)();
 
     // Store the inverse polar angle sine
