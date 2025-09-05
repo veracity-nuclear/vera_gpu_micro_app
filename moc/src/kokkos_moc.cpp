@@ -118,6 +118,7 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
     // Copy the rays
     _d_rays = DViewKokkosLongRay1D("device segments", _h_rays.size());
     Kokkos::deep_copy(_d_rays, _h_rays);
+    _h_rays = decltype(_h_rays)();
 
     // Read the FSR volumes and plane height
     {
@@ -200,32 +201,7 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
     // Now allocate the angular flux arrays, remap the long ray indexes, and initialize the angular flux arrays
     total_bc_points = 2 * total_bc_points + 2;  // Both directions on each ray, plus two for the vacuum rays
     _h_angflux = HViewReal3D("angflux", total_bc_points, _npol, _ng);
-
-    // Calculate BC indices and populate ray/segment data directly
-    for (size_t i = 0; i < _n_rays; i++) {
-        const auto& ray = _h_rays(i);
-        int ang = ray.angle();
-        int irefl = ang % 2 == 0 ? ang + 1 : ang - 1;
-        int bc_frwd, bc_bkwd;
-
-        int end = RAY_START;
-        for (int j = 0; j < 2; j++) {
-            if (ray.bc_index(end) != -1) {
-                int start_index = ray.bc_index(end);
-                bc_frwd = angface_to_ray[ang][ray.bc_face(end)][start_index];
-                bc_bkwd = angface_to_ray[irefl][ray.bc_face(end)][start_index];
-                for (size_t ipol = 0; ipol < _npol; ipol++) {
-                    for (size_t ig = 0; ig < _ng; ig++) {
-                        _h_angflux(bc_frwd, ipol, ig) = 0.0;
-                        _h_angflux(bc_bkwd, ipol, ig) = 0.0;
-                    }
-                }
-            }
-            end = RAY_END;
-        }
-    }
-    _h_rays = decltype(_h_rays)();
-
+    Kokkos::deep_copy(_h_angflux, static_cast<RealType>(0.0));
     _h_old_angflux = HViewReal3D("old_angflux", total_bc_points, _npol, _ng);
     Kokkos::deep_copy(_h_old_angflux, _h_angflux);
 
