@@ -28,9 +28,6 @@ void TH::solve_pressure(State& state, const Geometry& geom, const Water& fluid) 
     const double a_1 = 0.1892;
     const double n = -0.2;
 
-    // temporarily set quality to zero
-    double X_f = 0.0;
-
     for (size_t k = 1; k < geom.naxial() + 1; ++k) {
         G = state.W_l[k] / geom.flow_area();
 
@@ -50,7 +47,7 @@ void TH::solve_pressure(State& state, const Geometry& geom, const Water& fluid) 
         } else {
             b = 15000.0 / (gamma * gamma * sqrt(G));
         }
-        phi2_ch = 1.0 + (gamma * gamma - 1.0) * (b * pow(X_f, 0.9) * pow((1.0 - X_f), 0.9) + pow(X_f, 1.8));
+        phi2_ch = 1.0 + (gamma * gamma - 1.0) * (b * pow(state.X[k], 0.9) * pow((1.0 - state.X[k]), 0.9) + pow(state.X[k], 1.8));
         dP_wall_shear = K * G * G / (2.0 * rho[k]) * phi2_ch;
 
         // calculate form loss pressure drop
