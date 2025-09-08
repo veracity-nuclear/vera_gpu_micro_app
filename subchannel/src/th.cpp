@@ -1,10 +1,10 @@
 #include "th.hpp"
 
-void TH::solve_enthalpy(State& state, double lhr, const Geometry& geom) {
+void TH::solve_enthalpy(State& state, const Geometry& geom) {
 
     // Perform calculations for each axial plane
     for (size_t k = 1; k < geom.naxial() + 1; ++k) {
-        state.h[k] = (state.W_l[k] * state.h[k-1] + geom.dz() * lhr) / state.W_l[k];
+        state.h[k] = (state.W_l[k] * state.h[k-1] + geom.dz() * state.lhr[k-1]) / state.W_l[k];
     }
 }
 
@@ -69,7 +69,7 @@ void TH::solve_pressure(State& state, const Geometry& geom, const Water& fluid) 
 
 void TH::solve_void_fraction(State& state, const Geometry& geom, const Water& fluid) {
     // based on the Chexal-Lellouche drift flux model
-    const double P_crit = 22.064e6; // Pa, critical pressure
+    const double P_crit = 22.09e6; // Pa, critical pressure
     double P = state.P[0]; // assuming constant pressure for simplicity
     double A = geom.flow_area();
 
