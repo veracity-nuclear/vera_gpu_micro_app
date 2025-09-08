@@ -19,6 +19,7 @@ Solver::Solver(
     state.W_l.resize(geom->naxial() + 1, mass_flow_rate);
     state.W_v.resize(geom->naxial() + 1, 0.0);
     state.alpha.resize(geom->naxial() + 1, 0.0);
+    state.X.resize(geom->naxial() + 1, 0.0);
     state.lhr.resize(geom->naxial(), linear_heat_rate);
 
     std::cout << "Solver initialized." << std::endl;
@@ -27,4 +28,6 @@ Solver::Solver(
 void Solver::solve() {
     TH::solve_enthalpy(state, *geom);
     TH::solve_pressure(state, *geom, *fluid);
+    TH::solve_void_fraction(state, *geom, *fluid);
+    TH::solve_quality(state, *geom, *fluid);
 }

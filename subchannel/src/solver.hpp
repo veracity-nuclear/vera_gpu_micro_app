@@ -29,6 +29,7 @@ public:
     Vector1D get_surface_temperatures() const { return fluid->T(state.h); }
     Vector1D get_surface_pressures() const { return state.P; }
     Vector1D get_surface_void_fractions() const { return state.alpha; }
+    Vector1D get_surface_qualities() const { return state.X; }
 
 private:
     double T_inlet;

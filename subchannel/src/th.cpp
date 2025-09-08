@@ -74,8 +74,8 @@ void TH::solve_void_fraction(State& state, const Geometry& geom, const Water& fl
     double A = geom.flow_area();
 
     for (size_t k = 0; k < geom.naxial() + 1; ++k) {
-        double G_v = state.W_l[k] / A; // vapor mass flux
-        double G_l = state.W_v[k] / A; // liquid mass flux
+        double G_v = state.W_v[k] / A; // vapor mass flux
+        double G_l = state.W_l[k] / A; // liquid mass flux
 
         // calculate distribution parameter, C_0
         double B_1 = 1.5; // from Zuber correlation
@@ -90,5 +90,13 @@ void TH::solve_void_fraction(State& state, const Geometry& geom, const Water& fl
         double V_gj = V_gj0 * pow(1 - state.alpha[k], B_1); // drift velocity
 
         state.alpha[k] = G_v / (C_0 * (G_v + (fluid.rho_g() / fluid.rho_f()) * G_l) + fluid.rho_g() * V_gj);
+    }
+}
+
+void TH::solve_quality(State& state, const Geometry& geom, const Water& fluid) {
+    for (size_t k = 0; k < geom.naxial() + 1; ++k) {
+        double G_v = state.W_v[k] / geom.flow_area(); // vapor mass flux
+        double G_f = state.W_l[k] / geom.flow_area(); // liquid mass flux
+        state.X[k] = G_v / (G_v + G_f);
     }
 }
