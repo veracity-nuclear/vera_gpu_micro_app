@@ -7,7 +7,7 @@
 #include "vectors.hpp"
 #include "geometry.hpp"
 #include "materials.hpp"
-#include "th.hpp"
+#include "state.hpp"
 
 
 class Solver {
@@ -24,9 +24,9 @@ public:
 
     void solve();
 
-    Vector1D get_surface_enthalpies() const { return h; }
-    Vector1D get_surface_temperatures() const { return fluid->T(h); }
-    Vector1D get_surface_pressures() const { return P; }
+    Vector1D get_surface_enthalpies() const { return state.h; }
+    Vector1D get_surface_temperatures() const { return fluid->T(state.h); }
+    Vector1D get_surface_pressures() const { return state.P; }
 
 private:
     double T_inlet;
@@ -34,10 +34,5 @@ private:
     double lhr;
     std::unique_ptr<Geometry> geom;
     std::unique_ptr<Water> fluid;
-
-    // solution vectors
-    Vector1D h; // enthalpy
-    Vector1D P; // pressure
-    Vector1D W_l, W_v; // liquid and vapor flow rates
-    Vector1D alpha; // void fraction, for future implementation
+    State state;
 };

@@ -1,14 +1,14 @@
 #include "th.hpp"
 
-void TH::solve_enthalpy(Vector1D& h, const Vector1D& W_l, double lhr, const Geometry& geom) {
+void TH::solve_enthalpy(State& state, double lhr, const Geometry& geom) {
 
     // Perform calculations for each axial plane
     for (size_t k = 1; k < geom.naxial() + 1; ++k) {
-        h[k] = (W_l[k] * h[k-1] + geom.dz() * lhr) / W_l[k];
+        state.h[k] = (state.W_l[k] * state.h[k-1] + geom.dz() * lhr) / state.W_l[k];
     }
 }
 
-void TH::solve_pressure(Vector1D& P, const Vector1D& W_l, const Vector1D& rho, const Vector1D& mu, const Geometry& geom, const Water& fluid) {
+void TH::solve_pressure(State& state, const Geometry& geom, const Water& fluid) {
 
     double G; // mass flux
     double Re; // Reynolds number
@@ -32,8 +32,12 @@ void TH::solve_pressure(Vector1D& P, const Vector1D& W_l, const Vector1D& rho, c
     double X_f = 0.0;
 
     for (size_t k = 1; k < geom.naxial() + 1; ++k) {
-        G = W_l[k] / geom.flow_area();
-        Re = W_l[k] * geom.hydraulic_diameter() / (geom.flow_area() * mu[k]);
+        G = state.W_l[k] / geom.flow_area();
+
+        Vector1D rho = fluid.rho(state.h);
+        Vector1D mu = fluid.mu(state.h);
+
+        Re = state.W_l[k] * geom.hydraulic_diameter() / (geom.flow_area() * mu[k]);
 
         // calculate frictional pressure drop from wall shear
         f = a_1 * pow(Re, n);
@@ -59,6 +63,6 @@ void TH::solve_pressure(Vector1D& P, const Vector1D& W_l, const Vector1D& rho, c
 
         dP_total = dP_wall_shear + dP_form + dP_grav;
 
-        P[k] = P[k-1] - dP_total;
+        state.P[k] = state.P[k-1] - dP_total;
     }
 }
