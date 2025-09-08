@@ -66,3 +66,29 @@ void TH::solve_pressure(State& state, const Geometry& geom, const Water& fluid) 
         state.P[k] = state.P[k-1] - dP_total;
     }
 }
+
+void TH::solve_void_fraction(State& state, const Geometry& geom, const Water& fluid) {
+    // based on the Chexal-Lellouche drift flux model
+    const double P_crit = 22.064e6; // Pa, critical pressure
+    double P = state.P[0]; // assuming constant pressure for simplicity
+    double A = geom.flow_area();
+
+    for (size_t k = 0; k < geom.naxial() + 1; ++k) {
+        double G_v = state.W_l[k] / A; // vapor mass flux
+        double G_l = state.W_v[k] / A; // liquid mass flux
+
+        // calculate distribution parameter, C_0
+        double B_1 = 1.5; // from Zuber correlation
+        double B_2 = 1.41;
+        double C_1 = 4.0 * P_crit * P_crit / (P * (P_crit - P));
+        double L = (1 - exp(-C_1) * state.alpha[k]) / (1 - exp(-C_1));
+        double K_0 = B_1 + (1 - B_1) * pow(fluid.rho_g() / fluid.rho_f(), 0.25);
+        double r = (1 + 1.57 * (fluid.rho_g() / fluid.rho_f())) / (1 - B_1);
+        double C_0 = L / (K_0 + (1 - K_0) * pow(state.alpha[k], r));
+
+        double V_gj0 = B_2 * pow(((fluid.rho_f() - fluid.rho_g()) * 9.81 * fluid.sigma()) / (fluid.mu_f() * fluid.mu_f()), 0.25);
+        double V_gj = V_gj0 * pow(1 - state.alpha[k], B_1); // drift velocity
+
+        state.alpha[k] = G_v / (C_0 * (G_v + (fluid.rho_g() / fluid.rho_f()) * G_l) + fluid.rho_g() * V_gj);
+    }
+}

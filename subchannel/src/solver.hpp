@@ -8,6 +8,7 @@
 #include "geometry.hpp"
 #include "materials.hpp"
 #include "state.hpp"
+#include "th.hpp"
 
 
 class Solver {
@@ -27,6 +28,7 @@ public:
     Vector1D get_surface_enthalpies() const { return state.h; }
     Vector1D get_surface_temperatures() const { return fluid->T(state.h); }
     Vector1D get_surface_pressures() const { return state.P; }
+    Vector1D get_surface_void_fractions() const { return state.alpha; }
 
 private:
     double T_inlet;

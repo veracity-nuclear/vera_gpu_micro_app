@@ -42,6 +42,7 @@ TEST(SubchannelTest, SingleChannel) {
     Vector1D h = solver.get_surface_enthalpies();
     Vector1D T = solver.get_surface_temperatures();
     Vector1D P = solver.get_surface_pressures();
+    Vector1D alpha = solver.get_surface_void_fractions();
 
     // Print table of results
     std::cout << std::fixed << std::setprecision(2) << std::endl;
@@ -49,16 +50,20 @@ TEST(SubchannelTest, SingleChannel) {
     std::cout << std::setw(6) << "Surf"
               << std::setw(12) << "Enthalpy"
               << std::setw(12) << "Temp."
-              << std::setw(12) << "Press." << std::endl;
+              << std::setw(12) << "Press."
+              << std::setw(12) << "Alpha." << std::endl;
+
     std::cout << std::setw(6) << ""
               << std::setw(12) << "(J/kg)"
               << std::setw(12) << "(K)"
-              << std::setw(12) << "(kPa)" << std::endl;
+              << std::setw(12) << "(kPa)"
+              << std::setw(12) << "(-)" << std::endl;
     for (size_t k = 0; k < naxial + 1; ++k) {
         std::cout << std::setw(6) << k
                   << std::setw(12) << h[k]
                   << std::setw(12) << fluid.T(h[k])
-                  << std::setw(12) << P[k] / 1000.0 << std::endl;
+                  << std::setw(12) << P[k] / 1000.0
+                  << std::setw(12) << alpha[k] << std::endl;
     }
     std::cout << std::endl;
 

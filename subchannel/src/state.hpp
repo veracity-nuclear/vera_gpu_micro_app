@@ -11,7 +11,14 @@ struct State {
 
     // mixture mass flow rate
     Vector1D W_m() const {
-        return W_l + W_v;
+        if (W_l.size() != W_v.size()) {
+            throw std::length_error("State::W_m(): W_l and W_v have different sizes");
+        }
+        Vector1D out(W_l.size());
+        for (std::size_t i = 0; i < out.size(); ++i) {
+            out[i] = W_l[i] + W_v[i];
+        }
+        return out;
     }
     double W_m(size_t i) const {
         return W_l[i] + W_v[i];
