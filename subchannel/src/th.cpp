@@ -52,7 +52,7 @@ void TH::solve_pressure(State& state, const Geometry& geom, const Water& fluid) 
 
         // calculate form loss pressure drop
         K_loss = 0.0; // no form losses in this simple model
-        phi2_hom = 1.0 + X_f * (fluid.rho_f() / fluid.rho_g() - 1.0);
+        phi2_hom = 1.0 + state.X[k] * (fluid.rho_f() / fluid.rho_g() - 1.0);
         dP_form = K_loss * G * G / (2.0 * rho[k]) * phi2_hom;
 
         // calculate gravitational pressure drop
