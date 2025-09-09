@@ -384,7 +384,7 @@ KokkosMOC<ExecutionSpace, RealType>::_read_segments(
         for (size_t iseg = 0; iseg < fsrs.size(); iseg++) {
             _h_segments(nsegs + iseg) = KokkosRaySegment<RealType>(fsrs[iseg] - 1, static_cast<RealType>(segs[iseg]));
         }
-	nsegs += ray_info.nsegs;
+        nsegs += ray_info.nsegs;
     }
 
     // Print a message with the number of rays and filename
@@ -630,9 +630,9 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
 
         // Create thread-local exparg array for non-CUDA execution spaces using scratch space
         ScratchViewReal1D exparg(teamMember.team_scratch(0), ray->nsegs());
-	int nsegs;
+        int nsegs;
 #ifdef KOKKOS_ENABLE_CUDA
-	if constexpr(std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
+        if constexpr(std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
             nsegs = 0;
         } else
 #endif
