@@ -6,6 +6,7 @@
 #include <cmath>
 
 #include "vectors.hpp"
+#include "constants.hpp"
 #include "geometry.hpp"
 #include "materials.hpp"
 #include "state.hpp"

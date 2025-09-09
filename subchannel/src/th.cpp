@@ -56,7 +56,7 @@ void TH::solve_pressure(State& state, const Geometry& geom, const Water& fluid) 
         dP_form = K_loss * G * G / (2.0 * rho[k]) * phi2_hom;
 
         // calculate gravitational pressure drop
-        dP_grav = rho[k] * 9.81 * geom.dz();
+        dP_grav = rho[k] * g * geom.dz();
 
         dP_total = dP_wall_shear + dP_form + dP_grav;
 
@@ -70,7 +70,6 @@ void TH::solve_void_fraction(State& state, const Geometry& geom, const Water& fl
     Vector1D alpha_prev(state.alpha); // previous iteration void fraction
 
     // based on the Chexal-Lellouche drift flux model
-    const double P_crit = 22.09e6; // Pa, critical pressure
     double P = state.P[0]; // assuming constant pressure for simplicity
     double A = geom.flow_area();
 
@@ -89,7 +88,7 @@ void TH::solve_void_fraction(State& state, const Geometry& geom, const Water& fl
             double C_0 = L / (K_0 + (1 - K_0) * pow(state.alpha[k], r));
 
             // calculate drift velocity, V_gj
-            double V_gj0 = B_2 * pow(((fluid.rho_f() - fluid.rho_g()) * 9.81 * fluid.sigma()) / (fluid.mu_f() * fluid.mu_f()), 0.25);
+            double V_gj0 = B_2 * pow(((fluid.rho_f() - fluid.rho_g()) * g * fluid.sigma()) / (fluid.mu_f() * fluid.mu_f()), 0.25);
             double V_gj = V_gj0 * pow(1 - state.alpha[k], B_1);
 
             // update void fraction
