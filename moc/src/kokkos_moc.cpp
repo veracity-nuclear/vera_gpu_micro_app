@@ -17,9 +17,16 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
     _ray_sort(args.get_option("ray_sort"))
 {
     // Read the rays
-    _read_rays();
-
+    Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC _read_rays " + _device);
+    auto ray_infos = _read_ray_infos();
+    auto _h_rays = _read_rays(ray_infos);
+    auto _h_segments = _read_segments(ray_infos);
+    ray_infos.clear();
+    _d_segments = DViewKokkosRaySegment1D("device segments", _h_segments.size());
+    Kokkos::deep_copy(_d_segments, _h_segments);
+    _h_segments = decltype(_h_segments)();
     Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC init " + _device);
+
     // Read the FSR volumes and plane height
     {
         auto fsr_vol = _file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read<std::vector<double>>();
@@ -196,31 +203,43 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
         // Set the processed BC indices in the ray object
         _h_rays(i).set_angflux_bc_indices(bc_frwd_start, bc_frwd_end, bc_bkwd_start, bc_bkwd_end);
     }
+    Kokkos::deep_copy(_h_old_angflux, _h_angflux);
 
     // Store the inverse polar angle sine
-    _h_rsinpolang = HViewReal1D("rsinpolang", _npol);
+    HViewReal1D _h_rsinpolang("rsinpolang", _npol);
     for (int ipol = 0; ipol < _npol; ipol++) {
         _h_rsinpolang(ipol) = static_cast<RealType>(1.0 / std::sin(polar_angles[ipol]));
     }
+    _d_rsinpolang = DViewReal1D("device rsinpolang", _h_rsinpolang.size());
+    Kokkos::deep_copy(_d_rsinpolang, _h_rsinpolang);
+    _h_rsinpolang = decltype(_h_rsinpolang)();
 
     // Count maximum segments across all rays
     _max_segments = 0;
     for (size_t i = 0; i < _n_rays; i++) {
         _max_segments = std::max(_max_segments, _h_rays(i).nsegs());
     }
-    Kokkos::deep_copy(_h_old_angflux, _h_angflux);
+
+    // Copy the rays
+    _d_rays = DViewKokkosLongRay1D("device segments", _h_rays.size());
+    Kokkos::deep_copy(_d_rays, _h_rays);
+    _h_rays = decltype(_h_rays)();
 
     // Build angle weights
-    _h_angle_weights = HViewReal2D("angle_weights", nazi, _npol);
+    HViewReal2D _h_angle_weights("angle_weights", nazi, _npol);
     for (int iazi = 0; iazi < nazi; iazi++) {
         for (int ipol = 0; ipol < _npol; ipol++) {
             _h_angle_weights(iazi, ipol) = static_cast<RealType>(_ray_spacing[iazi] * azi_weights[iazi] * polar_weights[ipol]
                 * M_PI * std::sin(polar_angles[ipol]));
         }
     }
-    Kokkos::Profiling::popRegion();
+    _d_angle_weights = Kokkos::create_mirror(ExecutionSpace(), _h_angle_weights);
+    Kokkos::deep_copy(_d_angle_weights, _h_angle_weights);
+    _h_angle_weights = decltype(_h_angle_weights)();
 
+    Kokkos::Profiling::popRegion();
     Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC exp table " + _device);
+
     // Build exponential table (for all execution spaces that want to use table lookup)
     bool build_table = false;
 #ifdef KOKKOS_ENABLE_SERIAL
@@ -253,14 +272,7 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
 
     Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC mirror views " + _device);
     // Instead of conditional device setup, always initialize device views
-    _d_rays = Kokkos::create_mirror(ExecutionSpace(), _h_rays);
-    Kokkos::deep_copy(_d_rays, _h_rays);
-    _d_segments = Kokkos::create_mirror(ExecutionSpace(), _h_segments);
-    Kokkos::deep_copy(_d_segments, _h_segments);
-    _d_angle_weights = Kokkos::create_mirror(ExecutionSpace(), _h_angle_weights);
-    Kokkos::deep_copy(_d_angle_weights, _h_angle_weights);
     _d_fsr_vol = Kokkos::create_mirror_view_and_copy(MemorySpace(), _h_fsr_vol);
-    _d_rsinpolang = Kokkos::create_mirror_view_and_copy(MemorySpace(), _h_rsinpolang);
     _d_xstr = Kokkos::create_mirror(ExecutionSpace(), _h_xstr);
     Kokkos::deep_copy(_d_xstr, _h_xstr);
     _d_xsnf = Kokkos::create_mirror(ExecutionSpace(), _h_xsnf);
@@ -286,22 +298,12 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
 
 // Implement other methods with template prefix
 template <typename ExecutionSpace, typename RealType>
-void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
-    Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC _read_rays " + _device);
+std::vector<typename KokkosMOC<ExecutionSpace, RealType>::RayInfo>
+KokkosMOC<ExecutionSpace, RealType>::_read_ray_infos() {
     auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
 
     // First, collect all ray information for potential sorting
-    struct RayInfo {
-        std::string angle_name;
-        std::string ray_name;
-        int angle_index;
-        int nsegs;
-        HighFive::Group ray_group;
-
-        RayInfo(const std::string& ang_name, const std::string& r_name, int ang_idx, int nseg, HighFive::Group group)
-            : angle_name(ang_name), ray_name(r_name), angle_index(ang_idx), nsegs(nseg), ray_group(group) {}
-    };
-
+    using RayInfo = KokkosMOC<ExecutionSpace, RealType>::RayInfo;
     std::vector<RayInfo> ray_infos;
     _n_rays = 0;
 
@@ -338,8 +340,16 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
     }
     // If _ray_sort == "none", do nothing (default behavior)
 
+    return ray_infos;
+}
+
+template <typename ExecutionSpace, typename RealType>
+typename KokkosMOC<ExecutionSpace, RealType>::HViewKokkosLongRay1D
+KokkosMOC<ExecutionSpace, RealType>::_read_rays(
+    std::vector<KokkosMOC<ExecutionSpace, RealType>::RayInfo> ray_infos
+) {
     // Reserve space for rays
-    _h_rays = HViewKokkosLongRay1D("rays", _n_rays);
+    HViewKokkosLongRay1D _h_rays = HViewKokkosLongRay1D("rays", _n_rays);
 
     // Set up the rays using the sorted order
     int nsegs = 0;
@@ -349,17 +359,32 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
         nsegs += ray_info.nsegs;
     }
 
+    return _h_rays;
+}
+
+template <typename ExecutionSpace, typename RealType>
+typename KokkosMOC<ExecutionSpace, RealType>::HViewKokkosRaySegment1D
+KokkosMOC<ExecutionSpace, RealType>::_read_segments(
+    std::vector<KokkosMOC<ExecutionSpace, RealType>::RayInfo> ray_infos
+) {
     // Reserve space for segment metadata
-    _h_segments = HViewKokkosRaySegment1D("segments", nsegs);
+    int nsegs = 0;
+    for (int iray = 0; iray < ray_infos.size(); iray++) {
+        const auto& ray_info = ray_infos[iray];
+        nsegs += ray_info.nsegs;
+    }
+    HViewKokkosRaySegment1D _h_segments("segments", nsegs);
 
     // Set up segments using the sorted order
+    nsegs = 0;
     for (int iray = 0; iray < _n_rays; iray++) {
         const auto& ray_info = ray_infos[iray];
         auto fsrs = ray_info.ray_group.getDataSet("FSRs").template read<std::vector<int>>();
         auto segs = ray_info.ray_group.getDataSet("Segments").template read<std::vector<double>>();
         for (size_t iseg = 0; iseg < fsrs.size(); iseg++) {
-            _h_segments(_h_rays(iray).first_seg() + iseg) = KokkosRaySegment<RealType>(fsrs[iseg] - 1, static_cast<RealType>(segs[iseg]));
+            _h_segments(nsegs + iseg) = KokkosRaySegment<RealType>(fsrs[iseg] - 1, static_cast<RealType>(segs[iseg]));
         }
+        nsegs += ray_info.nsegs;
     }
 
     // Print a message with the number of rays and filename
@@ -369,6 +394,8 @@ void KokkosMOC<ExecutionSpace, RealType>::_read_rays() {
     }
     std::cout << std::endl;
     Kokkos::Profiling::popRegion();
+
+    return _h_segments;
 }
 
 // Get the total cross sections for each FSR from the library
@@ -476,48 +503,20 @@ void KokkosMOC<ExecutionSpace, RealType>::update_source(const std::vector<double
 // General template implementation (fallback)
 template <typename ExecutionSpace>
 Kokkos::TeamPolicy<ExecutionSpace> _configure_team_policy(int n_rays, int npol, int ng) {
-    int n_teams, team_size;
-    #ifdef KOKKOS_ENABLE_CUDA
-    if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
-        n_teams = static_cast<long int>(n_rays);
-        team_size = npol * ng;
-    } else
-    #endif
-    {
-        n_teams = static_cast<long int>(n_rays) *  npol * ng;
-        team_size = 1;
-    }
-    return Kokkos::TeamPolicy<ExecutionSpace>(n_teams, team_size, 1);
+    return Kokkos::TeamPolicy<ExecutionSpace>(static_cast<long int>(n_rays * npol * ng), 1, 1);
 }
 
-template <typename ExecSpace>
 struct RayIndexCalculator {
     KOKKOS_INLINE_FUNCTION
     static void calculate(int league_rank, int team_rank,
                          int npol, int ng,
                          int& iray, int& ipol, int& ig) {
-        // Default implementation
-        int flat_idx = league_rank;
-        iray = flat_idx / (npol * ng);
-        ipol = (flat_idx / ng) % npol;
-        ig = flat_idx % ng;
+        int prod = npol * ng;
+        iray = league_rank / prod;
+        ig = (league_rank % prod) / npol;
+        ipol = league_rank % npol;
     }
 };
-
-// Specialization for Cuda backend
-#ifdef KOKKOS_ENABLE_CUDA
-template <>
-struct RayIndexCalculator<Kokkos::Cuda> {
-    KOKKOS_INLINE_FUNCTION
-    static void calculate(int league_rank, int team_rank,
-                         int npol, int ng,
-                         int& iray, int& ipol, int& ig) {
-        iray = league_rank;
-        ig = team_rank / npol;
-        ipol = team_rank % npol;
-    }
-};
-#endif
 
 template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
@@ -624,16 +623,16 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
         int iray, ipol, ig;
 
         // Use the specialized helper to calculate indices - no branches!
-        RayIndexCalculator<ExecutionSpace>::calculate(
+        RayIndexCalculator::calculate(
             teamMember.league_rank(), teamMember.team_rank(),
             npol, ng, iray, ipol, ig);
         const auto* ray = &rays(iray);
 
         // Create thread-local exparg array for non-CUDA execution spaces using scratch space
         ScratchViewReal1D exparg(teamMember.team_scratch(0), ray->nsegs());
-	int nsegs;
+        int nsegs;
 #ifdef KOKKOS_ENABLE_CUDA
-	if constexpr(std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
+        if constexpr(std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
             nsegs = 0;
         } else
 #endif
