@@ -27,65 +27,6 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
     _h_segments = decltype(_h_segments)();
     Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC init " + _device);
 
-    // Read ray spacings and angular flux BC dimensions
-    auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
-    auto polar_angles = _file.getDataSet("/MOC_Ray_Data/Polar_Radians").read<std::vector<double>>();
-    auto polar_weights = _file.getDataSet("/MOC_Ray_Data/Polar_Weights").read<std::vector<double>>();
-    auto azi_weights = _file.getDataSet("/MOC_Ray_Data/Azimuthal_Weights").read<std::vector<double>>();
-    _npol = polar_angles.size();
-    int nazi = azi_weights.size();
-    std::vector<std::vector<int>> bc_sizes;
-    int _max_bc_size = 0;
-    int total_bc_points = 0;
-    _ray_spacing.clear();
-    for (const auto& objName : domain.listObjectNames()) {
-        // Loop over each angle group
-        if (objName.substr(0, 6) == "Angle_") {
-            HighFive::Group angleGroup = domain.getGroup(objName);
-            // Read ray spacing
-            _ray_spacing.push_back(static_cast<RealType>(angleGroup.getDataSet("spacing").read<double>()));  // Read the BC sizes
-            int iazi = std::stoi(objName.substr(8)) - 1;
-            std::vector<int> bc_size = angleGroup.getDataSet("BC_size").read<std::vector<int>>();
-            bc_sizes.push_back(bc_size);
-            _max_bc_size = std::max({_max_bc_size, bc_size[0], bc_size[1], bc_size[2], bc_size[3]});
-            total_bc_points += std::accumulate(bc_size.begin(), bc_size.end(), 0);
-        }
-    }
-    std::vector<std::vector<std::vector<int>>> angface_to_ray(nazi);
-    for (int iazi = nazi - 1; iazi >= 0; iazi--) {
-        angface_to_ray[iazi].resize(4);
-        for (int iface = 3; iface >= 0; iface--) {
-            angface_to_ray[iazi][iface].resize(bc_sizes[iazi][iface]);
-            if (iazi == nazi - 1 && iface == 3) {
-                bc_sizes[iazi][iface] = total_bc_points - bc_sizes[iazi][iface];
-            } else if (iface == 3) {
-                bc_sizes[iazi][iface] = bc_sizes[iazi + 1][0] - bc_sizes[iazi][iface];
-            } else {
-                bc_sizes[iazi][iface] = bc_sizes[iazi][iface + 1] - bc_sizes[iazi][iface];
-            }
-        }
-    }
-
-    // Build map from face/BC index to ray index
-    for (size_t iray = 0; iray < _n_rays; iray++) {
-        const auto& ray = _h_rays(iray);
-        int ang = ray.angle();
-        int bc_index = ray.bc_index(RAY_START);
-        if (bc_index >= 0) {
-            angface_to_ray[ang][ray.bc_face(RAY_START)][bc_index] = iray;
-        }
-        bc_index = ray.bc_index(RAY_END);
-        if (bc_index >= 0) {
-            angface_to_ray[ang][ray.bc_face(RAY_END)][bc_index] = _n_rays + iray;
-        }
-    }
-
-    // Count maximum segments across all rays
-    _max_segments = 0;
-    for (size_t i = 0; i < _n_rays; i++) {
-        _max_segments = std::max(_max_segments, _h_rays(i).nsegs());
-    }
-
     // Read the FSR volumes and plane height
     {
         auto fsr_vol = _file.getDataSet("/MOC_Ray_Data/Domain_00001/FSR_Volume").read<std::vector<double>>();
@@ -164,6 +105,59 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
     Kokkos::deep_copy(_h_scalar_flux, 1.0);
     Kokkos::deep_copy(_h_source, static_cast<RealType>(1.0));
 
+    // Read ray spacings and angular flux BC dimensions
+    auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
+    auto polar_angles = _file.getDataSet("/MOC_Ray_Data/Polar_Radians").read<std::vector<double>>();
+    auto polar_weights = _file.getDataSet("/MOC_Ray_Data/Polar_Weights").read<std::vector<double>>();
+    auto azi_weights = _file.getDataSet("/MOC_Ray_Data/Azimuthal_Weights").read<std::vector<double>>();
+    _npol = polar_angles.size();
+    int nazi = azi_weights.size();
+    std::vector<std::vector<int>> bc_sizes;
+    int _max_bc_size = 0;
+    int total_bc_points = 0;
+    _ray_spacing.clear();
+    for (const auto& objName : domain.listObjectNames()) {
+        // Loop over each angle group
+        if (objName.substr(0, 6) == "Angle_") {
+            HighFive::Group angleGroup = domain.getGroup(objName);
+            // Read ray spacing
+            _ray_spacing.push_back(static_cast<RealType>(angleGroup.getDataSet("spacing").read<double>()));  // Read the BC sizes
+            int iazi = std::stoi(objName.substr(8)) - 1;
+            std::vector<int> bc_size = angleGroup.getDataSet("BC_size").read<std::vector<int>>();
+            bc_sizes.push_back(bc_size);
+            _max_bc_size = std::max({_max_bc_size, bc_size[0], bc_size[1], bc_size[2], bc_size[3]});
+            total_bc_points += std::accumulate(bc_size.begin(), bc_size.end(), 0);
+        }
+    }
+    std::vector<std::vector<std::vector<int>>> angface_to_ray(nazi);
+    for (int iazi = nazi - 1; iazi >= 0; iazi--) {
+        angface_to_ray[iazi].resize(4);
+        for (int iface = 3; iface >= 0; iface--) {
+            angface_to_ray[iazi][iface].resize(bc_sizes[iazi][iface]);
+            if (iazi == nazi - 1 && iface == 3) {
+                bc_sizes[iazi][iface] = total_bc_points - bc_sizes[iazi][iface];
+            } else if (iface == 3) {
+                bc_sizes[iazi][iface] = bc_sizes[iazi + 1][0] - bc_sizes[iazi][iface];
+            } else {
+                bc_sizes[iazi][iface] = bc_sizes[iazi][iface + 1] - bc_sizes[iazi][iface];
+            }
+        }
+    }
+
+    // Build map from face/BC index to ray index
+    for (size_t iray = 0; iray < _n_rays; iray++) {
+        const auto& ray = _h_rays(iray);
+        int ang = ray.angle();
+        int bc_index = ray.bc_index(RAY_START);
+        if (bc_index >= 0) {
+            angface_to_ray[ang][ray.bc_face(RAY_START)][bc_index] = iray;
+        }
+        bc_index = ray.bc_index(RAY_END);
+        if (bc_index >= 0) {
+            angface_to_ray[ang][ray.bc_face(RAY_END)][bc_index] = _n_rays + iray;
+        }
+    }
+
     // Now allocate the angular flux arrays, remap the long ray indexes, and initialize the angular flux arrays
     total_bc_points = 2 * total_bc_points + 2;  // Both directions on each ray, plus two for the vacuum rays
     _h_angflux = HViewReal3D("angflux", total_bc_points, _npol, _ng);
@@ -211,11 +205,6 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
     }
     Kokkos::deep_copy(_h_old_angflux, _h_angflux);
 
-    // Copy the rays
-    _d_rays = DViewKokkosLongRay1D("device segments", _h_rays.size());
-    Kokkos::deep_copy(_d_rays, _h_rays);
-    _h_rays = decltype(_h_rays)();
-
     // Store the inverse polar angle sine
     HViewReal1D _h_rsinpolang("rsinpolang", _npol);
     for (int ipol = 0; ipol < _npol; ipol++) {
@@ -224,6 +213,17 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
     _d_rsinpolang = DViewReal1D("device rsinpolang", _h_rsinpolang.size());
     Kokkos::deep_copy(_d_rsinpolang, _h_rsinpolang);
     _h_rsinpolang = decltype(_h_rsinpolang)();
+
+    // Count maximum segments across all rays
+    _max_segments = 0;
+    for (size_t i = 0; i < _n_rays; i++) {
+        _max_segments = std::max(_max_segments, _h_rays(i).nsegs());
+    }
+
+    // Copy the rays
+    _d_rays = DViewKokkosLongRay1D("device segments", _h_rays.size());
+    Kokkos::deep_copy(_d_rays, _h_rays);
+    _h_rays = decltype(_h_rays)();
 
     // Build angle weights
     HViewReal2D _h_angle_weights("angle_weights", nazi, _npol);
