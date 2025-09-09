@@ -12,19 +12,22 @@ Solver::Solver(
     , fluid(std::move(fluid))
     , T_inlet(inlet_temperature)
     , P_inlet(inlet_pressure)
-    , lhr(linear_heat_rate)
 {
     // initialize solution vectors
-    h.resize(geom->naxial() + 1, fluid->h(T_inlet));
-    P.resize(geom->naxial() + 1, P_inlet);
-    W_l.resize(geom->naxial() + 1, mass_flow_rate);
-    W_v.resize(geom->naxial() + 1, 0.0);
-    alpha.resize(geom->naxial() + 1, 0.0);
+    state.h.resize(geom->naxial() + 1, fluid->h(T_inlet));
+    state.P.resize(geom->naxial() + 1, P_inlet);
+    state.W_l.resize(geom->naxial() + 1, mass_flow_rate);
+    state.W_v.resize(geom->naxial() + 1, 0.0);
+    state.alpha.resize(geom->naxial() + 1, 0.0);
+    state.X.resize(geom->naxial() + 1, 0.0);
+    state.lhr.resize(geom->naxial(), linear_heat_rate);
 
     std::cout << "Solver initialized." << std::endl;
 }
 
 void Solver::solve() {
-    TH::solve_enthalpy(h, W_l, lhr, *geom);
-    TH::solve_pressure(P, W_l, fluid->rho(h), fluid->mu(h), *geom);
+    TH::solve_enthalpy(state, *geom);
+    TH::solve_pressure(state, *geom, *fluid);
+    TH::solve_void_fraction(state, *geom, *fluid);
+    TH::solve_quality(state, *geom, *fluid);
 }

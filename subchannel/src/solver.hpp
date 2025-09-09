@@ -3,8 +3,11 @@
 #include <iostream>
 #include <memory>
 #include <vector>
+
+#include "vectors.hpp"
 #include "geometry.hpp"
 #include "materials.hpp"
+#include "state.hpp"
 #include "th.hpp"
 
 
@@ -22,9 +25,11 @@ public:
 
     void solve();
 
-    std::vector<double> get_surface_enthalpies() const { return h; }
-    std::vector<double> get_surface_temperatures() const { return fluid->T(h); }
-    std::vector<double> get_surface_pressures() const { return P; }
+    Vector1D get_surface_enthalpies() const { return state.h; }
+    Vector1D get_surface_temperatures() const { return fluid->T(state.h); }
+    Vector1D get_surface_pressures() const { return state.P; }
+    Vector1D get_surface_void_fractions() const { return state.alpha; }
+    Vector1D get_surface_qualities() const { return state.X; }
 
 private:
     double T_inlet;
@@ -32,10 +37,5 @@ private:
     double lhr;
     std::unique_ptr<Geometry> geom;
     std::unique_ptr<Water> fluid;
-
-    // solution vectors
-    std::vector<double> h; // enthalpy
-    std::vector<double> P; // pressure
-    std::vector<double> W_l, W_v; // liquid and vapor flow rates
-    std::vector<double> alpha; // void fraction, for future implementation
+    State state;
 };

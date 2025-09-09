@@ -5,18 +5,17 @@
 #include <memory>
 #include <cmath>
 
+#include "vectors.hpp"
+#include "constants.hpp"
 #include "geometry.hpp"
 #include "materials.hpp"
+#include "state.hpp"
 
 namespace TH {
 
-void solve_enthalpy(std::vector<double>& h, const std::vector<double>& W_l, double lhr, const Geometry& geom);
-void solve_pressure(
-    std::vector<double>& P,
-    const std::vector<double>& W_l,
-    const std::vector<double>& rho,
-    const std::vector<double>& mu,
-    const Geometry& geom
-);
+void solve_enthalpy(State& state, const Geometry& geom);
+void solve_pressure(State& state, const Geometry& geom, const Water& fluid);
+void solve_void_fraction(State& state, const Geometry& geom, const Water& fluid);
+void solve_quality(State& state, const Geometry& geom, const Water& fluid);
 
 } // namespace TH
