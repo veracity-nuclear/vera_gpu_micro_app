@@ -80,7 +80,7 @@ class KokkosMOC : public BaseMOC {
                 : angle_name(ang_name), ray_name(r_name), angle_index(ang_idx), nsegs(nseg), ray_group(group) {}
         };
 
-        std::vector<RayInfo> _read_ray_infos(int num_planes);
+        std::vector<RayInfo> _read_ray_infos();
         HViewKokkosLongRay1D _read_rays(std::vector<RayInfo> ray_infos);  // Read rays from the HDF5 file
         HViewKokkosRaySegment1D _read_segments(std::vector<RayInfo> ray_infos);  // Read rays from the HDF5 file
         void _get_xstr(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xstr from XS library
@@ -95,7 +95,9 @@ class KokkosMOC : public BaseMOC {
         std::string _ray_sort;  // Ray sorting method
 
         // Sizes
+        int _num_planes;  // Number of planes to simulate
         int _nfsr;  // Number of FSRs
+        int _nfsr_per_plane;  // Number of FSRs per plane
         int _npol;  // Number of polar angles
         int _ng;  // Number of energy groups
         int _n_exp_intervals;  // Number of exponential table intervals
@@ -123,6 +125,7 @@ class KokkosMOC : public BaseMOC {
 
         // Ray data
         int _n_rays;  // Number of rays
+        int _n_rays_per_plane;  // Number of rays per plane
         int _max_segments;  // Maximum number of segments in any ray
         DViewKokkosRaySegment1D _d_segments;
         DViewKokkosLongRay1D _d_rays;
