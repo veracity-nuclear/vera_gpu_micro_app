@@ -18,7 +18,7 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
 {
     // Read the rays
     Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC _read_rays " + _device);
-    auto ray_infos = _read_ray_infos();
+    auto ray_infos = _read_ray_infos(std::stoi(args.get_option("num_planes")));
     auto _h_rays = _read_rays(ray_infos);
     auto _h_segments = _read_segments(ray_infos);
     ray_infos.clear();
@@ -299,7 +299,7 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
 // Implement other methods with template prefix
 template <typename ExecutionSpace, typename RealType>
 std::vector<typename KokkosMOC<ExecutionSpace, RealType>::RayInfo>
-KokkosMOC<ExecutionSpace, RealType>::_read_ray_infos() {
+KokkosMOC<ExecutionSpace, RealType>::_read_ray_infos(int num_planes) {
     auto domain = _file.getGroup("/MOC_Ray_Data/Domain_00001");
 
     // First, collect all ray information for potential sorting
@@ -308,17 +308,19 @@ KokkosMOC<ExecutionSpace, RealType>::_read_ray_infos() {
     _n_rays = 0;
 
     // Collect all ray information
-    for (const auto& objName : domain.listObjectNames()) {
-        if (objName.substr(0, 6) == "Angle_") {
-            HighFive::Group angleGroup = domain.getGroup(objName);
-            auto angleIndex = std::stoi(objName.substr(8)) - 1;
+    for (int iplane = 0; iplane < num_planes; iplane++) {
+        for (const auto& objName : domain.listObjectNames()) {
+            if (objName.substr(0, 6) == "Angle_") {
+                HighFive::Group angleGroup = domain.getGroup(objName);
+                auto angleIndex = std::stoi(objName.substr(8)) - 1;
 
-            for (const auto& rayName : angleGroup.listObjectNames()) {
-                if (rayName.substr(0, 8) == "LongRay_") {
-                    auto rayGroup = angleGroup.getGroup(rayName);
-                    int ray_nsegs = rayGroup.getDataSet("FSRs").template read<std::vector<int>>().size();
-                    ray_infos.emplace_back(objName, rayName, angleIndex, ray_nsegs, rayGroup);
-                    _n_rays++;
+                for (const auto& rayName : angleGroup.listObjectNames()) {
+                    if (rayName.substr(0, 8) == "LongRay_") {
+                        auto rayGroup = angleGroup.getGroup(rayName);
+                        int ray_nsegs = rayGroup.getDataSet("FSRs").template read<std::vector<int>>().size();
+                        ray_infos.emplace_back(objName, rayName, angleIndex, ray_nsegs, rayGroup);
+                        _n_rays++;
+                    }
                 }
             }
         }

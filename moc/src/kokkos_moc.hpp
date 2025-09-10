@@ -80,7 +80,7 @@ class KokkosMOC : public BaseMOC {
                 : angle_name(ang_name), ray_name(r_name), angle_index(ang_idx), nsegs(nseg), ray_group(group) {}
         };
 
-        std::vector<RayInfo> _read_ray_infos();
+        std::vector<RayInfo> _read_ray_infos(int num_planes);
         HViewKokkosLongRay1D _read_rays(std::vector<RayInfo> ray_infos);  // Read rays from the HDF5 file
         HViewKokkosRaySegment1D _read_segments(std::vector<RayInfo> ray_infos);  // Read rays from the HDF5 file
         void _get_xstr(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xstr from XS library
