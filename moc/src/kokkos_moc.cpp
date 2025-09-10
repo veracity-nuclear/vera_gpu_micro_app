@@ -88,9 +88,9 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
         _h_xsnf = HViewReal2D("xsnf", _nfsr, _ng);
         _h_xsch = HViewReal2D("xsch", _nfsr, _ng);
         _h_xssc = HViewReal3D("xssc", _nfsr, _ng, _ng);
-        int ixsr = 0;
         for (int iplane = 0; iplane < _num_planes; iplane++) {
-            for (int i = 0; i < xstr.size(); i++) {
+            int ixsr = 0;
+            for (int i = 0; i < _nfsr_per_plane; i++) {
                 if (i == xsrToFsrMap[ixsr]) {
                     ixsr++;
                 }
@@ -393,7 +393,6 @@ KokkosMOC<ExecutionSpace, RealType>::_read_segments(
     HViewKokkosRaySegment1D _h_segments("segments", nsegs);
 
     // Set up segments using the sorted order
-    int n_segs_plane = nsegs / _num_planes;
     nsegs = 0;
     int iray = 0;
     for (int iplane = 0; iplane < _num_planes; iplane++) {
