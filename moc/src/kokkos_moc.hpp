@@ -95,7 +95,9 @@ class KokkosMOC : public BaseMOC {
         std::string _ray_sort;  // Ray sorting method
 
         // Sizes
+        int _num_planes;  // Number of planes to simulate
         int _nfsr;  // Number of FSRs
+        int _nfsr_per_plane;  // Number of FSRs per plane
         int _npol;  // Number of polar angles
         int _ng;  // Number of energy groups
         int _n_exp_intervals;  // Number of exponential table intervals
@@ -123,6 +125,7 @@ class KokkosMOC : public BaseMOC {
 
         // Ray data
         int _n_rays;  // Number of rays
+        int _n_rays_per_plane;  // Number of rays per plane
         int _max_segments;  // Maximum number of segments in any ray
         DViewKokkosRaySegment1D _d_segments;
         DViewKokkosLongRay1D _d_rays;

@@ -7,8 +7,8 @@
 #include "argument_parser.hpp"
 
 TEST(BasicTest, pin_7g_16a_3p_kokkos_double) {
-    const char* raw_args[] = {"exe", "data/pin_7g_16a_3p_serial.h5", "data/c5g7.xsl", "--sweeper", "kokkos", "--device", "openmp", "--kokkos-num-threads=4", "--precision", "double"};
-    int argc = 10;
+    const char* raw_args[] = {"exe", "data/pin_7g_16a_3p_serial.h5", "data/c5g7.xsl", "--sweeper", "kokkos", "--device", "openmp", "--kokkos-num-threads=4", "--precision", "double", "--ray_sort", "long"};
+    int argc = 12;
     char** args = const_cast<char**>(raw_args);
     Kokkos::initialize(argc, args);
     {
