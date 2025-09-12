@@ -38,7 +38,7 @@ OPTION
   solver 1 2
   cmfd T mgnode F 0.0 1.0 150 F
   ray 0.03 CHEBYSHEV-YAMAMOTO 16 3
-  parallel 8 1 1 16 GRAPH
+  parallel 8 1 1 1 GRAPH
   conv_crit 2*1.e-8
   iter_lim 10000 1 1
   vis_edits F
