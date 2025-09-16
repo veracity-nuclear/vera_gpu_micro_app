@@ -34,6 +34,7 @@ set(CMFD_TEST_SUITE_FILES
     test_PetscMatrixAssemblerHeavy
     test_PetscEigenSolverLight
     test_PetscEigenSolverHeavy
+    test_coarseVsFineEigenvalue
     test_main
 )
 set(CMFD_TEST_SUITE_LABELS
@@ -44,6 +45,7 @@ set(CMFD_TEST_SUITE_LABELS
     "CONTINUOUS\;HEAVY"
     "HEAVY"
     "CONTINUOUS\;HEAVY"
+    "HEAVY"
     "HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
 )

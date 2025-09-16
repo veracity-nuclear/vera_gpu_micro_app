@@ -69,7 +69,20 @@ class KokkosMOC : public BaseMOC {
         void update_source(const std::vector<double>& fissrc) override;
 
     private:
-        void _read_rays();  // Read rays from the HDF5 file
+        struct RayInfo {
+            std::string angle_name;
+            std::string ray_name;
+            int angle_index;
+            int nsegs;
+            HighFive::Group ray_group;
+
+            RayInfo(const std::string& ang_name, const std::string& r_name, int ang_idx, int nseg, HighFive::Group group)
+                : angle_name(ang_name), ray_name(r_name), angle_index(ang_idx), nsegs(nseg), ray_group(group) {}
+        };
+
+        std::vector<RayInfo> _read_ray_infos();
+        HViewKokkosLongRay1D _read_rays(std::vector<RayInfo> ray_infos);  // Read rays from the HDF5 file
+        HViewKokkosRaySegment1D _read_segments(std::vector<RayInfo> ray_infos);  // Read rays from the HDF5 file
         void _get_xstr(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xstr from XS library
         void _get_xsnf(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xsnf from XS library
         void _get_xsch(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xsch from XS library
@@ -82,7 +95,9 @@ class KokkosMOC : public BaseMOC {
         std::string _ray_sort;  // Ray sorting method
 
         // Sizes
+        int _num_planes;  // Number of planes to simulate
         int _nfsr;  // Number of FSRs
+        int _nfsr_per_plane;  // Number of FSRs per plane
         int _npol;  // Number of polar angles
         int _ng;  // Number of energy groups
         int _n_exp_intervals;  // Number of exponential table intervals
@@ -96,8 +111,6 @@ class KokkosMOC : public BaseMOC {
         HViewReal2D _h_xsch;
         HViewReal3D _h_xssc;
         std::vector<RealType> _ray_spacing;
-        HViewReal2D _h_angle_weights;
-        HViewReal1D _h_rsinpolang;
         HViewReal2D _h_exp_table;
 
         // Geometry device data
@@ -112,10 +125,9 @@ class KokkosMOC : public BaseMOC {
 
         // Ray data
         int _n_rays;  // Number of rays
+        int _n_rays_per_plane;  // Number of rays per plane
         int _max_segments;  // Maximum number of segments in any ray
-        HViewKokkosRaySegment1D _h_segments;
         DViewKokkosRaySegment1D _d_segments;
-        HViewKokkosLongRay1D _h_rays;
         DViewKokkosLongRay1D _d_rays;
 
         // Solution host data

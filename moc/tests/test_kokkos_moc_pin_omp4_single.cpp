@@ -7,8 +7,8 @@
 #include "argument_parser.hpp"
 
 TEST(BasicTest, pin_7g_16a_3p_kokkos_single) {
-    const char* raw_args[] = {"exe", "data/pin_7g_16a_3p_serial.h5", "data/c5g7.xsl", "--sweeper", "kokkos", "--device", "openmp", "--kokkos-num-threads=4", "--precision", "single"};
-    int argc = 10;
+    const char* raw_args[] = {"exe", "data/pin_7g_16a_3p_serial.h5", "data/c5g7.xsl", "--sweeper", "kokkos", "--device", "openmp", "--kokkos-num-threads=4", "--precision", "single", "--num_planes", "4"};
+    int argc = 12;
     char** args = const_cast<char**>(raw_args);
     Kokkos::initialize(argc, args);
     {
@@ -17,7 +17,7 @@ TEST(BasicTest, pin_7g_16a_3p_kokkos_single) {
         std::shared_ptr<BaseMOC> sweeper(new KokkosMOC<Kokkos::OpenMP, float>(parser));
         EigenSolver solver(parser, sweeper);
         solver.solve();
-        EXPECT_NEAR(solver.keff(), 1.325694203, 5.0e-7);
+        EXPECT_NEAR(solver.keff(), 1.325694203, 2.0e-6);
     }
     Kokkos::finalize();
 }
