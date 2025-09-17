@@ -87,19 +87,19 @@ TEST(SubchannelTest, SingleChannel) {
     std::cout << std::endl;
 
     double total_heat = linear_heat_rate * geometry.height();
-    double expected_deltaT = total_heat / (inlet_mass_flow * fluid.Cp(fluid.h(inlet_temperature)));
+    double expected_deltaT = 21.262201; // expected temperature rise in subchannel, K
     double actual_deltaT = T.back() - T.front();
     std::cout << "Total temperature rise: " << actual_deltaT << " K" << std::endl;
 
     // check total temperature rise in subchannel
-    // EXPECT_NEAR(actual_deltaT, expected_deltaT, 1e-6);
+    EXPECT_NEAR(actual_deltaT, expected_deltaT, 1e-6);
 
     double total_pressure_drop = P.front() - P.back();
-    double expected_pressure_drop = 616719.382; // placeholder for now
+    double expected_pressure_drop = 59294.880; // expected pressure drop in subchannel, Pa
     std::cout << "Total pressure drop: " << total_pressure_drop / 1000.0 << " kPa" << std::endl;
 
     // check total pressure drop in subchannel
-    // EXPECT_NEAR(total_pressure_drop, expected_pressure_drop, 1e-3);
+    EXPECT_NEAR(total_pressure_drop, expected_pressure_drop, 1e-3);
 }
 
 int main(int argc, char **argv) {

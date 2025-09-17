@@ -77,6 +77,7 @@ void TH::solve_enthalpy(State& state, const Geometry& geom, const Water& fluid) 
 void TH::solve_void_fraction(State& state, const Geometry& geom, const Water& fluid) {
     const size_t maxIter = 1000;
     const double tol = 1e-6;
+    const double eps = 1e-12; // small number to prevent division by zero
     Vector1D alpha_prev(state.alpha); // previous iteration void fraction
 
     // based on the Chexal-Lellouche drift flux model
@@ -91,20 +92,47 @@ void TH::solve_void_fraction(State& state, const Geometry& geom, const Water& fl
             // calculate distribution parameter, C_0
             double B_1 = 1.5; // from Zuber correlation
             double B_2 = 1.41;
-            double C_1 = 4.0 * P_crit * P_crit / (P * (P_crit - P)); // Eq. 24 from ANTS Theory
-            double L = (1 - exp(-C_1 * state.alpha[k])) / (1 - exp(-C_1)); // Eq. 23 from ANTS Theory
+
+            // Safeguard against pressure approaching critical pressure
+            double denom_C1 = P * (P_crit - P);
+            if (std::abs(denom_C1) < eps) {
+                denom_C1 = eps; // prevent division by zero
+            }
+            double C_1 = 4.0 * P_crit * P_crit / denom_C1; // Eq. 24 from ANTS Theory
+
+            // calculate Chexal-Lellouche fluid parameter, L
+            double exp_term1 = std::exp(-C_1 * state.alpha[k]);
+            double exp_term2 = std::exp(-C_1);
+            double L_denom = 1.0 - exp_term2;
+            if (std::abs(L_denom) < eps) {
+                L_denom = eps; // prevent division by zero
+            }
+            double L = (1.0 - exp_term1) / L_denom; // Eq. 23 from ANTS Theory
+
             double K_0 = B_1 + (1 - B_1) * pow(fluid.rho_g() / fluid.rho_f(), 0.25); // Eq. 25 from ANTS Theory
             double r = (1 + 1.57 * (fluid.rho_g() / fluid.rho_f())) / (1 - B_1); // Eq. 26 from ANTS Theory
-            double C_0 = L / (K_0 + (1 - K_0) * pow(state.alpha[k], r)); // Eq. 22 from ANTS Theory
-            // C_0 = 1.0;
+
+            // Safeguard against invalid power operations
+            double alpha_safe = std::max(0.0, std::min(state.alpha[k], 0.99));
+            double C_0_denom = K_0 + (1 - K_0) * pow(alpha_safe, r);
+            if (std::abs(C_0_denom) < eps) {
+                C_0_denom = eps; // prevent division by zero
+            }
+            double C_0 = L / C_0_denom; // Eq. 22 from ANTS Theory
 
             // calculate drift velocity, V_gj
             double V_gj0 = B_2 * pow(((fluid.rho_f() - fluid.rho_g()) * g * fluid.sigma()) / (fluid.mu_f() * fluid.mu_f()), 0.25); // Eq. 28 from ANTS Theory
-            double V_gj = V_gj0 * pow(1 - state.alpha[k], B_1); // Eq. 27 from ANTS Theory
-            // V_gj = 0.0;
+            double alpha_drift = std::max(0.0, std::min(1.0 - state.alpha[k], 1.0));
+            double V_gj = V_gj0 * pow(alpha_drift, B_1); // Eq. 27 from ANTS Theory
 
-            // update void fraction
-            state.alpha[k] = G_v / (C_0 * (G_v + (fluid.rho_g() / fluid.rho_f()) * G_l) + fluid.rho_g() * V_gj); // Eq. 21 from ANTS Theory
+            // update void fraction with safeguards
+            double numerator = G_v;
+            double denominator = C_0 * (G_v + (fluid.rho_g() / fluid.rho_f()) * G_l) + fluid.rho_g() * V_gj;
+            if (std::abs(denominator) < eps) {
+                denominator = eps; // prevent division by zero
+            }
+            state.alpha[k] = numerator / denominator; // Eq. 21 from ANTS Theory
+
         }
 
         double max_diff = 0.0; // calculate max change in alpha for convergence
@@ -123,9 +151,9 @@ void TH::solve_void_fraction(State& state, const Geometry& geom, const Water& fl
 
 void TH::solve_quality(State& state, const Geometry& geom, const Water& fluid) {
     for (size_t k = 0; k < geom.naxial() + 1; ++k) {
-        double G_v = state.W_v[k] / geom.flow_area(); // vapor mass flux
-        double G_f = state.W_l[k] / geom.flow_area(); // liquid mass flux
-        state.X[k] = G_v / (G_v + G_f); // Eq. 17 from ANTS Theory
+        double G_v = state.W_v[k] / geom.flow_area(); // vapor mass flux, Eq. 8 from ANTS Theory
+        double G_l = state.W_l[k] / geom.flow_area(); // liquid mass flux, Eq. 9 from ANTS Theory
+        state.X[k] = G_v / (G_v + G_l); // Eq. 17 from ANTS Theory
     }
 }
 
