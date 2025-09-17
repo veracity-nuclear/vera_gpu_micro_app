@@ -15,16 +15,17 @@ public:
     Vector1D T(const Vector1D& h) const;
     double Tsat() const { return 285.83 + 273.15; } // K, saturation temperature at 7 MPa
 
-    // enthalpy [kJ/kg]
+    // enthalpy [J/kg]
     double h(double T) const;
     Vector1D h(const Vector1D& T) const;
-    double h_f() const { return 1263.1; } // saturated liquid enthalpy at saturation temperature
-    double h_g() const { return 2773.7; } // saturated vapor enthalpy at saturation temperature
+    double h_f() const { return 1263.1e3; } // saturated liquid enthalpy at saturation temperature
+    double h_g() const { return 2773.7e3; } // saturated vapor enthalpy at saturation temperature
     double h_fg() const { return h_g() - h_f(); } // latent heat of vaporization at saturation temperature
 
     // specific volume [m^3/kg]
     double v_f() const { return 0.001349; } // saturated liquid specific volume at saturation temperature
     double v_g() const { return 0.027756; } // saturated vapor specific volume at saturation temperature
+    double v_fg() const { return v_g() - v_f(); } // difference in specific volume at saturation temperature
 
     // density [kg/m^3]
     double rho(double h) const;
@@ -32,7 +33,7 @@ public:
     double rho_f() const { return 1 / v_f(); } // saturated liquid density at saturation temperature
     double rho_g() const { return 1 / v_g(); } // saturated vapor density at saturation temperature
 
-    // specific heat [kJ/kg-K]
+    // specific heat [J/kg-K]
     double Cp(double h) const;
     Vector1D Cp(const Vector1D& h) const;
 

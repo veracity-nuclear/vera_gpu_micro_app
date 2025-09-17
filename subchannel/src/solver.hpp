@@ -25,11 +25,15 @@ public:
 
     void solve();
 
-    Vector1D get_surface_enthalpies() const { return state.h; }
-    Vector1D get_surface_temperatures() const { return fluid->T(state.h); }
+    Vector1D get_surface_liquid_enthalpies() const { return state.h_l; }
+    Vector1D get_surface_vapor_enthalpies() const { return state.h_v; }
+    Vector1D get_surface_temperatures() const { return fluid->T(state.h_m()); }
     Vector1D get_surface_pressures() const { return state.P; }
     Vector1D get_surface_void_fractions() const { return state.alpha; }
     Vector1D get_surface_qualities() const { return state.X; }
+    Vector1D get_evaporation_rates() const;
+    Vector1D get_surface_liquid_flow_rates() const { return state.W_l; }
+    Vector1D get_surface_vapor_flow_rates() const { return state.W_v; }
 
 private:
     double T_inlet;
