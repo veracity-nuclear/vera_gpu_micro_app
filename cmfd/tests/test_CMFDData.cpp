@@ -37,7 +37,6 @@ TEST(readData, initializeCoarseData)
     std::vector<PetscScalar> volume;
     std::vector<std::vector<PetscScalar>> chi, Dhat, Dtilde, nuFissionXs, removalXs, transportXs;
     std::vector<std::vector<PetscInt>> surf2Cell;
-    std::vector<std::vector<std::vector<PetscScalar>>> scatteringXs;
 
     CMFDCoarseMesh.getDataSet("first cell").read(firstCell);
     CMFDCoarseMesh.getDataSet("last cell").read(lastCell);
@@ -49,7 +48,6 @@ TEST(readData, initializeCoarseData)
     CMFDCoarseMesh.getDataSet("nu-fission XS").read(nuFissionXs);
     CMFDCoarseMesh.getDataSet("removal XS").read(removalXs);
     CMFDCoarseMesh.getDataSet("transport XS").read(transportXs);
-    CMFDCoarseMesh.getDataSet("scattering XS").read(scatteringXs);
     CMFDCoarseMesh.getDataSet("surf2cell").read(surf2Cell);
 
     // convert surf2Cell from 1-based to 0-based indexing
@@ -86,16 +84,6 @@ TEST(readData, initializeCoarseData)
         ASSERT_EQ(h_surf2Cell(i, 1), surf2Cell[i][1]) << "Surf2Cell data mismatch at index " << i << ", second element";
     }
 
-    auto h_scatteringXs = h_data.scatteringXS;
-    for (size_t eg1 = 0; eg1 < nEnergyGroups; ++eg1) {
-        for (size_t eg2 = 0; eg2 < nEnergyGroups; ++eg2) {
-            for (size_t i = 0; i < nCells; ++i) {
-                ASSERT_DOUBLE_EQ(h_scatteringXs(eg1, eg2, i), scatteringXs[eg1][eg2][i])
-                    << "Scattering XS data mismatch at (" << eg1 << ", " << eg2 << ", " << i << ")";
-            }
-        }
-    }
-
     // Compare the data on the device
     const CMFDData<> d_data(CMFDCoarseMesh);
 
@@ -115,16 +103,6 @@ TEST(readData, initializeCoarseData)
     for (size_t i = 0; i < nSurfaces; ++i) {
         ASSERT_EQ(h_surf2CellCheck(i, 0), surf2Cell[i][0]) << "Surf2Cell data mismatch on device at index " << i << ", first element";
         ASSERT_EQ(h_surf2CellCheck(i, 1), surf2Cell[i][1]) << "Surf2Cell data mismatch on device at index " << i << ", second element";
-    }
-
-    auto h_scatteringXsCheck = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_data.scatteringXS);
-    for (size_t eg1 = 0; eg1 < nEnergyGroups; ++eg1) {
-        for (size_t eg2 = 0; eg2 < nEnergyGroups; ++eg2) {
-            for (size_t i = 0; i < nCells; ++i) {
-                ASSERT_DOUBLE_EQ(h_scatteringXsCheck(eg1, eg2, i), scatteringXs[eg1][eg2][i])
-                    << "Scattering XS data mismatch on device at (" << eg1 << ", " << eg2 << ", " << i << ")";
-            }
-        }
     }
 }
 
@@ -380,7 +358,6 @@ TEST(readData, initializeFineData)
     std::vector<PetscInt> coarseToXSCells_vec, xsToFineCells_vec;
     std::vector<PetscScalar> volumePerXSR_vec;
     std::vector<std::vector<PetscScalar>> fineFlux_vec, transportXS_vec, nuFissionXS_vec, chi_vec;
-    std::vector<std::vector<std::vector<PetscScalar>>> scatteringXS_vec;
 
     fineGroup.getDataSet("nxscells").read(coarseToXSCells_vec);
     fineGroup.getDataSet("nfinecells").read(xsToFineCells_vec);
@@ -389,7 +366,6 @@ TEST(readData, initializeFineData)
     fineGroup.getDataSet("transport XS").read(transportXS_vec);
     fineGroup.getDataSet("nu-fission XS").read(nuFissionXS_vec);
     fineGroup.getDataSet("chi").read(chi_vec);
-    fineGroup.getDataSet("scattering XS").read(scatteringXS_vec);
 
     // Construct FineMeshData (host + device)
     FineMeshData<Kokkos::DefaultHostExecutionSpace> h_fine(fineGroup);
@@ -414,16 +390,6 @@ TEST(readData, initializeFineData)
             for (size_t j = 0; j < ref[i].size(); ++j)
                 ASSERT_DOUBLE_EQ(view(i, j), ref[i][j]) << msg << " mismatch at (" << i << "," << j << ")";
     };
-    auto compare3D = [](auto view, const std::vector<std::vector<std::vector<PetscScalar>>> &ref, const char *msg) {
-        ASSERT_EQ(view.extent(0), ref.size()) << msg << " dim0 mismatch";
-        if (!ref.empty()) ASSERT_EQ(view.extent(1), ref[0].size()) << msg << " dim1 mismatch";
-        if (!ref.empty() && !ref[0].empty()) ASSERT_EQ(view.extent(2), ref[0][0].size()) << msg << " dim2 mismatch";
-        for (size_t g1 = 0; g1 < ref.size(); ++g1)
-            for (size_t g2 = 0; g2 < ref[g1].size(); ++g2)
-                for (size_t k = 0; k < ref[g1][g2].size(); ++k)
-                    ASSERT_DOUBLE_EQ(view(g1, g2, k), ref[g1][g2][k])
-                        << msg << " mismatch at (" << g1 << "," << g2 << "," << k << ")";
-    };
 
     // Host mirrors
     auto h_coarseToXSCells = h_fine.coarseToXSCells;
@@ -433,7 +399,6 @@ TEST(readData, initializeFineData)
     auto h_transportXS = h_fine.transportXS;
     auto h_nuFissionXS = h_fine.nuFissionXS;
     auto h_chi = h_fine.chi;
-    auto h_scatteringXS = h_fine.scatteringXS;
 
     // Compare host data
     compare1DInt(h_coarseToXSCells, coarseToXSCells_vec, "coarseToXSCells");
@@ -443,7 +408,6 @@ TEST(readData, initializeFineData)
     compare2D(h_transportXS, transportXS_vec, "transportXS");
     compare2D(h_nuFissionXS, nuFissionXS_vec, "nuFissionXS");
     compare2D(h_chi, chi_vec, "chi");
-    compare3D(h_scatteringXS, scatteringXS_vec, "scatteringXS");
 
     // Device mirrors -> host copies
     auto d_coarseToXSCells_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.coarseToXSCells);
@@ -453,7 +417,6 @@ TEST(readData, initializeFineData)
     auto d_transportXS_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.transportXS);
     auto d_nuFissionXS_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.nuFissionXS);
     auto d_chi_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.chi);
-    auto d_scatteringXS_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_fine.scatteringXS);
 
     // Compare device-loaded data
     compare1DInt(d_coarseToXSCells_h, coarseToXSCells_vec, "device coarseToXSCells");
@@ -463,7 +426,6 @@ TEST(readData, initializeFineData)
     compare2D(d_transportXS_h, transportXS_vec, "device transportXS");
     compare2D(d_nuFissionXS_h, nuFissionXS_vec, "device nuFissionXS");
     compare2D(d_chi_h, chi_vec, "device chi");
-    compare3D(d_scatteringXS_h, scatteringXS_vec, "device scatteringXS");
 
     // Check scalar values
     HighFive::Group coarseMesh = file.getGroup("CMFD_CoarseMesh");

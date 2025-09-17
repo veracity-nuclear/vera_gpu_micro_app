@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ScatteringMatrix.hpp"
-#include "CMFDData.hpp"
+#include "hdf5_kokkos.hpp"
 #include "PetscKokkosTestEnvironment.hpp"
 
 class ScatteringMatrixTest : public :: testing::TestWithParam<std::string>
@@ -29,13 +29,9 @@ public:
 
         HighFive::File sparseFile(filePath, HighFive::File::ReadOnly);
         HighFive::Group scatteringXSGroup = sparseFile.getGroup("CMFD_CoarseMesh/scattering XS");
-        View2D gMin = HDF5ToKokkosView<View2D>(scatteringXSGroup.getDataSet("gMin"), "gMin");
-        View2D gMax = HDF5ToKokkosView<View2D>(scatteringXSGroup.getDataSet("gMax"), "gMax");
+        scatteringMatrixPtr = std::make_unique<ScatteringMatrixType>(scatteringXSGroup);
+
         vals = HDF5ToKokkosView<View1D>(scatteringXSGroup.getDataSet("vals"), "vals");
-
-        size_t nValues = vals.extent(0);
-
-        scatteringMatrixPtr = std::make_unique<ScatteringMatrixType>(gMin, gMax, nValues);
 
         ::testing::TestWithParam<std::string>::SetUp();
     }

@@ -3,6 +3,7 @@
 
 #include <petscvec_kokkos.hpp>
 #include <Kokkos_Core.hpp>
+#include "hdf5_kokkos.hpp"
 
 template <typename AssemblySpace = Kokkos::DefaultExecutionSpace>
 struct ScatteringMatrix
@@ -13,6 +14,7 @@ struct ScatteringMatrix
 
     using View1D = Kokkos::View<PetscScalar *, MemorySpace>;
     using View2D = Kokkos::View<PetscScalar **, MemorySpace>;
+    using View2DHost = Kokkos::View<PetscScalar **, Kokkos::HostSpace>;
     using View3D = Kokkos::View<PetscScalar ***, MemorySpace>;
 
     View1D cellNumberMap, scatterFromMap, scatterToMap;
@@ -21,7 +23,7 @@ struct ScatteringMatrix
 
     ScatteringMatrix() = default;
 
-    ScatteringMatrix(View2D gMin, View2D gMax, size_t nValues)
+    ScatteringMatrix(View2DHost gMin, View2DHost gMax, size_t nValues)
         : nValues(nValues)
     {
         nCells  = gMin.extent(0);
@@ -55,6 +57,17 @@ struct ScatteringMatrix
         Kokkos::deep_copy(cellNumberMap, h_cellNumberMap);
         Kokkos::deep_copy(scatterFromMap, h_scatterFromMap);
         Kokkos::deep_copy(scatterToMap, h_scatterToMap);
+    }
+
+    ScatteringMatrix(HighFive::Group &scatteringGroup)
+    {
+        auto gMin = HDF5ToKokkosView<View2DHost>(scatteringGroup.getDataSet("gMin"), "gMin");
+        auto gMax = HDF5ToKokkosView<View2DHost>(scatteringGroup.getDataSet("gMax"), "gMax");
+
+        auto dims = scatteringGroup.getDataSet("vals").getSpace().getDimensions();
+        size_t nValues = dims[0];
+
+        *this = ScatteringMatrix<AssemblySpace>(gMin, gMax, nValues);
     }
 
     View3D constructDense(View1D scattering1D)
