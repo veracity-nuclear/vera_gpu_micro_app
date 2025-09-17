@@ -291,7 +291,7 @@ struct FineMeshData
             Kokkos::MDRangePolicy<AssemblySpace, Kokkos::Rank<2>>({0, 0}, {nXSCells, nEnergyGroups}),
             KOKKOS_LAMBDA(const PetscInt xsRegion, const PetscInt energyGroup)
             {
-                _removalXS(xsRegion, energyGroup) = _transportXS(xsRegion, energyGroup) - _scatteringXS(energyGroup, energyGroup, xsRegion);
+                _removalXS(xsRegion, energyGroup) = _transportXS(xsRegion, energyGroup) - _scatteringXS(xsRegion, energyGroup, energyGroup);
             }
         );
     }
@@ -487,7 +487,7 @@ struct FineMeshData
 
     View3D homogenizeScatteringXS() const
     {
-        View3D coarseScatteringXS("coarseScatteringXS", nEnergyGroups, nEnergyGroups, nCoarseCells);
+        View3D coarseScatteringXS("coarseScatteringXS", nCoarseCells, nEnergyGroups, nEnergyGroups);
 
         auto _coarseToXSCells = coarseToXSCells;
         auto _xsToFineCells = xsToFineCells;
@@ -531,11 +531,11 @@ struct FineMeshData
 
                 const PetscScalar xsrFlux_fineVolume = xsrFlux * fineVolume;
 
-                localRRVOverFluxV += FractionAccumulator(_scatteringXS(energyGroupFrom, energyGroupTo, xsCellIdx) * xsrFlux_fineVolume, xsrFlux_fineVolume);
+                localRRVOverFluxV += FractionAccumulator(_scatteringXS(xsCellIdx, energyGroupFrom, energyGroupTo) * xsrFlux_fineVolume, xsrFlux_fineVolume);
 
             }, reactionRateVolumeOverFluxVolume);
 
-            coarseScatteringXS(energyGroupFrom, energyGroupTo, coarseCellIdx) = reactionRateVolumeOverFluxVolume.fraction();
+            coarseScatteringXS(coarseCellIdx, energyGroupFrom, energyGroupTo) = reactionRateVolumeOverFluxVolume.fraction();
         };
 
         Kokkos::parallel_for(teamPolicyFlatEnergyAndCoarseCells, functorHomogenizeScatteringXS);

@@ -45,17 +45,17 @@ public:
     {
         View3D scatteringXS = scatteringMatrixPtr->constructDense(vals);
 
-        ASSERT_EQ(scatteringXS.extent(0), trueScatteringMat.size());
-        ASSERT_EQ(scatteringXS.extent(1), trueScatteringMat[0].size());
-        ASSERT_EQ(scatteringXS.extent(2), trueScatteringMat[0][0].size());
+        ASSERT_EQ(scatteringXS.extent(0), trueScatteringMat[0][0].size());
+        ASSERT_EQ(scatteringXS.extent(1), trueScatteringMat.size());
+        ASSERT_EQ(scatteringXS.extent(2), trueScatteringMat[0].size());
 
-        for (size_t gFrom = 0; gFrom < scatteringXS.extent(0); ++gFrom)
+        for (size_t cell = 0; cell < scatteringXS.extent(0); ++cell)
         {
-            for (size_t gTo = 0; gTo < scatteringXS.extent(1); ++gTo)
+            for (size_t gFrom = 0; gFrom < scatteringXS.extent(1); ++gFrom)
             {
-                for (size_t cell = 0; cell < scatteringXS.extent(2); ++cell)
+                for (size_t gTo = 0; gTo < scatteringXS.extent(2); ++gTo)
                 {
-                    ASSERT_DOUBLE_EQ(scatteringXS(gFrom, gTo, cell), trueScatteringMat[gFrom][gTo][cell]);
+                    ASSERT_DOUBLE_EQ(scatteringXS(cell, gFrom, gTo), trueScatteringMat[gFrom][gTo][cell]);
                 }
             }
         }

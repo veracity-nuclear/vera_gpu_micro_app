@@ -78,16 +78,16 @@ struct ScatteringMatrix
         auto _scatterFromMap = scatterFromMap;
         auto _scatterToMap = scatterToMap;
 
-        View3D scatteringXS("scatteringXS", nGroups, nGroups, nCells);
+        View3D scatteringXS("scatteringXS", nCells, nGroups, nGroups);
         Kokkos::deep_copy(scatteringXS, 0.0); // Initialize to zero
 
         Kokkos::parallel_for("constructDenseScatteringMatrix", Kokkos::RangePolicy<AssemblySpace>(0, nValues),
             KOKKOS_LAMBDA(const size_t i)
             {
+                const size_t cellIdx = _cellNumberMap(i);
                 const size_t scatterFrom = _scatterFromMap(i);
                 const size_t scatterTo = _scatterToMap(i);
-                const size_t cellIdx = _cellNumberMap(i);
-                scatteringXS(scatterFrom, scatterTo, cellIdx) = scattering1D(i);
+                scatteringXS(cellIdx, scatterFrom, scatterTo) = scattering1D(i);
             });
 
         Kokkos::fence();

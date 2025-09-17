@@ -104,7 +104,7 @@ PetscErrorCode SimpleMatrixAssembler::_assembleM()
         {
             for (PetscInt cellIdx = 0; cellIdx < cmfdData.nCells; ++cellIdx)
             {
-                const PetscScalar value = -1 * cmfdData.scatteringXS(scatterToIdx, scatterFromIdx, cellIdx) * cmfdData.volume(cellIdx);
+                const PetscScalar value = -1 * cmfdData.scatteringXS(cellIdx, scatterToIdx, scatterFromIdx) * cmfdData.volume(cellIdx);
                 if (isNonZero(value))
                 {
                     PetscCall(MatSetValue(MMat, cellIdx * cmfdData.nGroups + scatterFromIdx, cellIdx * cmfdData.nGroups + scatterToIdx, value, ADD_VALUES));
@@ -335,7 +335,7 @@ PetscErrorCode COOMatrixAssembler::_assembleM()
                     const size_t locationIn1D = rowIdxInMat * maxNNZInRow + scatterToIdx;
                     rowIndices(locationIn1D) = rowIdxInMat;
                     colIndices(locationIn1D) = cellIdx * _cmfdData.nGroups + scatterToIdx;
-                    values(locationIn1D) = -1 * _cmfdData.scatteringXS(scatterToIdx, scatterFromIdx, cellIdx) * _cmfdData.volume(cellIdx);
+                    values(locationIn1D) = -1 * _cmfdData.scatteringXS(cellIdx, scatterToIdx, scatterFromIdx) * _cmfdData.volume(cellIdx);
                 }
             });
 
@@ -565,7 +565,7 @@ PetscErrorCode CSRMatrixAssembler::_assembleM()
                 const size_t locationIn1D = rowIdxInMat * maxNNZInRow + scatterToIdx;
 
                 colIndices(locationIn1D) = cellIdx * _cmfdData.nGroups + scatterToIdx;
-                values(locationIn1D) = -1 * _cmfdData.scatteringXS(scatterToIdx, scatterFromIdx, cellIdx) * _cmfdData.volume(cellIdx);
+                values(locationIn1D) = -1 * _cmfdData.scatteringXS(cellIdx, scatterToIdx, scatterFromIdx) * _cmfdData.volume(cellIdx);
             }
         });
 
