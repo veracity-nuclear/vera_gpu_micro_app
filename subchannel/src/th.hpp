@@ -13,9 +13,14 @@
 
 namespace TH {
 
-void solve_enthalpy(State& state, const Geometry& geom);
-void solve_pressure(State& state, const Geometry& geom, const Water& fluid);
+void solve_evaporation_term(State& state, const Geometry& geom, const Water& fluid);
+void solve_turbulent_mixing(State& state, const Geometry& geom, const Water& fluid);
+void solve_void_drift(State& state, const Geometry& geom, const Water& fluid);
+void solve_surface_mass_flux(State& state, const Geometry& geom, const Water& fluid);
+void solve_flow_rates(State& state, const Geometry& geom, const Water& fluid);
+void solve_enthalpy(State& state, const Geometry& geom, const Water& fluid);
 void solve_void_fraction(State& state, const Geometry& geom, const Water& fluid);
 void solve_quality(State& state, const Geometry& geom, const Water& fluid);
+void solve_pressure(State& state, const Geometry& geom, const Water& fluid);
 
 } // namespace TH

@@ -2,7 +2,7 @@
 
 double Water::h(double T) const {
     // Simple linear approximation for water enthalpy
-    return Cp(0) * (T - 273.15); // kJ/kg
+    return Cp(0) * (T - 273.15); // J/kg
 }
 
 Vector1D Water::h(const Vector1D& T) const {
@@ -14,7 +14,7 @@ Vector1D Water::h(const Vector1D& T) const {
 }
 
 double Water::T(double h) const {
-    return h / 4.22 + 273.15; // K, only true because specific heat is constant
+    return h / 4220.0 + 273.15; // K, only true because specific heat is constant
 }
 
 Vector1D Water::T(const Vector1D& h) const {
@@ -40,7 +40,7 @@ Vector1D Water::rho(const Vector1D& h) const {
 
 double Water::Cp(double h) const {
     // Simple approximation for water specific heat capacity
-    return 4.22; // kJ/kg-K
+    return 4220.0; // J/kg-K
 }
 
 Vector1D Water::Cp(const Vector1D& h) const {
