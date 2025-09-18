@@ -26,7 +26,6 @@ public:
     void solve();
 
     Vector1D get_surface_liquid_enthalpies() const { return state.h_l; }
-    Vector1D get_surface_vapor_enthalpies() const { return state.h_v; }
     Vector1D get_surface_temperatures() const { return fluid->T(state.h_l); }
     Vector1D get_surface_pressures() const { return state.P; }
     Vector1D get_surface_void_fractions() const { return state.alpha; }

@@ -4,7 +4,6 @@
 #include <vector>
 #include <memory>
 #include <cmath>
-#include <algorithm>
 
 #include "vectors.hpp"
 #include "constants.hpp"

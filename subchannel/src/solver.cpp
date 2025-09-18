@@ -16,7 +16,6 @@ Solver::Solver(
     // initialize solution vectors
     state.fluid = *this->fluid; // set fluid reference in state
     state.h_l.resize(geom->naxial() + 1, fluid->h(T_inlet));
-    state.h_v.resize(geom->naxial() + 1, fluid->h(T_inlet));
     state.P.resize(geom->naxial() + 1, P_inlet);
     state.W_l.resize(geom->naxial() + 1, mass_flow_rate);
     state.W_v.resize(geom->naxial() + 1, 0.0);

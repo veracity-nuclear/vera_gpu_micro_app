@@ -16,6 +16,7 @@ void TH::solve_evaporation_term(State& state, const Geometry& geom, const Water&
     double A_f = geom.flow_area(); // flow area [m^2]
 
     Vector1D mu = fluid.mu(state.h_l); // dynamic viscosity [Pa-s]
+    Vector1D rho = fluid.rho(state.h_l); // liquid density [kg/m^3]
     Vector1D cond = fluid.k(state.h_l); // thermal conductivity [W/m-K]
     Vector1D Cp = fluid.Cp(state.h_l); // specific heat [J/kg-K]
     Vector1D T = fluid.T(state.h_l); // temperature [K]
@@ -26,7 +27,9 @@ void TH::solve_evaporation_term(State& state, const Geometry& geom, const Water&
         double Pr = Cp[k] * mu[k] / cond[k]; // Prandtl number
         double Pe = Re * Pr; // Peclet number
         double Qflux_wall = state.lhr[k] / P_H; // wall heat flux [W/m^2]
-        double G_m = state.W_m(k) / A_f; // mixture mass flux [kg/m^2-s]
+        double G_l = state.W_l[k] / A_f; // liquid mass flux [kg/m^2-s]
+        double G_v = state.W_v[k] / A_f; // vapor mass flux [kg/m^2-s]
+        double G_m = G_l + G_v; // mixture mass flux [kg/m^2-s], Eq. 11 from ANTS Theory
 
         double void_dc; // void departure, Eq. 52 from ANTS Theory
         if (Pe < 70000.) {
@@ -35,18 +38,23 @@ void TH::solve_evaporation_term(State& state, const Geometry& geom, const Water&
             void_dc = 154.0 * (Qflux_wall / G_m);
         }
 
-        double Qflux_boil; // boiling heat flux [W/m], Eq. 51 from ANTS Theory
-        if ((fluid.h_f() - state.h_l[k]) < void_dc) {
-            Qflux_boil = Qflux_wall * (1 - ((fluid.h_f() - state.h_l[k]) / void_dc));
+        if (state.h_l[k] < fluid.h_f()) {
+            double Qflux_boil; // boiling heat flux [W/m], Eq. 51 from ANTS Theory
+            if ((fluid.h_f() - state.h_l[k]) < void_dc) {
+                Qflux_boil = Qflux_wall * (1 - ((fluid.h_f() - state.h_l[k]) / void_dc));
+            } else {
+                Qflux_boil = 0.0;
+            }
+
+            double epsilon = rho[k] * (fluid.h_f() - state.h_l[k]) / (fluid.rho_g() * fluid.h_fg()); // pumping parameter, Eq. 53 from ANTS Theory
+            double H_0 = 0.075; // [s^-1 K^-1], condensation parameter; value recommended by Lahey and Moody (1996)
+            double gamma_cond = (H_0 * (1 / fluid.v_fg()) * A_f * state.alpha[k] * (fluid.Tsat() - T[k])) / P_H; // condensation rate [kg/m^3-s], Eq. 54 from ANTS Theory
+            state.evap[k] = P_H * Qflux_boil / (fluid.h_fg() * (1 + epsilon)) - P_H * gamma_cond; // Eq. 50 from ANTS Theory
+
         } else {
-            Qflux_boil = 0.0;
+            double Qflux_boil = Qflux_wall;
+            state.evap[k] = P_H * Qflux_boil / fluid.h_fg();
         }
-
-        double epsilon = fluid.rho_f() * (fluid.h_f() - state.h_l[k]) / (fluid.rho_g() * fluid.h_fg()); // pumping parameter, Eq. 53 from ANTS Theory
-        double H_0 = 0.075; // [s^-1 K^-1], condensation parameter; value recommended by Lahey and Moody (1996)
-        double gamma_cond = (H_0 * (1 / fluid.v_fg()) * A_f * state.alpha[k] * (fluid.Tsat() - T[k])) / P_H; // condensation rate [kg/m^3-s], Eq. 53 from ANTS Theory
-
-        state.evap[k] = P_H * Qflux_boil / (fluid.h_fg() * (1 + epsilon)) - P_H * gamma_cond; // Eq. 50 from ANTS Theory
     }
 }
 
@@ -75,77 +83,84 @@ void TH::solve_enthalpy(State& state, const Geometry& geom, const Water& fluid) 
 }
 
 void TH::solve_void_fraction(State& state, const Geometry& geom, const Water& fluid) {
-    const size_t maxIter = 1000;
     const double tol = 1e-6;
     const double eps = 1e-12; // small number to prevent division by zero
-    Vector1D alpha_prev(state.alpha); // previous iteration void fraction
 
     // based on the Chexal-Lellouche drift flux model
     double P = state.P[0]; // assuming constant pressure for simplicity
     double A = geom.flow_area();
+    double D_h = geom.hydraulic_diameter();
 
-    for (size_t iter = 0; iter < maxIter; ++iter) { // iterate to converge void fraction
-        for (size_t k = 0; k < geom.naxial() + 1; ++k) {
-            double G_v = state.W_v[k] / A; // vapor mass flux
-            double G_l = state.W_l[k] / A; // liquid mass flux
+    for (size_t k = 1; k < geom.naxial() + 1; ++k) {
+        double Gv = state.W_v[k] / A; // vapor mass flux
+        double Gl = state.W_l[k] / A; // liquid mass flux
+
+        if (Gv < eps) {
+            state.alpha[k] = 0.0;
+            continue;
+        }
+
+        double h_l = state.h_l[k];
+        double h_v = fluid.h_f() + state.X[k] * fluid.h_fg();
+        double rho_g = fluid.rho_g();
+        double rho_f = fluid.rho_f();
+        double rho_l = fluid.rho(h_l);
+        double mu_v = fluid.mu(h_v);
+        double mu_l = fluid.mu(h_l);
+        double sigma = fluid.sigma();
+
+        double Re_g = state.W_v[k] * D_h / (A * mu_v); // local vapor Reynolds number
+        double Re_f = state.W_l[k] * D_h / (A * mu_l); // local liquid Reynolds number
+        double Re;
+        if (Re_g > Re_f) {
+            Re = Re_g;
+        } else {
+            Re = Re_f;
+        }
+        double A1 = 1 / (1 + exp(-Re / 60000));
+        double B1 = std::min(0.8, A1); // from Zuber correlation
+        double B2 = 1.41;
+
+        auto f = [A1, B1, B2, P, rho_g, rho_f, rho_l, sigma, Gv, Gl] (double alpha) {
 
             // calculate distribution parameter, C_0
-            double B_1 = 1.5; // from Zuber correlation
-            double B_2 = 1.41;
-
-            // Safeguard against pressure approaching critical pressure
-            double denom_C1 = P * (P_crit - P);
-            if (std::abs(denom_C1) < eps) {
-                denom_C1 = eps; // prevent division by zero
-            }
-            double C_1 = 4.0 * P_crit * P_crit / denom_C1; // Eq. 24 from ANTS Theory
-
-            // calculate Chexal-Lellouche fluid parameter, L
-            double exp_term1 = std::exp(-C_1 * state.alpha[k]);
-            double exp_term2 = std::exp(-C_1);
-            double L_denom = 1.0 - exp_term2;
-            if (std::abs(L_denom) < eps) {
-                L_denom = eps; // prevent division by zero
-            }
-            double L = (1.0 - exp_term1) / L_denom; // Eq. 23 from ANTS Theory
-
-            double K_0 = B_1 + (1 - B_1) * pow(fluid.rho_g() / fluid.rho_f(), 0.25); // Eq. 25 from ANTS Theory
-            double r = (1 + 1.57 * (fluid.rho_g() / fluid.rho_f())) / (1 - B_1); // Eq. 26 from ANTS Theory
-
-            // Safeguard against invalid power operations
-            double alpha_safe = std::max(0.0, std::min(state.alpha[k], 0.99));
-            double C_0_denom = K_0 + (1 - K_0) * pow(alpha_safe, r);
-            if (std::abs(C_0_denom) < eps) {
-                C_0_denom = eps; // prevent division by zero
-            }
-            double C_0 = L / C_0_denom; // Eq. 22 from ANTS Theory
+            double C1 = 4.0 * P_crit * P_crit / (P * (P_crit - P)); // Eq. 24 from ANTS Theory
+            double L = (1.0 - std::exp(-C1) * alpha) / (1.0 - std::exp(-C1)); // Eq. 23 from ANTS Theory
+            double K0 = B1 + (1 - B1) * pow(rho_g / rho_f, 0.25); // Eq. 25 from ANTS Theory
+            double r = (1 + 1.57 * (rho_g / rho_f)) / (1 - B1); // Eq. 26 from ANTS Theory
+            double C0 = L / (K0 + (1 - K0) * pow(alpha, r)); // Eq. 22 from ANTS Theory
 
             // calculate drift velocity, V_gj
-            double V_gj0 = B_2 * pow(((fluid.rho_f() - fluid.rho_g()) * g * fluid.sigma()) / (fluid.mu_f() * fluid.mu_f()), 0.25); // Eq. 28 from ANTS Theory
-            double alpha_drift = std::max(0.0, std::min(1.0 - state.alpha[k], 1.0));
-            double V_gj = V_gj0 * pow(alpha_drift, B_1); // Eq. 27 from ANTS Theory
+            double Vgj0 = B2 * pow(((rho_f - rho_g) * g * sigma) / (rho_f * rho_f), 0.25); // Eq. 28 from ANTS Theory
+            double Vgj = Vgj0 * pow(1.0 - alpha, B1); // Eq. 27 from ANTS Theory
 
-            // update void fraction with safeguards
-            double numerator = G_v;
-            double denominator = C_0 * (G_v + (fluid.rho_g() / fluid.rho_f()) * G_l) + fluid.rho_g() * V_gj;
-            if (std::abs(denominator) < eps) {
-                denominator = eps; // prevent division by zero
+            return (alpha * C0 - 1.0) * Gv + alpha * C0 * (rho_g / rho_l) * Gl + alpha * rho_g * Vgj;
+        };
+
+        auto bisection = [](auto f, double a, double b, double tol = 1e-8, int max_iter = 100) {
+            double fa = f(a), fb = f(b);
+
+            if (fa == 0.0) return a;
+            if (fb == 0.0) return b;
+            if (fa * fb > 0) throw std::runtime_error("Root not bracketed!");
+
+            for (int i = 0; i < max_iter; i++) {
+                double c = 0.5 * (a + b);
+                double fc = f(c);
+
+                if (std::fabs(fc) < tol || (b - a) < tol) return c;
+                if (fa * fc < 0) {
+                    b = c;
+                    fb = fc;
+                } else {
+                    a = c;
+                    fa = fc;
+                }
             }
-            state.alpha[k] = numerator / denominator; // Eq. 21 from ANTS Theory
+            return 0.5 * (a + b);
+        };
 
-        }
-
-        double max_diff = 0.0; // calculate max change in alpha for convergence
-        for (size_t k = 0; k < geom.naxial() + 1; ++k) {
-            double diff = std::abs(state.alpha[k] - alpha_prev[k]);
-            if (diff > max_diff) {
-                max_diff = diff;
-            }
-        }
-        if (max_diff < tol) {
-            break;
-        }
-        alpha_prev = state.alpha; // update previous alpha for next iteration
+        state.alpha[k] = bisection(f, 0.0, 1.0, tol, 100); // solve for void fraction using bisection method
     }
 }
 
