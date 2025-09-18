@@ -125,7 +125,7 @@ void TH::solve_void_fraction(State& state, const Geometry& geom, const Water& fl
 
             // calculate distribution parameter, C_0
             double C1 = 4.0 * P_crit * P_crit / (P * (P_crit - P)); // Eq. 24 from ANTS Theory
-            double L = (1.0 - std::exp(-C1) * alpha) / (1.0 - std::exp(-C1)); // Eq. 23 from ANTS Theory
+            double L = (1.0 - std::exp(-C1 * alpha)) / (1.0 - std::exp(-C1)); // Eq. 23 from ANTS Theory
             double K0 = B1 + (1 - B1) * pow(rho_g / rho_f, 0.25); // Eq. 25 from ANTS Theory
             double r = (1 + 1.57 * (rho_g / rho_f)) / (1 - B1); // Eq. 26 from ANTS Theory
             double C0 = L / (K0 + (1 - K0) * pow(alpha, r)); // Eq. 22 from ANTS Theory
