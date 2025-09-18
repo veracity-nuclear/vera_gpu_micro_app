@@ -29,6 +29,7 @@ set(CMFD_TEST_SUITE_FILES
     test_PETSc_ex3k.kokkos
     test_preliminary
     test_CMFDData
+    test_scatteringMatrix
     test_PetscMatrixAssemblerLight
     test_PetscMatrixAssemblerHeavy
     test_PetscEigenSolverLight
@@ -41,6 +42,7 @@ set(CMFD_TEST_SUITE_LABELS
     "BASIC\;CONTINUOUS\;HEAVY"
     "CONTINUOUS\;HEAVY"
     "CONTINUOUS\;HEAVY"
+    "CONTINUOUS\;HEAVY"
     "HEAVY"
     "CONTINUOUS\;HEAVY"
     "HEAVY"
@@ -50,6 +52,16 @@ set(CMFD_TEST_SUITE_LABELS
 
 set(COMMON_TEST_MAIN_SRC ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_main.cpp)
 
+# copy test only data
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/data)
+file(GLOB TEST_DATA_FILES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/*"
+)
+if(TEST_DATA_FILES)
+    file(COPY ${TEST_DATA_FILES} DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/data)
+endif()
+
+# Loop over the test suites and create an executable for each
 list(LENGTH CMFD_TEST_SUITE_FILES list_length)
 math(EXPR last_index "${list_length} - 1")
 foreach(i RANGE 0 ${last_index})

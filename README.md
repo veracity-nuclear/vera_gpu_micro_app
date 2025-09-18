@@ -248,11 +248,13 @@ These datasets are inside `/CMFD_CoarseMesh` in the HDF5 file.
 | `transport XS` | `float` | (n_groups, n_cells) | The transport cross section in each coarse mesh cell for each energy group. |
 | `removal XS` | `float` | (n_groups, n_cells) | The removal cross section in each coarse mesh cell for each energy group. |
 | `nu-fission XS` | `float` | (n_groups, n_cells) | The nu-fission cross section in each coarse mesh cell for each energy group. |
-| `scattering XS` | `float` | (to_n_groups, from_n_groups, n_cells) | The scattering cross section in each coarse mesh cell for each energy group. |
+| `scattering XS` | group | n/a | The scattering cross section in each coarse mesh cell for each energy group. |
 | `chi` | `float` | (n_groups, n_cells) | The chi in each coarse mesh cell for each energy group. |
 | `surf2cell` | `int` | (n_surf, 2) | The surface to cell mapping for each coarse mesh cell; the first column is the cell index on the positive side (north, east, up) and the second column is the cell index on the negative side (south, west, down). |
 | `Dtilde` | `float` | (n_groups, n_surf) | The $`\tilde{D}`$ value multiplied by surface area for each surface in each energy group. |
 | `Dhat` | `float` | (n_groups, n_surf) | The $`\hat{D}`$ value multiplied by surface area for each surface in each energy group. |
+
+See "Scattering Matrix Storage" below for details on the `scattering XS` group.
 
 #### CMFD_FineMesh
 
@@ -269,7 +271,7 @@ These datasets are inside `/CMFD_FineMesh` in the HDF5 file.
 | `transport XS` | `float` | (n_xsregions, n_groups) | The transport cross section for each fine mesh cell in each XS region. |
 | `total XS` | `float` | (n_xsregions, n_groups) | The total cross section for each fine mesh cell in each XS region. |
 | `nu-fission XS` | `float` | (n_fissionable, n_groups) | The nu-fission cross section for each fine mesh cell in each XS region. |
-| `scattering XS` | `float` | (n_xsregions, n_groups) | The scattering cross section for each fine mesh cell in each XS region. |
+| `scattering XS` | group | n/a | The scattering cross section for each fine mesh cell in each XS region. |
 | `chi` | `float` | (n_fissionable, n_groups) | The chi for each fine mesh cell in each XS region. |
 
 For a single pin cell problem with 4 regions (coolant, clad, gap, fuel), each divided into 8 azimuthal regions, `nxscells` will be `[0, 4]`, `nfinecells` will be `[0, 8, 16, 24, 32]` and `isFissionable` will be `[F, F, F, T]`.
@@ -277,6 +279,15 @@ The `volume` array will have 4 values (one per XS region); the fine mesh volume 
 The transport, total, and scattering cross sections are defined for every XS region.
 The nu-fission cross section and chi are only defined for fissionable regions.
 The removal cross section is calculated by homogenizing the total & scattering cross sections, then subtracting the homogenized self-scatter from the homogenized total XS.
+
+See "Scattering Matrix Storage" below for details on the `scattering XS` group.
+
+#### Scattering Matrix Storage
+
+The `scattering XS` group contains datasets for the minimum and maximum source groups for each row of each scattering matrix.
+The `gMin` dataset is the lowest energy group that scatters into each destination group, and the `gMax` dataset is the highest energy group that scatters into each destination group.
+They both have the shape `(n_groups, n_cells)`, so the `gMin` and `gMax` values are available for every energy group and cell.
+The non-zero values are stored in `vals`, and can be mapped as needed by iterating through the `gMin` and `gMax` datasets.
 
 ### Conduction
 
