@@ -204,7 +204,17 @@ The `bradenpecora/vera-gpu:0.0.1no-cuda` container includes:
 - **HDF5**: Data format library (Ubuntu package sufficient)
 - **GoogleTest**: Unit testing (fetched automatically)
 
-## Environment Variables Required
+## Environment Variables
+
+### CI Container (Recommended)
+When using the CI container, all environment variables are automatically set by sourcing:
+```bash
+source /opt/spack-environment/activate.sh
+```
+No manual environment variable configuration is needed.
+
+### Manual Build (Not Recommended)
+For manual builds, the following environment variables are required:
 ```bash
 export HDF5_ROOT=/usr/bin
 export KOKKOS_ROOT=/opt/kokkos
