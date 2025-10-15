@@ -224,7 +224,7 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
     for (int ipol = 0; ipol < _npol; ipol++) {
         _h_rsinpolang(ipol) = static_cast<RealType>(1.0 / std::sin(polar_angles[ipol]));
     }
-    _d_rsinpolang = DViewReal1D("device rsinpolang", _h_rsinpolang.size());
+    _d_rsinpolang = DViewSIMD1DReal("device rsinpolang", _h_rsinpolang.size() / simd_real::size());
     Kokkos::deep_copy(_d_rsinpolang, _h_rsinpolang);
     _h_rsinpolang = decltype(_h_rsinpolang)();
 
@@ -525,32 +525,32 @@ void KokkosMOC<ExecutionSpace, RealType>::update_source(const std::vector<double
 }
 
 // General template implementation (fallback)
-template <typename ExecutionSpace>
+template <typename ExecutionSpace, typename RealType>
 Kokkos::TeamPolicy<ExecutionSpace> _configure_team_policy(int n_rays, int npol, int ng) {
-    return Kokkos::TeamPolicy<ExecutionSpace>(static_cast<long int>(n_rays * npol * ng), 1, 1);
+    return Kokkos::TeamPolicy<ExecutionSpace>(static_cast<long int>(npol / Kokkos::Experimental::simd<RealType>::size()), 1, Kokkos::Experimental::simd<RealType>::size());
 }
 
 struct RayIndexCalculator {
     KOKKOS_INLINE_FUNCTION
     static void calculate(int league_rank, int team_rank,
-                         int npol, int ng,
+                         int n_rays, int npol, int ng,
                          int& iray, int& ipol, int& ig) {
-        int prod = npol * ng;
-        iray = league_rank / prod;
-        ig = (league_rank % prod) / npol;
-        ipol = league_rank % npol;
+        int prod = ng * n_rays;
+        ipol = 1; //league_rank / prod;
+        ig = (league_rank % prod) / n_rays;
+        iray = league_rank % n_rays;
     }
 };
 
 template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
-RealType compute_exparg(const KokkosRaySegment<RealType> segment, int ig, int ipol,
+RealType compute_exparg(const KokkosRaySegment<RealType> segment, int ig,
                     const Kokkos::View<const RealType**, ExecutionSpace>& exp_table,
                     int n_intervals, RealType rdx,
                     const Kokkos::View<const RealType**, ExecutionSpace>& xstr,
-                    const Kokkos::View<const RealType*, ExecutionSpace>& rsinpolang)
+                    const Kokkos::Experimental::simd<RealType>& rsinpolang)
 {
-    RealType val = -xstr(segment.fsr(), ig) * segment.length() * rsinpolang(ipol);
+    RealType val = -xstr(segment.fsr(), ig) * segment.length() * rsinpolang;
     int i = Kokkos::floor(val * rdx) + n_intervals + 1;
     if (i >= 0 && i < n_intervals + 1) {
         return exp_table(i, 0) * val + exp_table(i, 1);
@@ -563,7 +563,11 @@ RealType compute_exparg(const KokkosRaySegment<RealType> segment, int ig, int ip
 
 template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
-RealType eval_exp_arg(RealType exparg, const RealType xstr, const RealType ray_segment, const RealType rsinpolang)
+RealType eval_exp_arg(
+    RealType exparg,
+    const RealType xstr,
+    const RealType ray_segment,
+    const Kokkos::Experimental::simd<RealType> rsinpolang)
 {
 #ifdef KOKKOS_ENABLE_CUDA
     if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
@@ -631,9 +635,9 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
 
     // Use the specialized team policy configuration
     typedef typename Kokkos::TeamPolicy<ExecutionSpace>::member_type team_member;
-    auto policy = _configure_team_policy<ExecutionSpace>(n_rays, npol, ng);
+    auto policy = _configure_team_policy<ExecutionSpace, RealType>(n_rays, npol, ng);
 
-    // Add scratch space for exponential arguments
+    // Add scratch space for exponential arguments and SIMD flux arrays
     size_t scratch_size;
     if (_device != "cuda") {
         scratch_size = ScratchViewReal1D::shmem_size(_max_segments);
@@ -641,61 +645,61 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
         scratch_size = 0;
     }
     policy = policy.set_scratch_size(0, Kokkos::PerTeam(scratch_size));
-
+    DViewSIMD1DReal fsegflux("fsegflux", npol / simd_real::size());
+    DViewSIMD1DReal bsegflux("bsegflux", npol / simd_real::size());
     // Sweep all rays using parallel_for with ray index
     Kokkos::parallel_for("MOC Sweep Rays", policy, KOKKOS_LAMBDA(const team_member& teamMember) {
-        int iray, ipol, ig;
+        const int ipol = teamMember.league_rank();
+        // Create temporary arrays for segment flux using scratch memory
+        ScratchViewReal1D exparg(teamMember.team_scratch(0), _max_segments);
 
-        // Use the specialized helper to calculate indices - no branches!
-        RayIndexCalculator::calculate(
-            teamMember.league_rank(), teamMember.team_rank(),
-            npol, ng, iray, ipol, ig);
-        const auto* ray = &rays(iray);
+        for (int ig = 0; ig < ng; ig++) {
+            for (int iray = 0; iray < n_rays; iray++) {
+                const auto* ray = &rays(iray);
 
-        // Create thread-local exparg array for non-CUDA execution spaces using scratch space
-        ScratchViewReal1D exparg(teamMember.team_scratch(0), ray->nsegs());
-        int nsegs;
+                int nsegs;
 #ifdef KOKKOS_ENABLE_CUDA
-        if constexpr(std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
-            nsegs = 0;
-        } else
+                if constexpr(std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
+                    nsegs = 0;
+                } else
 #endif
-        {
-            nsegs = ray->nsegs();
+                {
+                    nsegs = ray->nsegs();
+                }
+                for (int iseg = 0; iseg < nsegs; iseg++) {
+                    const auto& segment = segments(ray->first_seg() + iseg);
+                    exparg(iseg) = compute_exparg<ExecutionSpace, RealType>(segment, ig, exp_table, n_exp_intervals, exp_rdx, xstr, rsinpolang(ipol));
+
+                }
+
+                fsegflux(ipol) = old_angflux(ray->angflux_bc_frwd_start(), ipol, ig);
+                bsegflux(ipol) = old_angflux(ray->angflux_bc_bkwd_start(), ipol, ig);
+
+                // Forward and backward sweeps
+                for (int iseg = 0; iseg < ray->nsegs(); iseg++) {
+                    // Forward segment sweep
+                    auto* segment = &segments(ray->first_seg() + iseg);
+                    int ireg = segment->fsr();
+                    simd_real phid = (fsegflux(ipol) - source(ireg, ig)) *
+                        eval_exp_arg<ExecutionSpace, RealType>(exparg(iseg), xstr(ireg, ig), segment->length(), rsinpolang(ipol));
+                    fsegflux(ipol) = fsegflux(ipol) - phid;
+                    tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, static_cast<RealType>(phid) * angle_weights(ray->angle(), ipol));
+
+                    // Backward segment sweep
+                    int bseg = ray->nsegs() - iseg - 1;
+                    segment = &segments(ray->first_seg() + bseg);
+                    ireg = segment->fsr();
+                    phid = (bsegflux(ipol) - source(ireg, ig)) *
+                        eval_exp_arg<ExecutionSpace, RealType>(exparg(bseg), xstr(ireg, ig), segment->length(), rsinpolang(ipol));
+                    bsegflux(ipol) = bsegflux(ipol) - phid;
+                    tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, static_cast<RealType>(phid) * angle_weights(ray->angle(), ipol));
+                }
+
+                // Store final segment flux back to angular flux arrays
+                angflux(ray->angflux_bc_frwd_end(), ipol, ig) = static_cast<RealType>(fsegflux(ipol));
+                angflux(ray->angflux_bc_bkwd_end(), ipol, ig) = static_cast<RealType>(bsegflux(ipol));
+            }
         }
-        for (int iseg = 0; iseg < nsegs; iseg++) {
-            const auto& segment = segments(ray->first_seg() + iseg);
-            exparg(iseg) = compute_exparg<ExecutionSpace, RealType>(segment, ig, ipol, exp_table, n_exp_intervals, exp_rdx, xstr, rsinpolang);
-
-        }
-
-        // Create temporary arrays for segment flux
-        RealType fsegflux = old_angflux(ray->angflux_bc_frwd_start(), ipol, ig);
-        RealType bsegflux = old_angflux(ray->angflux_bc_bkwd_start(), ipol, ig);
-
-        // Forward and backward sweeps
-        for (int iseg = 0; iseg < ray->nsegs(); iseg++) {
-            // Forward segment sweep
-            auto* segment = &segments(ray->first_seg() + iseg);
-            int ireg = segment->fsr();
-            RealType phid = (fsegflux - source(ireg, ig)) *
-                eval_exp_arg<ExecutionSpace, RealType>(exparg(iseg), xstr(ireg, ig), segment->length(), rsinpolang(ipol));
-            fsegflux -= phid;
-            tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, phid * angle_weights(ray->angle(), ipol));
-
-            // Backward segment sweep
-            int bseg = ray->nsegs() - iseg - 1;
-            segment = &segments(ray->first_seg() + bseg);
-            ireg = segment->fsr();
-            phid = (bsegflux - source(ireg, ig)) *
-                eval_exp_arg<ExecutionSpace, RealType>(exparg(bseg), xstr(ireg, ig), segment->length(), rsinpolang(ipol));
-            bsegflux -= phid;
-            tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, phid * angle_weights(ray->angle(), ipol));
-        }
-
-        // Store final segment flux back to angular flux arrays
-        angflux(ray->angflux_bc_frwd_end(), ipol, ig) = fsegflux;
-        angflux(ray->angflux_bc_bkwd_end(), ipol, ig) = bsegflux;
     });
 
     // Reduction for OpenMP

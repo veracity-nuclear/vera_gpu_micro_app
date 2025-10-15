@@ -3,6 +3,7 @@
 #include <vector>
 #include <highfive/highfive.hpp>
 #include <Kokkos_Core.hpp>
+#include <Kokkos_SIMD.hpp>
 #include "c5g7_library.hpp"
 #include "base_moc.hpp"
 #include "argument_parser.hpp"
@@ -28,6 +29,9 @@ class KokkosMOC : public BaseMOC {
     using DViewKokkosRaySegment1D = Kokkos::View<KokkosRaySegment<RealType>*, layout, MemorySpace>;
     using HViewKokkosLongRay1D = Kokkos::View<KokkosLongRay*, layout, Kokkos::HostSpace>;
     using DViewKokkosLongRay1D = Kokkos::View<KokkosLongRay*, layout, MemorySpace>;
+
+    using simd_real = Kokkos::Experimental::simd<RealType>;
+    using DViewSIMD1DReal = Kokkos::View<simd_real*, typename ExecutionSpace::memory_space>;
 
     // Friend declaration for googletest
     friend class BasicTest_test_kokkos_exp_table_Test;
@@ -120,7 +124,7 @@ class KokkosMOC : public BaseMOC {
         DViewReal2D _d_xsch;
         DViewReal3D _d_xssc;
         DViewReal2D _d_angle_weights;
-        DViewReal1D _d_rsinpolang;
+        DViewSIMD1DReal _d_rsinpolang;
         DViewReal2D _d_exp_table;
 
         // Ray data
