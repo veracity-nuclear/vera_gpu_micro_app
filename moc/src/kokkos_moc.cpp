@@ -547,10 +547,8 @@ void KokkosMOC<ExecutionSpace, RealType>::update_source(const std::vector<double
 // General template implementation (fallback)
 template <typename ExecutionSpace, typename RealType>
 Kokkos::TeamPolicy<ExecutionSpace> _configure_team_policy(int n_rays, int npol, int ng) {
-    // For SIMD, we want to parallelize over rays and groups, vectorize over polar angles
-    const int simd_width = Kokkos::Experimental::simd<RealType>::size();
-    const int npol_simd = (npol + simd_width - 1) / simd_width; // Round up division
-    return Kokkos::TeamPolicy<ExecutionSpace>(n_rays * ng * npol_simd, 1);
+    // Parallelize over rays and groups, vectorize over polar angles within each task
+    return Kokkos::TeamPolicy<ExecutionSpace>(n_rays * ng, 1);
 }
 
 struct RayIndexCalculator {
@@ -684,32 +682,25 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
     // Add scratch space for exponential arguments (now SIMD)
     size_t scratch_size;
     if (_device != "cuda") {
-        scratch_size = ScratchViewSIMDReal1D::shmem_size(_max_segments);
+        scratch_size = ScratchViewSIMDReal1D::shmem_size(_max_segments * npol_simd);
     } else {
         scratch_size = 0;
     }
     policy = policy.set_scratch_size(0, Kokkos::PerTeam(scratch_size));
 
-    // Sweep all rays using parallel_for with proper SIMD vectorization
+    // Sweep all rays using parallel_for with improved SIMD vectorization
     Kokkos::parallel_for("MOC Sweep Rays", policy, KOKKOS_LAMBDA(const team_member& teamMember) {
         const int league_rank = teamMember.league_rank();
 
-        // Decompose league_rank into iray, ig, and ipol_simd indices
-        const int ipol_simd = league_rank % npol_simd;
-        const int temp = league_rank / npol_simd;
-        const int ig = temp % ng;
-        const int iray = temp / ng;
+        // Decompose league_rank into iray and ig indices
+        const int ig = league_rank % ng;
+        const int iray = league_rank / ng;
 
         // Skip if we're beyond the actual problem size
-        if (iray >= n_rays || ig >= ng || ipol_simd >= npol_simd) return;
-
-        // Calculate the actual polar angle range for this SIMD group
-        const int ipol_start = ipol_simd * simd_width;
-        const int ipol_end = Kokkos::min(ipol_start + simd_width, npol);
-        const int actual_simd_width = ipol_end - ipol_start;
+        if (iray >= n_rays || ig >= ng) return;
 
         // Create temporary arrays for SIMD exponential arguments using scratch memory
-        ScratchViewSIMDReal1D exparg_simd(teamMember.team_scratch(0), _max_segments);
+        ScratchViewSIMDReal1D exparg_simd(teamMember.team_scratch(0), _max_segments * npol_simd);
 
         const auto* ray = &rays(iray);
 
@@ -724,107 +715,117 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
             nsegs = ray->nsegs();
         }
 
-        // Load SIMD vector for rsinpolang
-        simd_real rsin_simd;
-        if (ipol_simd < _d_rsinpolang.extent(0)) {
-            rsin_simd = _d_rsinpolang(ipol_simd);
-        } else {
-            // This shouldn't happen with proper bounds checking above
-            RealType default_values[simd_width];
-            for (int i = 0; i < simd_width; ++i) {
-                default_values[i] = RealType(1.0);
+        // Precompute vectorized exponential arguments for all segments and polar angle groups
+        for (int ipol_simd = 0; ipol_simd < npol_simd; ++ipol_simd) {
+            // Load SIMD vector for rsinpolang
+            simd_real rsin_simd;
+            if (ipol_simd < _d_rsinpolang.extent(0)) {
+                rsin_simd = _d_rsinpolang(ipol_simd);
+            } else {
+                // Handle the case where we have fewer than full SIMD lanes
+                RealType default_values[simd_width];
+                for (int i = 0; i < simd_width; ++i) {
+                    default_values[i] = RealType(1.0);
+                }
+                rsin_simd = simd_real(default_values, Kokkos::Experimental::element_aligned_tag());
             }
-            rsin_simd = simd_real(default_values, Kokkos::Experimental::element_aligned_tag());
+
+            for (int iseg = 0; iseg < nsegs; iseg++) {
+                const auto& segment = segments(ray->first_seg() + iseg);
+                exparg_simd(ipol_simd * _max_segments + iseg) = compute_exparg_simd<ExecutionSpace, RealType>(
+                    segment, ig, exp_table, n_exp_intervals, exp_rdx, xstr, rsin_simd);
+            }
         }
 
-        // Precompute vectorized exponential arguments for all segments
-        for (int iseg = 0; iseg < nsegs; iseg++) {
-            const auto& segment = segments(ray->first_seg() + iseg);
-            exparg_simd(iseg) = compute_exparg_simd<ExecutionSpace, RealType>(
-                segment, ig, exp_table, n_exp_intervals, exp_rdx, xstr, rsin_simd);
-        }
+        // Process all polar angle SIMD groups for this ray and group
+        for (int ipol_simd = 0; ipol_simd < npol_simd; ++ipol_simd) {
+            // Calculate the actual polar angle range for this SIMD group
+            const int ipol_start = ipol_simd * simd_width;
+            const int ipol_end = Kokkos::min(ipol_start + simd_width, npol);
+            const int actual_simd_width = ipol_end - ipol_start;
 
-        // Initialize SIMD flux vectors by loading from angular flux arrays
-        RealType fseg_values[simd_width], bseg_values[simd_width];
-        for (int i = 0; i < actual_simd_width; ++i) {
-            int ipol = ipol_start + i;
-            fseg_values[i] = old_angflux(ray->angflux_bc_frwd_start(), ipol, ig);
-            bseg_values[i] = old_angflux(ray->angflux_bc_bkwd_start(), ipol, ig);
-        }
-        // Fill remaining lanes with zeros
-        for (int i = actual_simd_width; i < simd_width; ++i) {
-            fseg_values[i] = RealType(0.0);
-            bseg_values[i] = RealType(0.0);
-        }
-        simd_real fsegflux(fseg_values, Kokkos::Experimental::element_aligned_tag());
-        simd_real bsegflux(bseg_values, Kokkos::Experimental::element_aligned_tag());
-
-        // Initialize SIMD angle weight vector
-        RealType angle_weight_values[simd_width];
-        for (int i = 0; i < actual_simd_width; ++i) {
-            int ipol = ipol_start + i;
-            angle_weight_values[i] = angle_weights(ray->angle(), ipol);
-        }
-        for (int i = actual_simd_width; i < simd_width; ++i) {
-            angle_weight_values[i] = RealType(0.0);
-        }
-        simd_real angle_weight_simd(angle_weight_values, Kokkos::Experimental::element_aligned_tag());
-
-        // Forward and backward sweeps with SIMD vectorization
-        for (int iseg = 0; iseg < ray->nsegs(); iseg++) {
-            // Forward segment sweep
-            auto* segment = &segments(ray->first_seg() + iseg);
-            int ireg = segment->fsr();
-
-            // Load source for this segment (same for all polar angles)
-            RealType segment_source = source(ireg, ig);
-            simd_real source_simd(segment_source);
-
-            simd_real phid = (fsegflux - source_simd) * exparg_simd(iseg);
-            fsegflux = fsegflux - phid;
-
-            // Tally scalar flux - sum over SIMD lanes
-            RealType phid_values[simd_width], angle_weight_values_temp[simd_width];
-            phid.copy_to(phid_values, Kokkos::Experimental::element_aligned_tag());
-            angle_weight_simd.copy_to(angle_weight_values_temp, Kokkos::Experimental::element_aligned_tag());
-
-            RealType flux_contribution = static_cast<RealType>(0.0);
+            // Initialize SIMD flux vectors by loading from angular flux arrays
+            RealType fseg_values[simd_width], bseg_values[simd_width];
             for (int i = 0; i < actual_simd_width; ++i) {
-                flux_contribution += phid_values[i] * angle_weight_values_temp[i];
+                int ipol = ipol_start + i;
+                fseg_values[i] = old_angflux(ray->angflux_bc_frwd_start(), ipol, ig);
+                bseg_values[i] = old_angflux(ray->angflux_bc_bkwd_start(), ipol, ig);
             }
-            tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, flux_contribution);
+            // Fill remaining lanes with zeros
+            for (int i = actual_simd_width; i < simd_width; ++i) {
+                fseg_values[i] = RealType(0.0);
+                bseg_values[i] = RealType(0.0);
+            }
+            simd_real fsegflux(fseg_values, Kokkos::Experimental::element_aligned_tag());
+            simd_real bsegflux(bseg_values, Kokkos::Experimental::element_aligned_tag());
 
-            // Backward segment sweep
-            int bseg = ray->nsegs() - iseg - 1;
-            segment = &segments(ray->first_seg() + bseg);
-            ireg = segment->fsr();
-
-            // Load source for this segment
-            segment_source = source(ireg, ig);
-            source_simd = simd_real(segment_source);
-
-            phid = (bsegflux - source_simd) * exparg_simd(bseg);
-            bsegflux = bsegflux - phid;
-
-            // Tally scalar flux - sum over SIMD lanes
-            phid.copy_to(phid_values, Kokkos::Experimental::element_aligned_tag());
-
-            flux_contribution = static_cast<RealType>(0.0);
+            // Initialize SIMD angle weight vector
+            RealType angle_weight_values[simd_width];
             for (int i = 0; i < actual_simd_width; ++i) {
-                flux_contribution += phid_values[i] * angle_weight_values_temp[i];
+                int ipol = ipol_start + i;
+                angle_weight_values[i] = angle_weights(ray->angle(), ipol);
             }
-            tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, flux_contribution);
-        }
+            for (int i = actual_simd_width; i < simd_width; ++i) {
+                angle_weight_values[i] = RealType(0.0);
+            }
+            simd_real angle_weight_simd(angle_weight_values, Kokkos::Experimental::element_aligned_tag());
 
-        // Store final segment flux back to angular flux arrays
-        RealType fseg_results[simd_width], bseg_results[simd_width];
-        fsegflux.copy_to(fseg_results, Kokkos::Experimental::element_aligned_tag());
-        bsegflux.copy_to(bseg_results, Kokkos::Experimental::element_aligned_tag());
+            // Forward and backward sweeps with SIMD vectorization
+            for (int iseg = 0; iseg < ray->nsegs(); iseg++) {
+                // Forward segment sweep
+                auto* segment = &segments(ray->first_seg() + iseg);
+                int ireg = segment->fsr();
 
-        for (int i = 0; i < actual_simd_width; ++i) {
-            int ipol = ipol_start + i;
-            angflux(ray->angflux_bc_frwd_end(), ipol, ig) = fseg_results[i];
-            angflux(ray->angflux_bc_bkwd_end(), ipol, ig) = bseg_results[i];
+                // Load source for this segment (same for all polar angles)
+                RealType segment_source = source(ireg, ig);
+                simd_real source_simd(segment_source);
+
+                simd_real phid = (fsegflux - source_simd) * exparg_simd(ipol_simd * _max_segments + iseg);
+                fsegflux = fsegflux - phid;
+
+                // Tally scalar flux - sum over SIMD lanes
+                RealType phid_values[simd_width], angle_weight_values_temp[simd_width];
+                phid.copy_to(phid_values, Kokkos::Experimental::element_aligned_tag());
+                angle_weight_simd.copy_to(angle_weight_values_temp, Kokkos::Experimental::element_aligned_tag());
+
+                RealType flux_contribution = static_cast<RealType>(0.0);
+                for (int i = 0; i < actual_simd_width; ++i) {
+                    flux_contribution += phid_values[i] * angle_weight_values_temp[i];
+                }
+                tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, flux_contribution);
+
+                // Backward segment sweep
+                int bseg = ray->nsegs() - iseg - 1;
+                segment = &segments(ray->first_seg() + bseg);
+                ireg = segment->fsr();
+
+                // Load source for this segment
+                segment_source = source(ireg, ig);
+                source_simd = simd_real(segment_source);
+
+                phid = (bsegflux - source_simd) * exparg_simd(ipol_simd * _max_segments + bseg);
+                bsegflux = bsegflux - phid;
+
+                // Tally scalar flux - sum over SIMD lanes
+                phid.copy_to(phid_values, Kokkos::Experimental::element_aligned_tag());
+
+                flux_contribution = static_cast<RealType>(0.0);
+                for (int i = 0; i < actual_simd_width; ++i) {
+                    flux_contribution += phid_values[i] * angle_weight_values_temp[i];
+                }
+                tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, flux_contribution);
+            }
+
+            // Store final segment flux back to angular flux arrays
+            RealType fseg_results[simd_width], bseg_results[simd_width];
+            fsegflux.copy_to(fseg_results, Kokkos::Experimental::element_aligned_tag());
+            bsegflux.copy_to(bseg_results, Kokkos::Experimental::element_aligned_tag());
+
+            for (int i = 0; i < actual_simd_width; ++i) {
+                int ipol = ipol_start + i;
+                angflux(ray->angflux_bc_frwd_end(), ipol, ig) = fseg_results[i];
+                angflux(ray->angflux_bc_bkwd_end(), ipol, ig) = bseg_results[i];
+            }
         }
     });
 
@@ -853,9 +854,7 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
     Kokkos::deep_copy(_h_angflux, _d_angflux);
     Kokkos::deep_copy(_h_old_angflux, _h_angflux);
     Kokkos::Profiling::popRegion();
-}
-
-// Explicit template instantiations
+}// Explicit template instantiations
 #ifdef KOKKOS_ENABLE_SERIAL
 template class KokkosMOC<Kokkos::Serial, float>;
 template class KokkosMOC<Kokkos::Serial, double>;
