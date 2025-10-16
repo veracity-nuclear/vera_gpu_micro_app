@@ -589,6 +589,70 @@ void tally_scalar_flux(
     }
 }
 
+template <typename ExecutionSpace, typename RealType>
+struct MOCSweepFunctor {
+    using layout = typename ExecutionSpace::array_layout;
+    using MemorySpace = typename ExecutionSpace::memory_space;
+    using ScratchViewReal1D = Kokkos::View<RealType*, typename ExecutionSpace::scratch_memory_space>;
+    using DViewKokkosRaySegment1D = Kokkos::View<KokkosRaySegment<RealType>*, layout, MemorySpace>;
+    using DViewReal1D = Kokkos::View<RealType*, layout, MemorySpace>;
+    using DViewReal2D = Kokkos::View<RealType**, layout, MemorySpace>;
+    using DViewReal3D = Kokkos::View<RealType***, layout, MemorySpace>;
+    using DViewDouble2D = Kokkos::View<double**, layout, MemorySpace>;
+
+    const KokkosLongRay* ray;
+    const DViewKokkosRaySegment1D& segments;
+    const DViewReal3D& old_angflux;
+    const DViewReal3D& angflux;
+    const DViewDouble2D& scalar_flux;
+    const DViewReal2D& source;
+    const DViewReal2D& xstr;
+    const DViewReal1D& rsinpolang;
+    const DViewReal2D& angle_weights;
+    const DViewReal2D& exp_table;
+    const DViewReal3D& thread_scalar_flux;
+    int n_exp_intervals;
+    RealType exp_rdx;
+    int exparg_nsegs;
+    ScratchViewReal1D exparg;
+
+    KOKKOS_INLINE_FUNCTION
+    void operator()(int ipol, int ig) const {
+        for (int iseg = 0; iseg < exparg_nsegs; iseg++) {
+            const auto& segment = segments(ray->first_seg() + iseg);
+            exparg(iseg) = compute_exparg<ExecutionSpace, RealType>(segment, ig, ipol, exp_table, n_exp_intervals, exp_rdx, xstr, rsinpolang);
+        }
+
+        // Create temporary arrays for segment flux
+        RealType fsegflux = old_angflux(ray->angflux_bc_frwd_start(), ipol, ig);
+        RealType bsegflux = old_angflux(ray->angflux_bc_bkwd_start(), ipol, ig);
+
+        // Forward and backward sweeps
+        for (int iseg = 0; iseg < ray->nsegs(); iseg++) {
+            // Forward segment sweep
+            auto* segment = &segments(ray->first_seg() + iseg);
+            int ireg = segment->fsr();
+            RealType phid = (fsegflux - source(ireg, ig)) *
+                eval_exp_arg<ExecutionSpace, RealType>(exparg(iseg), xstr(ireg, ig), segment->length(), rsinpolang(ipol));
+            fsegflux -= phid;
+            tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, phid * angle_weights(ray->angle(), ipol));
+
+            // Backward segment sweep
+            int bseg = ray->nsegs() - iseg - 1;
+            segment = &segments(ray->first_seg() + bseg);
+            ireg = segment->fsr();
+            phid = (bsegflux - source(ireg, ig)) *
+                eval_exp_arg<ExecutionSpace, RealType>(exparg(bseg), xstr(ireg, ig), segment->length(), rsinpolang(ipol));
+            bsegflux -= phid;
+            tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, phid * angle_weights(ray->angle(), ipol));
+        }
+
+        // Store final segment flux back to angular flux arrays
+        angflux(ray->angflux_bc_frwd_end(), ipol, ig) = fsegflux;
+        angflux(ray->angflux_bc_bkwd_end(), ipol, ig) = bsegflux;
+    }
+};
+
 // Unified implementation of sweep
 template <typename ExecutionSpace, typename RealType>
 void KokkosMOC<ExecutionSpace, RealType>::sweep() {
@@ -653,54 +717,28 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
         {
             exparg_nsegs = ray->nsegs();
         }
-        Kokkos::parallel_for(Kokkos::TeamThreadRange(teamMember, npol), KOKKOS_LAMBDA(const int ipol) {
-            Kokkos::parallel_for(Kokkos::ThreadVectorRange(teamMember, ng), KOKKOS_LAMBDA(const int ig) {
-                for (int iseg = 0; iseg < exparg_nsegs; iseg++) {
-                    const auto& segment = segments(ray->first_seg() + iseg);
-                    exparg(iseg) = compute_exparg<ExecutionSpace, RealType>(segment, ig, ipol, exp_table, n_exp_intervals, exp_rdx, xstr, rsinpolang);
-
-                }
-
-                // Create temporary arrays for segment flux
-                RealType fsegflux = old_angflux(ray->angflux_bc_frwd_start(), ipol, ig);
-                RealType bsegflux = old_angflux(ray->angflux_bc_bkwd_start(), ipol, ig);
-
-                // Forward and backward sweeps
-                for (int iseg = 0; iseg < ray->nsegs(); iseg++) {
-                    // Forward segment sweep
-                    auto* segment = &segments(ray->first_seg() + iseg);
-                    int ireg = segment->fsr();
-                    RealType phid = (fsegflux - source(ireg, ig)) *
-                        eval_exp_arg<ExecutionSpace, RealType>(exparg(iseg), xstr(ireg, ig), segment->length(), rsinpolang(ipol));
-                    fsegflux -= phid;
-                    tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, phid * angle_weights(ray->angle(), ipol));
-
-                    // Backward segment sweep
-                    int bseg = ray->nsegs() - iseg - 1;
-                    segment = &segments(ray->first_seg() + bseg);
-                    ireg = segment->fsr();
-                    phid = (bsegflux - source(ireg, ig)) *
-                        eval_exp_arg<ExecutionSpace, RealType>(exparg(bseg), xstr(ireg, ig), segment->length(), rsinpolang(ipol));
-                    bsegflux -= phid;
-                    tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, phid * angle_weights(ray->angle(), ipol));
-                }
-
-                // Store final segment flux back to angular flux arrays
-                angflux(ray->angflux_bc_frwd_end(), ipol, ig) = fsegflux;
-                angflux(ray->angflux_bc_bkwd_end(), ipol, ig) = bsegflux;
+        // Create the functor for this ray and call it
+        MOCSweepFunctor<ExecutionSpace, RealType> sweep_functor{
+            ray, segments, old_angflux, angflux, scalar_flux, source,
+            xstr, rsinpolang, angle_weights, exp_table, thread_scalar_flux,
+            n_exp_intervals, exp_rdx, exparg_nsegs, exparg
+        };
+        Kokkos::parallel_for(Kokkos::TeamThreadRange(teamMember, npol), [&](const int ipol) {
+            Kokkos::parallel_for(Kokkos::ThreadVectorRange(teamMember, ng), [&](const int ig) {
+                sweep_functor(ipol, ig);
             });
         });
     });
 
     // Reduction for OpenMP
     if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
-        for (int k = 0; k < ExecutionSpace::concurrency(); k++) {
-            for (int i = 0; i < _nfsr; i++) {
-                for (int g = 0; g < _ng; g++) {
+        Kokkos::parallel_for("ReduceThreadFlux",
+            Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<2>>({0, 0}, {_nfsr, _ng}),
+            KOKKOS_LAMBDA(int i, int g) {
+                for (int k = 0; k < ExecutionSpace::concurrency(); k++) {
                     scalar_flux(i, g) += static_cast<double>(thread_scalar_flux(k, i, g));
                 }
-            }
-        }
+        });
     }
 
     // Scale the flux with source, volume, and transport XS
