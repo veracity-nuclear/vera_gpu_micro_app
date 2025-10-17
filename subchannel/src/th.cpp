@@ -178,23 +178,48 @@ void TH::solve_pressure(State& state, const Geometry& geom, const Water& fluid) 
     const double a_1 = 0.1892;
     const double n = -0.2;
 
+    double dz = geom.dz();
+    double D_h = geom.hydraulic_diameter();
+    double A_f = geom.flow_area();
+
     Vector1D rho = fluid.rho(state.h_l);
     Vector1D mu = fluid.mu(state.h_l);
 
+    // pre-calculate mixture velocities
+    Vector1D V_m(geom.naxial() + 1);
+    for (size_t k = 0; k < geom.naxial() + 1; ++k) {
+        double X = state.X[k];
+        double alpha = state.alpha[k];
+        double v_m;
+        if (alpha < 1e-6) {
+            v_m = (1.0 - X) * (1.0 - X) / ((1.0 - alpha) * fluid.rho_f()); // Eq. 16 from ANTS Theory
+        } else if (alpha > 1.0 - 1e-6) {
+            v_m = X * X / (alpha * fluid.rho_g()); // Eq. 16 from ANTS Theory
+        } else {
+            v_m = (1.0 - X) * (1.0 - X) / ((1.0 - alpha) * fluid.rho_f()) + X * X / (alpha * fluid.rho_g()); // Eq. 16 from ANTS Theory
+        }
+        V_m[k] = v_m * state.W_m(k) / A_f; // mixture velocity, Eq. 15 from ANTS Theory
+    }
+
     // start at k=1 because inlet pressure is a constant boundary condition
     for (size_t k = 1; k < geom.naxial() + 1; ++k) {
-        // calculate mass flux
-        double G = state.W_l[k] / geom.flow_area();
 
-        // calculate Reynolds number
-        double Re = state.W_l[k] * geom.hydraulic_diameter() / (geom.flow_area() * mu[k]);
+        // ----- two-phase acceleration pressure drop -----
+        double dP_accel = (state.W_m(k) * V_m[k] - state.W_m(k-1) * V_m[k-1]) / A_f;
 
-        // calculate frictional pressure drop from wall shear
+        // ----- two-phase frictional pressure drop -----
+        // mass flux
+        double G = state.W_l[k] / A_f;
+
+        // Reynolds number
+        double Re = state.W_l[k] * D_h / (A_f * mu[k]);
+
+        // frictional pressure drop from wall shear
         double f = a_1 * pow(Re, n); // single phase friction factor, Eq. 31 from ANTS Theory
-        double K = f * geom.dz() / geom.hydraulic_diameter(); // frictional loss coefficient, Eq. 30 from ANTS Theory
+        double K = f * dz / D_h; // frictional loss coefficient, Eq. 30 from ANTS Theory
         double gamma = pow(fluid.rho_f() / fluid.rho_g(), 0.5) * pow(fluid.mu_g() / fluid.mu_f(), 0.2); // Eq. 33 from ANTS Theory
 
-        // calculate parameter b for two-phase multiplier (Chisholm), Eq. 34 from ANTS Theory
+        // parameter b for two-phase multiplier (Chisholm), Eq. 34 from ANTS Theory
         double b;
         if (gamma <= 9.5) {
             b = 55.0 / sqrt(G);
@@ -204,28 +229,35 @@ void TH::solve_pressure(State& state, const Geometry& geom, const Water& fluid) 
             b = 15000.0 / (gamma * gamma * sqrt(G));
         }
 
-        // calculate two-phase multiplier for wall shear (Chisholm), Eq. 32 from ANTS Theory
+        // two-phase multiplier for wall shear (Chisholm), Eq. 32 from ANTS Theory
         double phi2_ch = 1.0 + (gamma * gamma - 1.0) * (b * pow(state.X[k], 0.9) * pow((1.0 - state.X[k]), 0.9) + pow(state.X[k], 1.8));
 
-        // calculate two-phase wall shear pressure drop, Eq. 29 from ANTS Theory
+        // two-phase wall shear pressure drop, Eq. 29 from ANTS Theory
         double dP_wall_shear = K * G * G / (2.0 * rho[k]) * phi2_ch;
 
         // form loss coefficient (no form losses in this simple model)
         double K_loss = 0.0;
 
-        // calculate two-phase multiplier for form losses (homogeneous), Eq. 35 from ANTS Theory
+        // two-phase multiplier for form losses (homogeneous), Eq. 35 from ANTS Theory
         double phi2_hom = 1.0 + state.X[k] * (fluid.rho_f() / fluid.rho_g() - 1.0);
 
-        // calculate two-phase geometry form loss pressure drop, Eq. 36 from ANTS Theory
+        // two-phase geometry form loss pressure drop, Eq. 36 from ANTS Theory
         double dP_form = K_loss * G * G / (2.0 * rho[k]) * phi2_hom;
 
-        // calculate two-phase gravitational pressure drop
-        double dP_grav = rho[k] * g * geom.dz();
+        // two-phase frictional pressure drop, Eq. 36 from ANTS Theory
+        double dP_tpfric = dP_wall_shear + dP_form;
 
-        // calculate total two-phase pressure drop, Eq. 36 from ANTS Theory
-        double dP_total = dP_wall_shear + dP_form + dP_grav;
+        // ----- two-phase gravitational pressure drop -----
+        double dP_grav = rho[k] * g * dz;
 
-        // update pressure at this axial plane
+        // ----- momentum exchange due to pressure-directed crossflow, turbulent mixing, and void drift -----
+        double dP_CF = 0.0; // implement to complete Issue #73
+        double dP_TM = 0.0; // implement to complete Issue #74
+        double dP_VD = 0.0; // implement to complete Issue #75
+        double dP_momexch = dP_CF + dP_TM + dP_VD;
+
+        // ----- total pressure drop over this axial plane -----
+        double dP_total = dP_accel + dP_tpfric + dP_grav + dP_momexch; // Eq. 65 from ANTS Theory
         state.P[k] = state.P[k-1] - dP_total;
     }
 }
