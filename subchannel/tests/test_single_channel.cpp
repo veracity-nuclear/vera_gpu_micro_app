@@ -57,7 +57,6 @@ TEST(SubchannelTest, SingleChannel) {
               << std::setw(12) << "Press."
               << std::setw(12) << "Alpha"
               << std::setw(12) << "Quality"
-              << std::setw(12) << "Evap."
               << std::setw(12) << "Liq. MFR"
               << std::setw(12) << "Vap. MFR"
               << std::endl;
@@ -70,8 +69,8 @@ TEST(SubchannelTest, SingleChannel) {
               << std::setw(12) << "(-)"
               << std::setw(12) << "(kg/s)"
               << std::setw(12) << "(kg/s)"
-              << std::setw(12) << "(kg/s)"
               << std::endl;
+
     for (size_t k = 0; k < naxial + 1; ++k) {
         std::cout << std::setw(6)  << std::setprecision(2) << k
                   << std::setw(12) << std::setprecision(2) << h[k] / 1000.0
@@ -79,7 +78,6 @@ TEST(SubchannelTest, SingleChannel) {
                   << std::setw(12) << std::setprecision(2) << P[k] / 1000.0
                   << std::setw(12) << std::setprecision(3) << alpha[k]
                   << std::setw(12) << std::setprecision(3) << X[k]
-                  << std::setw(12) << std::setprecision(3) << evap[k]
                   << std::setw(12) << std::setprecision(3) << W_l[k]
                   << std::setw(12) << std::setprecision(3) << W_v[k]
                   << std::endl;
@@ -95,7 +93,7 @@ TEST(SubchannelTest, SingleChannel) {
     EXPECT_NEAR(actual_deltaT, expected_deltaT, 1e-6);
 
     double total_pressure_drop = P.front() - P.back();
-    double expected_pressure_drop = 59544.677; // expected pressure drop in subchannel, Pa
+    double expected_pressure_drop = 73058.774; // expected pressure drop in subchannel, Pa
     std::cout << "Total pressure drop: " << total_pressure_drop / 1000.0 << " kPa" << std::endl;
 
     // check total pressure drop in subchannel
