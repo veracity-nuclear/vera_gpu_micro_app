@@ -192,9 +192,9 @@ void TH::solve_pressure(State& state, const Geometry& geom, const Water& fluid) 
         double alpha = state.alpha[k];
         double v_m;
         if (alpha < 1e-6) {
-            v_m = (1.0 - X) * (1.0 - X) / ((1.0 - alpha) * fluid.rho_f()); // Eq. 16 from ANTS Theory
+            v_m = 1.0 / fluid.rho_f(); // Eq. 16 from ANTS Theory (Simplified with X=0, alpha=0)
         } else if (alpha > 1.0 - 1e-6) {
-            v_m = X * X / (alpha * fluid.rho_g()); // Eq. 16 from ANTS Theory
+            v_m = 1.0 / fluid.rho_g(); // Eq. 16 from ANTS Theory (Simplified with X=1, alpha=1)
         } else {
             v_m = (1.0 - X) * (1.0 - X) / ((1.0 - alpha) * fluid.rho_f()) + X * X / (alpha * fluid.rho_g()); // Eq. 16 from ANTS Theory
         }
