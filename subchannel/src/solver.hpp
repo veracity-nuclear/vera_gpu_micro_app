@@ -16,28 +16,28 @@ public:
     Solver(
         std::unique_ptr<Geometry> geometry,
         std::unique_ptr<Water> fluid,
-        double inlet_temperature,
-        double inlet_pressure,
-        double linear_heat_rate,
-        double mass_flow_rate
+        Vector2D inlet_temperature,
+        Vector2D inlet_pressure,
+        Vector2D linear_heat_rate,
+        Vector2D mass_flow_rate
     );
     ~Solver() = default;
 
     void solve();
 
-    Vector1D get_surface_liquid_enthalpies() const { return state.h_l; }
-    Vector1D get_surface_temperatures() const { return fluid->T(state.h_l); }
-    Vector1D get_surface_pressures() const { return state.P; }
-    Vector1D get_surface_void_fractions() const { return state.alpha; }
-    Vector1D get_surface_qualities() const { return state.X; }
-    Vector1D get_evaporation_rates() const;
-    Vector1D get_surface_liquid_flow_rates() const { return state.W_l; }
-    Vector1D get_surface_vapor_flow_rates() const { return state.W_v; }
+    Vector3D get_surface_liquid_enthalpies() const { return state.h_l; }
+    Vector3D get_surface_temperatures() const { return fluid->T(state.h_l); }
+    Vector3D get_surface_pressures() const { return state.P; }
+    Vector3D get_surface_void_fractions() const { return state.alpha; }
+    Vector3D get_surface_qualities() const { return state.X; }
+    Vector3D get_evaporation_rates() const;
+    Vector3D get_surface_liquid_flow_rates() const { return state.W_l; }
+    Vector3D get_surface_vapor_flow_rates() const { return state.W_v; }
 
 private:
-    double T_inlet;
-    double P_inlet;
-    double lhr;
+    Vector2D T_inlet;
+    Vector2D P_inlet;
+    Vector2D lhr;
     std::unique_ptr<Geometry> geom;
     std::unique_ptr<Water> fluid;
     State state;
