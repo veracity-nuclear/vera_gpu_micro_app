@@ -105,12 +105,44 @@ TEST(SubchannelTest, 3x3Channels) {
     }
     std::cout << std::endl;
 
+    Vector2D ants_void({
+        {0.808745, 0.785275, 0.808745},
+        {0.785275, 0.695971, 0.785275},
+        {0.808745, 0.785275, 0.808745}
+    });
+
+    std::cout << "Exit Void Distribution Error vs. ANTS" << std::endl;
+    for (size_t i = 0; i < N; ++i) {
+        for (size_t j = 0; j < N; ++j) {
+            size_t k = naxial;
+            std::cout << std::setw(12) << std::setprecision(3) << (alpha[i][j][k] - ants_void[i][j]) << " ";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
+
     // print exit plane data to compare to ANTS Theory results
     std::cout << "Pressure Drop Distribution (kPa)" << std::endl;
     for (size_t i = 0; i < N; ++i) {
         for (size_t j = 0; j < N; ++j) {
             size_t k = naxial;
             std::cout << std::setw(12) << std::setprecision(6) << (P[i][j][0] - P[i][j][k]) / 1000.0 << " ";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
+
+    Vector2D ants_pressure_drop({
+        {81.685284, 81.685286, 81.685284},
+        {81.685286, 81.685310, 81.685286},
+        {81.685284, 81.685286, 81.685284}
+    });
+
+    std::cout << "Pressure Drop Distribution Error (kPa)" << std::endl;
+    for (size_t i = 0; i < N; ++i) {
+        for (size_t j = 0; j < N; ++j) {
+            size_t k = naxial;
+            std::cout << std::setw(12) << std::setprecision(6) << ((P[i][j][0] - P[i][j][k])) / 1000.0 - ants_pressure_drop[i][j] << " ";
         }
         std::cout << std::endl;
     }
