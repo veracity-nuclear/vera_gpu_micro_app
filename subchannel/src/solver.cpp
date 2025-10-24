@@ -30,14 +30,14 @@ Solver::Solver(
     Vector::resize(state.evap, nx, ny, state.geom->naxial());
 
     // initialize surface source term vectors
-    Vector::resize(state.G_l_tm, nx, ny, nz, state.geom->naxial());
-    Vector::resize(state.G_v_tm, nx, ny, nz, state.geom->naxial());
-    Vector::resize(state.Q_m_tm, nx, ny, nz, state.geom->naxial());
-    Vector::resize(state.M_m_tm, nx, ny, nz, state.geom->naxial());
-    Vector::resize(state.G_l_vd, nx, ny, nz, state.geom->naxial());
-    Vector::resize(state.G_v_vd, nx, ny, nz, state.geom->naxial());
-    Vector::resize(state.Q_m_vd, nx, ny, nz, state.geom->naxial());
-    Vector::resize(state.M_m_vd, nx, ny, nz, state.geom->naxial());
+    Vector::resize(state.G_l_tm, nx, ny, nz, ns);
+    Vector::resize(state.G_v_tm, nx, ny, nz, ns);
+    Vector::resize(state.Q_m_tm, nx, ny, nz, ns);
+    Vector::resize(state.M_m_tm, nx, ny, nz, ns);
+    Vector::resize(state.G_l_vd, nx, ny, nz, ns);
+    Vector::resize(state.G_v_vd, nx, ny, nz, ns);
+    Vector::resize(state.Q_m_vd, nx, ny, nz, ns);
+    Vector::resize(state.M_m_vd, nx, ny, nz, ns);
 
     // set inlet boundary conditions
     for (size_t k = 0; k < nz; ++k) {
