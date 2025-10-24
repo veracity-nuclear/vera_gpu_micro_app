@@ -33,8 +33,8 @@ TEST(SubchannelTest, SingleChannel) {
     std::cout << "Linear heat rate: " << linear_heat_rate[0][0] << " W/m" << std::endl;
 
     Solver solver(
-        std::make_unique<Geometry>(geometry),
-        std::make_unique<Water>(fluid),
+        std::make_shared<Geometry>(geometry),
+        std::make_shared<Water>(fluid),
         inlet_temperature,
         inlet_pressure,
         linear_heat_rate,

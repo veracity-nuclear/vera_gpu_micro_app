@@ -1,34 +1,45 @@
 #include "solver.hpp"
 
 Solver::Solver(
-    std::unique_ptr<Geometry> geometry,
-    std::unique_ptr<Water> fluid,
+    std::shared_ptr<Geometry> geometry,
+    std::shared_ptr<Water> fluid,
     Vector2D inlet_temperature,
     Vector2D inlet_pressure,
     Vector2D linear_heat_rate,
     Vector2D mass_flow_rate
 )
-    : geom(std::move(geometry))
-    , fluid(std::move(fluid))
-    , T_inlet(inlet_temperature)
+    : T_inlet(inlet_temperature)
     , P_inlet(inlet_pressure)
 {
+    state.geom = geometry;
+    state.fluid = fluid;
+
+    size_t nx = state.geom->nx();
+    size_t ny = state.geom->ny();
+    size_t nz = state.geom->naxial() + 1;
+    size_t ns = 4; // number of neighboring surfaces on an axial plane
+
     // initialize solution vectors
-    state.fluid = *this->fluid; // set fluid reference in state
-
-    size_t nx = geom->nx();
-    size_t ny = geom->ny();
-    size_t nz = geom->naxial() + 1;
-
     Vector::resize(state.h_l, nx, ny, nz);
     Vector::resize(state.P, nx, ny, nz);
     Vector::resize(state.W_l, nx, ny, nz);
     Vector::resize(state.W_v, nx, ny, nz);
     Vector::resize(state.alpha, nx, ny, nz);
     Vector::resize(state.X, nx, ny, nz);
-    Vector::resize(state.lhr, nx, ny, geom->naxial());
-    Vector::resize(state.evap, nx, ny, geom->naxial());
+    Vector::resize(state.lhr, nx, ny, state.geom->naxial());
+    Vector::resize(state.evap, nx, ny, state.geom->naxial());
 
+    // initialize surface source term vectors
+    Vector::resize(state.G_l_tm, nx, ny, nz, ns);
+    Vector::resize(state.G_v_tm, nx, ny, nz, ns);
+    Vector::resize(state.Q_m_tm, nx, ny, nz, ns);
+    Vector::resize(state.M_m_tm, nx, ny, nz, ns);
+    Vector::resize(state.G_l_vd, nx, ny, nz, ns);
+    Vector::resize(state.G_v_vd, nx, ny, nz, ns);
+    Vector::resize(state.Q_m_vd, nx, ny, nz, ns);
+    Vector::resize(state.M_m_vd, nx, ny, nz, ns);
+
+    // set inlet boundary conditions
     for (size_t k = 0; k < nz; ++k) {
         for (size_t j = 0; j < ny; ++j) {
             for (size_t i = 0; i < nx; ++i) {
@@ -45,10 +56,10 @@ Solver::Solver(
 
 Vector3D Solver::get_evaporation_rates() const {
     Vector3D evap_rates = state.evap;
-    for (size_t k = 0; k < geom->naxial(); ++k) {
-        for (size_t j = 0; j < geom->ny(); ++j) {
-            for (size_t i = 0; i < geom->nx(); ++i) {
-                evap_rates[i][j][k] = state.evap[i][j][k] * geom->dz();
+    for (size_t k = 0; k < state.geom->naxial(); ++k) {
+        for (size_t j = 0; j < state.geom->ny(); ++j) {
+            for (size_t i = 0; i < state.geom->nx(); ++i) {
+                evap_rates[i][j][k] = state.evap[i][j][k] * state.geom->dz();
             }
         }
     }
@@ -56,15 +67,35 @@ Vector3D Solver::get_evaporation_rates() const {
 }
 
 void Solver::solve() {
-    for (size_t iter = 0; iter < 1000; ++iter) { // fixed number of iterations for now
-        TH::solve_evaporation_term(state, *geom, *fluid);
-        TH::solve_turbulent_mixing(state, *geom, *fluid);   // --- TODO: Issue #73 ---
-        TH::solve_void_drift(state, *geom, *fluid);         // --- TODO: Issue #74 ---
-        TH::solve_surface_mass_flux(state, *geom, *fluid);  // --- TODO: Issue #75 ---
-        TH::solve_flow_rates(state, *geom, *fluid);
-        TH::solve_enthalpy(state, *geom, *fluid);
-        TH::solve_void_fraction(state, *geom, *fluid);
-        TH::solve_quality(state, *geom, *fluid);
-        TH::solve_pressure(state, *geom, *fluid);
+
+    state.surface_plane = 0; // start at inlet axial plane
+
+    // loop over axial planes
+    for (size_t k = 1; k < state.geom->naxial() + 1; ++k) {
+
+        // set current axial planes in state
+        state.node_plane = k - 1;
+
+        // closure relations
+        TH::solve_evaporation_term(state);
+        TH::solve_turbulent_mixing(state);
+        TH::solve_void_drift(state);
+
+        // closure relations use lagging edge values, so update after solving them
+        state.surface_plane = k;
+
+        // outer iteration (solution for full axial plane)
+        for (size_t outer_iter = 0; outer_iter < 10; ++outer_iter) { // fixed number of iterations for now
+            TH::solve_surface_mass_flux(state);  // --- TODO: Issue #75 ---
+
+            // inner iteration
+            for (size_t inner_iter = 0; inner_iter < 10; ++inner_iter) { // fixed number of iterations for now
+                TH::solve_flow_rates(state);
+                TH::solve_enthalpy(state);
+                TH::solve_void_fraction(state);
+                TH::solve_quality(state);
+                TH::solve_pressure(state);
+            }
+        }
     }
 }
