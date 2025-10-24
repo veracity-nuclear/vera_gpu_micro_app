@@ -14,8 +14,8 @@
 class Solver {
 public:
     Solver(
-        std::unique_ptr<Geometry> geometry,
-        std::unique_ptr<Water> fluid,
+        std::shared_ptr<Geometry> geometry,
+        std::shared_ptr<Water> fluid,
         Vector2D inlet_temperature,
         Vector2D inlet_pressure,
         Vector2D linear_heat_rate,
@@ -26,7 +26,7 @@ public:
     void solve();
 
     Vector3D get_surface_liquid_enthalpies() const { return state.h_l; }
-    Vector3D get_surface_temperatures() const { return fluid->T(state.h_l); }
+    Vector3D get_surface_temperatures() const { return state.fluid->T(state.h_l); }
     Vector3D get_surface_pressures() const { return state.P; }
     Vector3D get_surface_void_fractions() const { return state.alpha; }
     Vector3D get_surface_qualities() const { return state.X; }
@@ -38,7 +38,5 @@ private:
     Vector2D T_inlet;
     Vector2D P_inlet;
     Vector2D lhr;
-    std::unique_ptr<Geometry> geom;
-    std::unique_ptr<Water> fluid;
     State state;
 };

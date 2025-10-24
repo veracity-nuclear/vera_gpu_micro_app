@@ -33,8 +33,8 @@ TEST(SubchannelTest, 3x3Channels) {
     linear_heat_rate[1][1] = 0.0; // no power in center subchannel
 
     Solver solver(
-        std::make_unique<Geometry>(geometry),
-        std::make_unique<Water>(fluid),
+        std::make_shared<Geometry>(geometry),
+        std::make_shared<Water>(fluid),
         inlet_temperature,
         inlet_pressure,
         linear_heat_rate,
@@ -96,8 +96,8 @@ TEST(SubchannelTest, 3x3Channels) {
 
     // print exit plane data to compare to ANTS Theory results
     std::cout << "Exit Void Distribution" << std::endl;
-    for (size_t i = 0; i < N; ++i) {
-        for (size_t j = 0; j < N; ++j) {
+    for (size_t j = 0; j < N; ++j) {
+        for (size_t i = 0; i < N; ++i) {
             size_t k = naxial;
             std::cout << std::setw(12) << std::setprecision(3) << alpha[i][j][k] << " ";
         }
@@ -112,8 +112,8 @@ TEST(SubchannelTest, 3x3Channels) {
     });
 
     std::cout << "Exit Void Distribution Error vs. ANTS" << std::endl;
-    for (size_t i = 0; i < N; ++i) {
-        for (size_t j = 0; j < N; ++j) {
+    for (size_t j = 0; j < N; ++j) {
+        for (size_t i = 0; i < N; ++i) {
             size_t k = naxial;
             std::cout << std::setw(12) << std::setprecision(3) << (alpha[i][j][k] - ants_void[i][j]) << " ";
         }
@@ -123,8 +123,8 @@ TEST(SubchannelTest, 3x3Channels) {
 
     // print exit plane data to compare to ANTS Theory results
     std::cout << "Pressure Drop Distribution (kPa)" << std::endl;
-    for (size_t i = 0; i < N; ++i) {
-        for (size_t j = 0; j < N; ++j) {
+    for (size_t j = 0; j < N; ++j) {
+        for (size_t i = 0; i < N; ++i) {
             size_t k = naxial;
             std::cout << std::setw(12) << std::setprecision(6) << (P[i][j][0] - P[i][j][k]) / 1000.0 << " ";
         }
@@ -138,9 +138,9 @@ TEST(SubchannelTest, 3x3Channels) {
         {81.685284, 81.685286, 81.685284}
     });
 
-    std::cout << "Pressure Drop Distribution Error (kPa)" << std::endl;
-    for (size_t i = 0; i < N; ++i) {
-        for (size_t j = 0; j < N; ++j) {
+    std::cout << "Pressure Drop Distribution Error vs. ANTS (kPa)" << std::endl;
+    for (size_t j = 0; j < N; ++j) {
+        for (size_t i = 0; i < N; ++i) {
             size_t k = naxial;
             std::cout << std::setw(12) << std::setprecision(6) << ((P[i][j][0] - P[i][j][k])) / 1000.0 - ants_pressure_drop[i][j] << " ";
         }

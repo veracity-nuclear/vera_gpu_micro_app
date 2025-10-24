@@ -32,6 +32,7 @@ public:
     Vector3D rho(const Vector3D& h) const;
     double rho_f() const { return 1 / v_f(); } // saturated liquid density at saturation temperature
     double rho_g() const { return 1 / v_g(); } // saturated vapor density at saturation temperature
+    double rho_m(double X) const { return 1 / (X * v_g() + (1 - X) * v_f()); } // mixture density at saturation temperature
 
     // specific heat [J/kg-K]
     double Cp(double h) const;
