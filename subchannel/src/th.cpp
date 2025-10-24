@@ -21,12 +21,13 @@ void TH::solve_evaporation_term(State& state) {
     Vector3D Cp = state.fluid->Cp(state.h_l); // specific heat [J/kg-K]
     Vector3D T = state.fluid->T(state.h_l); // temperature [K]
 
-    size_t k = state.node_plane;
+    size_t k = state.surface_plane;
+    size_t k_node = state.node_plane;
     for (size_t j = 0; j < state.geom->ny(); ++j) {
         for (size_t i = 0; i < state.geom->nx(); ++i) {
-            double Re = state.W_l[i][j][k] * D_h / (A_f * mu[i][j][k]); // Reynolds number
-            double Pr = Cp[i][j][k] * mu[i][j][k] / cond[i][j][k]; // Prandtl number
-            double Pe = Re * Pr; // Peclet number
+            double Re = __Reynolds(state.W_l[i][j][k] / A_f, D_h, mu[i][j][k]); // Reynolds number
+            double Pr = __Prandtl(Cp[i][j][k], mu[i][j][k], cond[i][j][k]); // Prandtl number
+            double Pe = __Peclet(Re, Pr); // Peclet number
             double Qflux_wall = state.lhr[i][j][k] / P_H; // wall heat flux [W/m^2]
             double G_l = state.W_l[i][j][k] / A_f; // liquid mass flux [kg/m^2-s]
             double G_v = state.W_v[i][j][k] / A_f; // vapor mass flux [kg/m^2-s]
@@ -50,11 +51,11 @@ void TH::solve_evaporation_term(State& state) {
                 double epsilon = rho[i][j][k] * (state.fluid->h_f() - state.h_l[i][j][k]) / (state.fluid->rho_g() * state.fluid->h_fg()); // pumping parameter, Eq. 53 from ANTS Theory
                 double H_0 = 0.075; // [s^-1 K^-1], condensation parameter; value recommended by Lahey and Moody (1996)
                 double gamma_cond = (H_0 * (1 / state.fluid->v_fg()) * A_f * state.alpha[i][j][k] * (state.fluid->Tsat() - T[i][j][k])) / P_H; // condensation rate [kg/m^3-s], Eq. 54 from ANTS Theory
-                state.evap[i][j][k] = P_H * Qflux_boil / (state.fluid->h_fg() * (1 + epsilon)) - P_H * gamma_cond; // Eq. 50 from ANTS Theory
+                state.evap[i][j][k_node] = P_H * Qflux_boil / (state.fluid->h_fg() * (1 + epsilon)) - P_H * gamma_cond; // Eq. 50 from ANTS Theory
 
             } else {
                 double Qflux_boil = Qflux_wall;
-                state.evap[i][j][k] = P_H * Qflux_boil / state.fluid->h_fg();
+                state.evap[i][j][k_node] = P_H * Qflux_boil / state.fluid->h_fg();
             }
         }
     }
@@ -68,7 +69,7 @@ void TH::solve_turbulent_mixing(State& state) {
     Vector3D rho_l = state.fluid->rho(state.h_l);
 
     double A_f = state.geom->flow_area(); // flow area [m^2]
-    double D_rod = state.geom->heated_perimeter() * M_PI; // rod diameter [m], assuming square array
+    double D_rod = state.geom->heated_perimeter() / M_PI; // rod diameter [m], assuming square array
     double D_H_i = state.geom->hydraulic_diameter(); // hydraulic diameter of subchannel i [m]
     double D_H_j = state.geom->hydraulic_diameter(); // hydraulic diameter of subchannel j [m]
     double S_ij = state.geom->gap_width(); // gap width between subchannels [m]
@@ -83,43 +84,14 @@ void TH::solve_turbulent_mixing(State& state) {
             // loop over 4 surfaces between neighboring subchannels; 0: west, 1: east, 2: north, 3: south
             for (size_t ns = 0; ns < 4; ++ns) {
                 // perform calculations for surface ns between subchannels i and j
-                if (ns == 0) {
+                size_t i_neigh; size_t j_neigh;
+                std::tie(i_neigh, j_neigh) = __get_neighbor_ij(i, j, ns, state.geom->nx(), state.geom->ny());
 
-                    // west neighbor
-                    if (i == 0) {
-                        continue;  // skip if at left boundary
-                    }
-                    i_neigh = i - 1;
-                    j_neigh = j;
-
-                } else if (ns == 1) {
-
-                    // east neighbor
-                    if (i == state.geom->nx() - 1) {
-                        continue;  // skip if at right boundary
-                    }
-                    i_neigh = i + 1;
-                    j_neigh = j;
-
-                } else if (ns == 2) {
-
-                    // north neighbor
-                    if (j == 0) {
-                        continue;  // skip if at top boundary
-                    }
-                    i_neigh = i;
-                    j_neigh = j - 1;
-
-                } else if (ns == 3) {
-
-                    // south neighbor
-                    if (j == state.geom->ny() - 1) {
-                        continue;  // skip if at bottom boundary
-                    }
-                    i_neigh = i;
-                    j_neigh = j + 1;
+                if ((i_neigh == -1) || (j_neigh == -1)) {
+                    continue; // skip if neighbor is out of bounds
                 }
 
+                double X = state.X[i][j][k]; // quality in subchannel i
                 double G_m_i = state.W_m(i, j, k) / A_f;
                 double G_m_j = state.W_m(i_neigh, j_neigh, k) / A_f;
                 double rho_l_i = rho_l[i][j][k];
@@ -128,22 +100,14 @@ void TH::solve_turbulent_mixing(State& state) {
                 double h_l_j = state.h_l[i_neigh][j_neigh][k];
                 double alpha_i = state.alpha[i][j][k];
                 double alpha_j = state.alpha[i_neigh][j_neigh][k];
-
-                double Re = G_m_i * D_H_i / (A_f * state.fluid->mu(h_l_i)); // Reynolds number
-                double X = state.X[i][j][k]; // quality in subchannel i
-                double X_0_X_M = 0.57 * pow(Re, 0.0417); // Eq. 48 from ANTS Theory
-                double Theta_M = 5.0; // constant set equal to 5.0 for BWR applications, from ANTS Theory
-                double K_M = 1.4; // constant from ANTS Theory, referenced from Lahey and Moody (1977)
-                double X_bar = K_M * (G_m_i - G_m_j) / (G_m_i + G_m_j); // Eq. 49 from ANTS Theory
-                double tp_mult; // two-phase multiplier
-                if (X <= X_bar) {
-                    tp_mult = 1.0 + (Theta_M - 1.0) * X_0_X_M;
-                } else {
-                    tp_mult = 1.0 + (Theta_M - 1.0) * (1.0 - X_0_X_M) / (X_bar - X_0_X_M);
-                }
-                double lambda = 0.0058 * (S_ij / D_rod); // Eq. 46 from ANTS Theory
-                double eddy_V = 0.5 * lambda * pow(Re, -0.1) * (1.0 + pow(D_H_j / D_H_i, 1.5))
-                    * D_H_i / D_rod * G_m_i / state.fluid->rho_m(X); // Eq. 45 from ANTS Theory
+                double V_l_i = __liquid_velocity(state.W_l[i][j][k], A_f, alpha_i, rho_l_i);
+                double V_l_j = __liquid_velocity(state.W_l[i_neigh][j_neigh][k], A_f, alpha_j, rho_l_j);
+                double V_v_i = __vapor_velocity(state.W_v[i][j][k], A_f, alpha_i, state.fluid->rho_g());
+                double V_v_j = __vapor_velocity(state.W_v[i_neigh][j_neigh][k], A_f, alpha_j, state.fluid->rho_g());
+                double Re = __Reynolds(G_m_i, D_H_i, state.fluid->mu(h_l_i));
+                double X_bar = __quality_avg(G_m_i, G_m_j);
+                double tp_mult = __two_phase_multiplier(X_bar, Re);
+                double eddy_V = __eddy_velocity(Re, S_ij, D_H_i, D_H_j, D_rod, G_m_i, X, state.fluid->rho_m(X));
 
                 // turbulent mixing liquid mass transfer
                 state.G_l_tm[i][j][k_node][ns] = eddy_V * tp_mult * (
@@ -155,7 +119,7 @@ void TH::solve_turbulent_mixing(State& state) {
 
                 // turbulent mixing energy transfer
                 state.Q_m_tm[i][j][k_node][ns] = eddy_V * tp_mult * (
-                    (1 - alpha_i) * state.fluid->rho_f() * h_l_i + alpha_i * state.fluid->rho_g() * state.fluid->h_g()
+                      (1 - alpha_i) * rho_l_i * h_l_i + alpha_i * state.fluid->rho_g() * state.fluid->h_g()
                     - (1 - alpha_j) * rho_l_j * h_l_j - alpha_j * state.fluid->rho_g() * state.fluid->h_g()
                 ); // Eq. 39 from ANTS Theory
 
@@ -174,7 +138,7 @@ void TH::solve_void_drift(State& state) {
     Vector3D rho_l = state.fluid->rho(state.h_l);
 
     double A_f = state.geom->flow_area(); // flow area [m^2]
-    double D_rod = state.geom->heated_perimeter() * M_PI; // rod diameter [m], assuming square array
+    double D_rod = state.geom->heated_perimeter() / M_PI; // rod diameter [m], assuming square array
     double D_H_i = state.geom->hydraulic_diameter(); // hydraulic diameter of subchannel i [m]
     double D_H_j = state.geom->hydraulic_diameter(); // hydraulic diameter of subchannel j [m]
     double S_ij = state.geom->gap_width(); // gap width between subchannels [m]
@@ -189,43 +153,14 @@ void TH::solve_void_drift(State& state) {
             // loop over 4 surfaces between neighboring subchannels; 0: west, 1: east, 2: north, 3: south
             for (size_t ns = 0; ns < 4; ++ns) {
                 // perform calculations for surface ns between subchannels i and j
-                if (ns == 0) {
+                size_t i_neigh; size_t j_neigh;
+                std::tie(i_neigh, j_neigh) = __get_neighbor_ij(i, j, ns, state.geom->nx(), state.geom->ny());
 
-                    // west neighbor
-                    if (i == 0) {
-                        continue;  // skip if at left boundary
-                    }
-                    i_neigh = i - 1;
-                    j_neigh = j;
-
-                } else if (ns == 1) {
-
-                    // east neighbor
-                    if (i == state.geom->nx() - 1) {
-                        continue;  // skip if at right boundary
-                    }
-                    i_neigh = i + 1;
-                    j_neigh = j;
-
-                } else if (ns == 2) {
-
-                    // north neighbor
-                    if (j == 0) {
-                        continue;  // skip if at top boundary
-                    }
-                    i_neigh = i;
-                    j_neigh = j - 1;
-
-                } else if (ns == 3) {
-
-                    // south neighbor
-                    if (j == state.geom->ny() - 1) {
-                        continue;  // skip if at bottom boundary
-                    }
-                    i_neigh = i;
-                    j_neigh = j + 1;
+                if ((i_neigh == -1) || (j_neigh == -1)) {
+                    continue; // skip if neighbor is out of bounds
                 }
 
+                double X = state.X[i][j][k]; // quality in subchannel i
                 double G_m_i = state.W_m(i, j, k) / A_f;
                 double G_m_j = state.W_m(i_neigh, j_neigh, k) / A_f;
                 double rho_l_i = rho_l[i][j][k];
@@ -234,42 +169,14 @@ void TH::solve_void_drift(State& state) {
                 double h_l_j = state.h_l[i_neigh][j_neigh][k];
                 double alpha_i = state.alpha[i][j][k];
                 double alpha_j = state.alpha[i_neigh][j_neigh][k];
-
-                double V_l_i = 0.0;
-                if (alpha_i < 1.0) {
-                    V_l_i = state.W_l[i][j][k] / (A_f * (1 - alpha_i) * rho_l_i);
-                }
-
-                double V_l_j = 0.0;
-                if (alpha_j < 1.0) {
-                    V_l_j = state.W_l[i_neigh][j_neigh][k] / (A_f * (1 - alpha_j) * rho_l_j);
-                }
-
-                double V_v_i = 0.0;
-                if (alpha_i > 0.0) {
-                    V_v_i = state.W_v[i][j][k] / (A_f * alpha_i * state.fluid->rho_g());
-                }
-
-                double V_v_j = 0.0;
-                if (alpha_j > 0.0) {
-                    V_v_j = state.W_v[i_neigh][j_neigh][k] / (A_f * alpha_j * state.fluid->rho_g());
-                }
-
-                double Re = G_m_i * D_H_i / (A_f * state.fluid->mu(h_l_i)); // Reynolds number
-                double X = state.X[i][j][k]; // quality in subchannel i
-                double X_0_X_M = 0.57 * pow(Re, 0.0417); // Eq. 48 from ANTS Theory
-                double Theta_M = 5.0; // constant set equal to 5.0 for BWR applications, from ANTS Theory
-                double K_M = 1.4; // constant from ANTS Theory, referenced from Lahey and Moody (1977)
-                double X_bar = K_M * (G_m_i - G_m_j) / (G_m_i + G_m_j); // Eq. 49 from ANTS Theory
-                double tp_mult; // two-phase multiplier
-                if (X <= X_bar) {
-                    tp_mult = 1.0 + (Theta_M - 1.0) * X_0_X_M;
-                } else {
-                    tp_mult = 1.0 + (Theta_M - 1.0) * (1.0 - X_0_X_M) / (X_bar - X_0_X_M);
-                }
-                double lambda = 0.0058 * (S_ij / D_rod); // Eq. 46 from ANTS Theory
-                double eddy_V = 0.5 * lambda * pow(Re, -0.1) * (1.0 + pow(D_H_j / D_H_i, 1.5))
-                    * D_H_i / D_rod * G_m_i / state.fluid->rho_m(X); // Eq. 45 from ANTS Theory
+                double V_l_i = __liquid_velocity(state.W_l[i][j][k], A_f, alpha_i, rho_l_i);
+                double V_l_j = __liquid_velocity(state.W_l[i_neigh][j_neigh][k], A_f, alpha_j, rho_l_j);
+                double V_v_i = __vapor_velocity(state.W_v[i][j][k], A_f, alpha_i, state.fluid->rho_g());
+                double V_v_j = __vapor_velocity(state.W_v[i_neigh][j_neigh][k], A_f, alpha_j, state.fluid->rho_g());
+                double Re = __Reynolds(G_m_i, D_H_i, state.fluid->mu(h_l_i));
+                double X_bar = __quality_avg(G_m_i, G_m_j);
+                double tp_mult = __two_phase_multiplier(X_bar, Re);
+                double eddy_V = __eddy_velocity(Re, S_ij, D_H_i, D_H_j, D_rod, G_m_i, X, state.fluid->rho_m(X));
 
                 // void drift liquid mass transfer
                 state.G_l_vd[i][j][k_node][ns] = eddy_V * tp_mult * X_bar * (
@@ -537,4 +444,93 @@ void TH::solve_pressure(State& state) {
             state.P[i][j][k] = state.P[i][j][k-1] - dP_total;
         }
     }
+}
+
+std::pair<size_t, size_t> TH::__get_neighbor_ij(size_t i, size_t j, size_t ns, size_t nx, size_t ny) {
+    size_t i_neigh = i;
+    size_t j_neigh = j;
+    if (ns == 0) {
+
+        // west neighbor
+        if (i == 0) {
+            i_neigh = -1;  // left boundary
+        } else {
+            i_neigh = i - 1;
+        }
+
+    } else if (ns == 1) {
+
+        // east neighbor
+        if (i == nx - 1) {
+            i_neigh = -1;  // right boundary
+        } else {
+            i_neigh = i + 1;
+        }
+
+    } else if (ns == 2) {
+
+        // north neighbor
+        if (j == 0) {
+            j_neigh = -1;  // top boundary
+        } else {
+            j_neigh = j - 1;
+        }
+
+    } else if (ns == 3) {
+
+        // south neighbor
+        if (j == ny - 1) {
+            j_neigh = -1;  // bottom boundary
+        } else {
+            j_neigh = j + 1;
+        }
+    }
+
+    return std::make_pair(i_neigh, j_neigh);
+}
+
+double TH::__Reynolds(double G, double D_h, double mu) {
+    return G * D_h / mu;
+}
+
+double TH::__Prandtl(double Cp, double mu, double k) {
+    return Cp * mu / k;
+}
+
+double TH::__Peclet(double Re, double Pr) {
+    return Re * Pr;
+}
+
+double TH::__liquid_velocity(double W_l, double A_f, double alpha, double rho_l) {
+    if (alpha < 1.0) {
+        return W_l / (A_f * (1 - alpha) * rho_l);
+    }
+    return 0.0;
+}
+
+double TH::__vapor_velocity(double W_v, double A_f, double alpha, double rho_g) {
+    if (alpha > 0.0) {
+        return W_v / (A_f * alpha * rho_g);
+    }
+    return 0.0;
+}
+
+double TH::__eddy_velocity(double Re, double S_ij, double D_H_i, double D_H_j, double D_rod, double G_m_i, double X, double rho_m) {
+    double lambda = 0.0058 * (S_ij / D_rod); // Eq. 46 from ANTS Theory
+    return 0.5 * lambda * pow(Re, -0.1) * (1.0 + pow(D_H_j / D_H_i, 1.5)) * D_H_i / D_rod * G_m_i / rho_m; // Eq. 45 from ANTS Theory
+}
+
+double TH::__two_phase_multiplier(double X_bar, double Re) {
+    double Theta_M = 5.0; // constant set equal to 5.0 for BWR applications, from ANTS Theory
+    double X_0_X_M = 0.57 * pow(Re, 0.0417); // Eq. 48 from ANTS Theory
+    if (X_bar <= 1.0) {
+        return 1.0 + (Theta_M - 1.0) * X_bar; // Eq. 47 from ANTS Theory
+    } else {
+        return 1.0 + (Theta_M - 1.0) * (1.0 - X_0_X_M) / (X_bar - X_0_X_M); // Eq. 47 from ANTS Theory
+    }
+}
+
+double TH::__quality_avg(double G_m_i, double G_m_j) {
+    double K_M = 1.4; // constant from ANTS Theory, referenced from Lahey and Moody (1977)
+    return K_M * (G_m_i - G_m_j) / (G_m_i + G_m_j); // Eq. 49 from ANTS Theory
 }
