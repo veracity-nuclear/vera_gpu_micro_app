@@ -204,7 +204,110 @@ void TH::solve_void_drift(State& state) {
     }
 }
 
-void TH::solve_surface_mass_flux(State& state) {}
+void TH::solve_surface_mass_flux(State& state) {
+
+    const size_t nchan = state.geom->nx() * state.geom->ny();
+    const size_t nsurf = state.geom->nsurfaces();
+    const size_t k = state.node_plane;
+    const double gtol = 1e-6; // mass flux perturbation amount
+    const double dz = state.geom->dz();
+    const double S_ij = state.geom->gap_width();
+    const double aspect = state.geom->aspect_ratio();
+
+    // outer loop for newton iteration convergence
+
+    // mixture outflow, vapor outflow, and mixture energy outflow
+    Vector1D wbarms(nchan);
+    Vector1D wbarvs(nchan);
+    Vector1D whbars(nchan);
+
+    // vectors for solution variables
+    Vector2D gk(nsurf, Vector1D(state.geom->naxial())); // total transverse mass flux
+    Vector2D hm(nchan, Vector1D(state.geom->naxial())); // mixture enthalpy
+    Vector1D glmix(nsurf);   // liq. turbulent mixing
+    Vector1D gvmix(nsurf);   // vap. turbulent mixing
+    Vector1D gldrift(nsurf); // liq. void drift
+    Vector1D gvdrift(nsurf); // vap. void drift
+    Vector1D hmix(nsurf);    // turbulent mixing energy transfer
+    Vector1D hdrift(nsurf);  // void drift energy transfer
+
+    // Vectors for temporary reference solution variables
+    Vector1D gk0(nsurf);
+
+    // Residual vectors and Jacobian Matrix
+    Vector1D f0(nsurf);
+    Vector1D f3(nsurf);
+    Vector2D dfdg(nsurf, Vector1D(nsurf));
+
+    // calculate wbarms, wbarvs, whbars for isurf, jsurf with donored properties
+    for (auto& surf : state.geom->surfaces) {
+        size_t ns = surf.idx;
+        size_t idonor;
+        if (surf.G > 0) idonor = surf.from_node;
+        else idonor = surf.to_node;
+        wbarms[surf.from_node] += dz * S_ij * (gk[ns][k] + glmix[ns] + gvmix[ns] + gldrift[ns] + gvdrift[ns]);
+        wbarms[surf.to_node]   -= dz * S_ij * (gk[ns][k] + glmix[ns] + gvmix[ns] + gldrift[ns] + gvdrift[ns]);
+        wbarvs[surf.from_node] += dz * S_ij * (gk[ns][k] + gvmix[ns] + gvdrift[ns]);
+        wbarvs[surf.to_node]   -= dz * S_ij * (gk[ns][k] + gvmix[ns] + gvdrift[ns]);
+        whbars[surf.from_node] += dz * S_ij * (gk[ns][k] * hm[idonor][k-1] + hmix[ns] + hdrift[ns]);
+        whbars[surf.to_node]   -= dz * S_ij * (gk[ns][k] * hm[idonor][k-1] + hmix[ns] + hdrift[ns]);
+    }
+
+    // some sort of boundary conditions loop ?
+
+    // PLANAR solve
+
+    // calculate the residual vector f0
+    for (size_t ns = 0; ns < nsurf; ++ns) {
+        f0[ns] = 0.0;
+    }
+
+    // store reference values prior to perturbations
+    for (size_t ns = 0; ns < nsurf; ++ns) {
+        gk0[ns] = gk[ns][k];
+    }
+
+    // check convergence and exit early if criteria is met
+
+    std::cout << "\nJacobian Matrix: at plane: " << state.surface_plane << std::endl;
+    for (size_t ns1 = 0; ns1 < nsurf; ++ns1) {
+
+        // reset reference values for all variables
+        for (size_t ns0 = 0; ns0 < nsurf; ++ns0) {
+            gk[ns0][k] = gk0[ns0];
+        }
+
+        // perturb the mass flux at surface ns1
+        if (gk[ns1][k] > 0) gk[ns1][k] -= gtol;
+        else gk[ns1][k] += gtol;
+
+        // PLANAR_PERTURB solve
+
+        for (size_t ns = 0; ns < nsurf; ++ns) {
+            size_t idonor;
+            if (gk[ns][k] > 0) idonor = state.geom->surfaces[ns].from_node;
+            else idonor = state.geom->surfaces[ns].to_node;
+
+            f3[ns] = 0.0;
+            dfdg[ns][ns1] = (f3[ns] - f0[ns]) / (gk[ns1][k] - gk0[ns1]);
+            std::cout << std::setw(8) << dfdg[ns][ns1];
+        }
+        std::cout << std::endl;
+    }
+
+    // solve the system of equations (overwrites f0 as solution vector)
+    solve_linear_system(nsurf, dfdg, f0);
+
+    std::cout << "Linear system solution: dG" << std::endl;
+
+    // update mass fluxes from solution
+    for (size_t ns = 0; ns < nsurf; ++ns) {
+        std::cout << f0[ns] << std::endl;
+        gk[ns][k] -= f0[ns];
+    }
+
+    // } // end outer iteration loop
+}
 
 void TH::solve_flow_rates(State& state) {
     // Perform calculations for each surface axial plane
@@ -356,40 +459,19 @@ void TH::solve_pressure(State& state) {
     Vector3D rho = state.fluid->rho(state.h_l);
     Vector3D mu = state.fluid->mu(state.h_l);
 
-    // pre-calculate mixture velocities
-    Vector3D V_m;
-    Vector::resize(V_m, state.geom->nx(), state.geom->ny(), state.geom->naxial() + 1);
-    for (size_t k = 0; k < state.geom->naxial() + 1; ++k) {
-        for (size_t j = 0; j < state.geom->ny(); ++j) {
-            for (size_t i = 0; i < state.geom->nx(); ++i) {
-                double X = state.X[i][j][k];
-                double alpha = state.alpha[i][j][k];
-                double v_m;
-                if (alpha < 1e-6) {
-                    v_m = 1.0 / state.fluid->rho_f(); // Eq. 16 from ANTS Theory (Simplified with X=0, alpha=0)
-                } else if (alpha > 1.0 - 1e-6) {
-                    v_m = 1.0 / state.fluid->rho_g(); // Eq. 16 from ANTS Theory (Simplified with X=1, alpha=1)
-                } else {
-                    v_m = (1.0 - X) * (1.0 - X) / ((1.0 - alpha) * state.fluid->rho_f()) + X * X / (alpha * state.fluid->rho_g()); // Eq. 16 from ANTS Theory
-                }
-                V_m[i][j][k] = v_m * state.W_m(i, j, k) / A_f; // mixture velocity, Eq. 15 from ANTS Theory
-            }
-        }
-    }
-
     size_t k = state.surface_plane;
     size_t k_node = state.node_plane;
     for (size_t j = 0; j < state.geom->ny(); ++j) {
         for (size_t i = 0; i < state.geom->nx(); ++i) {
 
             // ----- two-phase acceleration pressure drop -----
-            double dP_accel = (state.W_m(i, j, k) * V_m[i][j][k] - state.W_m(i, j, k-1) * V_m[i][j][k-1]) / A_f;
+            double dP_accel = (state.W_m(i, j, k) * state.V_m(i, j, k) - state.W_m(i, j, k-1) * state.V_m(i, j, k-1)) / A_f;
 
             // ----- two-phase frictional pressure drop -----
             // mass flux
             double G = state.W_l[i][j][k] / A_f;
             // Reynolds number
-            double Re = state.W_l[i][j][k] * D_h / (A_f * mu[i][j][k]);
+            double Re = __Reynolds(G, D_h, mu[i][j][k]);
 
             // frictional pressure drop from wall shear
             double f = a_1 * pow(Re, n); // single phase friction factor, Eq. 31 from ANTS Theory

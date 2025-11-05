@@ -37,7 +37,7 @@ struct State {
             for (std::size_t j = 0; j < out[i].size(); ++j) {
                 for (std::size_t k = 0; k < out[i][j].size(); ++k) {
                     double X_ijk = X[i][j][k];
-                    out[i][j][k] = (1 - X_ijk) * h_l[i][j][k] + X_ijk * fluid->h_g();
+                    out[i][j][k] = h_m(i, j, k);
                 }
             }
         }
@@ -57,7 +57,7 @@ struct State {
         for (std::size_t i = 0; i < out.size(); ++i) {
             for (std::size_t j = 0; j < out[i].size(); ++j) {
                 for (std::size_t k = 0; k < out[i][j].size(); ++k) {
-                    out[i][j][k] = W_l[i][j][k] + W_v[i][j][k];
+                    out[i][j][k] = W_m(i, j, k);
                 }
             }
         }
@@ -67,4 +67,109 @@ struct State {
     double W_m(size_t i, size_t j, size_t k) const {
         return W_l[i][j][k] + W_v[i][j][k];
     }
+
+    // mixture velocity
+    Vector3D V_m() const {
+        Vector3D out(W_l.size());
+        for (std::size_t i = 0; i < out.size(); ++i) {
+            for (std::size_t j = 0; j < out[i].size(); ++j) {
+                for (std::size_t k = 0; k < out[i][j].size(); ++k) {
+                    out[i][j][k] = V_m(i, j, k);
+                }
+            }
+        }
+        return out;
+    }
+
+    double V_m(size_t i, size_t j, size_t k) const {
+        Vector3D rho = fluid->rho(h_l);
+        double A_f = geom->flow_area();
+        double v_m;
+        if (alpha[i][j][k] < 1e-6) {
+            v_m = 1.0 / fluid->rho_f(); // Eq. 16 from ANTS Theory (Simplified with X=0, alpha=0)
+        } else if (alpha[i][j][k] > 1.0 - 1e-6) {
+            v_m = 1.0 / fluid->rho_g(); // Eq. 16 from ANTS Theory (Simplified with X=1, alpha=1)
+        } else {
+            v_m = (1.0 - X[i][j][k]) * (1.0 - X[i][j][k]) / ((1.0 - alpha[i][j][k]) * rho[i][j][k]) + X[i][j][k] * X[i][j][k] / (alpha[i][j][k] * fluid->rho_g()); // Eq. 16 from ANTS Theory
+        }
+        return v_m * W_m(i, j, k) / A_f; // mixture velocity, Eq. 15 from ANTS Theory
+    }
+
+    // mixture specific volume
+    Vector3D nu_m() const {
+        Vector3D out(W_l.size());
+        for (std::size_t i = 0; i < out.size(); ++i) {
+            for (std::size_t j = 0; j < out[i].size(); ++j) {
+                for (std::size_t k = 0; k < out[i][j].size(); ++k) {
+                    out[i][j][k] = nu_m(i, j, k);
+                }
+            }
+        }
+        return out;
+    }
+
+    double nu_m(size_t i, size_t j, size_t k) const {
+        Vector3D rho = fluid->rho(h_l);
+        double v_m;
+        if (alpha[i][j][k] < 1e-6) {
+            v_m = 1.0 / fluid->rho_f(); // Eq. 16 from ANTS Theory (Simplified with X=0, alpha=0)
+        } else if (alpha[i][j][k] > 1.0 - 1e-6) {
+            v_m = 1.0 / fluid->rho_g(); // Eq. 16 from ANTS Theory (Simplified with X=1, alpha=1)
+        } else {
+            v_m = (1.0 - X[i][j][k]) * (1.0 - X[i][j][k]) / ((1.0 - alpha[i][j][k]) * rho[i][j][k]) + X[i][j][k] * X[i][j][k] / (alpha[i][j][k] * fluid->rho_g()); // Eq. 16 from ANTS Theory
+        }
+        return v_m; // mixture specific volume
+    }
+
+    double G_m_cf(size_t i, size_t j, size_t ns) const {
+
+        if (ns == geom->boundary) {
+            return 0.0; // no crossflow at boundary surfaces
+        }
+
+        size_t from_i, from_j;
+        std::tie(from_i, from_j) = geom->get_ij(geom->surfaces[ns].from_node);
+        size_t from_ns = geom->local_surf_index(geom->surfaces[ns], geom->surfaces[ns].from_node);
+
+        // Update surface cross-flow mass fluxes in the to node
+        if (from_i == i && from_j == j) {
+            // return -1.0;
+            return -geom->surfaces[ns].G;
+        } else {
+            // return 1.0;
+            return geom->surfaces[ns].G;
+        }
+    }
+
+    // double G_l_cf(size_t i, size_t j, size_t ns) const {
+
+    //     if (ns == geom->boundary) {
+    //         return 0.0; // no crossflow at boundary surfaces
+    //     }
+
+    //     size_t from_i, from_j;
+    //     std::tie(from_i, from_j) = geom->get_ij(geom->surfaces[ns].from_node);
+    //     size_t from_ns = geom->local_surf_index(geom->surfaces[ns], geom->surfaces[ns].from_node);
+
+    //     // Get donor quality from appropriate subchannel surface
+    //     double X_donor = X[from_i][from_j][surface_plane - 1];
+
+    //     return G_m_cf(i, j, ns) * (1.0 - X_donor);
+    // }
+
+    // double G_v_cf(size_t i, size_t j, size_t ns) const {
+
+    //     if (ns == geom->boundary) {
+    //         return 0.0; // no crossflow at boundary surfaces
+    //     }
+
+    //     size_t from_i, from_j;
+    //     std::tie(from_i, from_j) = geom->get_ij(geom->surfaces[ns].from_node);
+    //     size_t from_ns = geom->local_surf_index(geom->surfaces[ns], geom->surfaces[ns].from_node);
+
+    //     // Get donor quality from appropriate subchannel surface
+    //     double X_donor = X[from_i][from_j][surface_plane - 1];
+
+    //     return G_m_cf(i, j, ns) * X_donor;
+    // }
 };

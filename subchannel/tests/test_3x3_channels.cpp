@@ -9,6 +9,7 @@
 #include "geometry.hpp"
 #include "materials.hpp"
 #include "solver.hpp"
+#include "linear_algebra.hpp"
 
 TEST(SubchannelTest, 3x3Channels) {
 
@@ -18,8 +19,9 @@ TEST(SubchannelTest, 3x3Channels) {
     double flow_area = 1.436e-4; // m^2
     double hydraulic_diameter = 1.436e-2; // m
     double gap_width = 0.39e-2; // m
-    size_t naxial = 100; // number of axial nodes to discretize to
-    Geometry geometry(height, flow_area, hydraulic_diameter, gap_width, N, N, naxial);
+    double length = 1.3e-2; // m, length of axial momentum cell
+    size_t naxial = 10; // number of axial nodes to discretize to
+    Geometry geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, N, naxial);
 
     // working fluid is water
     Water fluid;
@@ -40,7 +42,10 @@ TEST(SubchannelTest, 3x3Channels) {
         linear_heat_rate,
         inlet_mass_flow
     );
-    solver.solve();
+
+    size_t outer_iter = 1;
+    size_t inner_iter = 5;
+    solver.solve(outer_iter, inner_iter);
 
     Vector3D h = solver.get_surface_liquid_enthalpies();
     Vector3D T = solver.get_surface_temperatures();
@@ -112,13 +117,21 @@ TEST(SubchannelTest, 3x3Channels) {
     });
 
     std::cout << "Exit Void Distribution Error vs. ANTS" << std::endl;
+    double max_void_error = 0.0;
     for (size_t j = 0; j < N; ++j) {
         for (size_t i = 0; i < N; ++i) {
             size_t k = naxial;
+            double void_error = std::abs((alpha[i][j][k] - ants_void[i][j]) / ants_void[i][j]);
+            if (void_error > max_void_error) {
+                max_void_error = void_error;
+            }
             std::cout << std::setw(12) << std::setprecision(3) << (alpha[i][j][k] - ants_void[i][j]) << " ";
         }
         std::cout << std::endl;
     }
+    std::cout << std::endl;
+
+    std::cout << "Maximum Void Error: " << std::setw(8) << std::setprecision(6) << max_void_error * 100.0 << " %" << std::endl;
     std::cout << std::endl;
 
     // print exit plane data to compare to ANTS Theory results
@@ -139,10 +152,33 @@ TEST(SubchannelTest, 3x3Channels) {
     });
 
     std::cout << "Pressure Drop Distribution Error vs. ANTS (kPa)" << std::endl;
+    double max_pressure_drop_error = 0.0;
     for (size_t j = 0; j < N; ++j) {
         for (size_t i = 0; i < N; ++i) {
             size_t k = naxial;
+            double pressure_drop_error = std::abs((P[i][j][0] - P[i][j][k]) / 1000.0 - ants_pressure_drop[i][j]) / ants_pressure_drop[i][j];
+            if (pressure_drop_error > max_pressure_drop_error) {
+                max_pressure_drop_error = pressure_drop_error;
+            }
             std::cout << std::setw(12) << std::setprecision(6) << ((P[i][j][0] - P[i][j][k])) / 1000.0 - ants_pressure_drop[i][j] << " ";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
+
+    std::cout << "Maximum Pressure Drop Error: " << std::setw(8) << std::setprecision(6) << max_pressure_drop_error * 100.0 << " %" << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "Cross-flow" << std::endl;
+    for (size_t j = 0; j < N; ++j) {
+        for (size_t i = 0; i < N; ++i) {
+            double G_m_cf = 0.0;
+            for (size_t ns = 0; ns < 4; ++ns) {
+                size_t global_ns = solver.state.geom->global_surf_index(i, j, ns);
+                if (global_ns == solver.state.geom->boundary) continue;
+                G_m_cf += solver.state.G_m_cf(i, j, global_ns);
+            }
+            std::cout << std::setw(12) << std::setprecision(6) << G_m_cf << " ";
         }
         std::cout << std::endl;
     }

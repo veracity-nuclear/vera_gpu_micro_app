@@ -18,6 +18,7 @@ Solver::Solver(
     size_t ny = state.geom->ny();
     size_t nz = state.geom->naxial() + 1;
     size_t ns = 4; // number of neighboring surfaces on an axial plane
+    size_t nsurf = state.geom->nsurfaces();
 
     // initialize solution vectors
     Vector::resize(state.h_l, nx, ny, nz);
@@ -66,7 +67,7 @@ Vector3D Solver::get_evaporation_rates() const {
     return evap_rates;
 }
 
-void Solver::solve() {
+void Solver::solve(size_t max_outer_iter, size_t max_inner_iter) {
 
     state.surface_plane = 0; // start at inlet axial plane
 
@@ -78,18 +79,19 @@ void Solver::solve() {
 
         // closure relations
         TH::solve_evaporation_term(state);
-        TH::solve_turbulent_mixing(state);
-        TH::solve_void_drift(state);
+        // TH::solve_turbulent_mixing(state);
+        // TH::solve_void_drift(state);
 
         // closure relations use lagging edge values, so update after solving them
         state.surface_plane = k;
 
         // outer iteration (solution for full axial plane)
-        for (size_t outer_iter = 0; outer_iter < 10; ++outer_iter) { // fixed number of iterations for now
-            TH::solve_surface_mass_flux(state);  // --- TODO: Issue #75 ---
+        for (size_t outer_iter = 0; outer_iter < max_outer_iter; ++outer_iter) {
+
+            TH::solve_surface_mass_flux(state);
 
             // inner iteration
-            for (size_t inner_iter = 0; inner_iter < 10; ++inner_iter) { // fixed number of iterations for now
+            for (size_t inner_iter = 0; inner_iter < max_inner_iter; ++inner_iter) {
                 TH::solve_flow_rates(state);
                 TH::solve_enthalpy(state);
                 TH::solve_void_fraction(state);

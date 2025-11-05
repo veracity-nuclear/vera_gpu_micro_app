@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <iomanip>
 #include <vector>
 #include <memory>
 #include <cmath>
@@ -10,6 +11,7 @@
 #include "geometry.hpp"
 #include "materials.hpp"
 #include "state.hpp"
+#include "linear_algebra.hpp"
 
 namespace TH {
 

@@ -23,7 +23,9 @@ public:
     );
     ~Solver() = default;
 
-    void solve();
+    State state;
+    
+    void solve(size_t max_outer_iter = 10, size_t max_inner_iter = 10);
 
     Vector3D get_surface_liquid_enthalpies() const { return state.h_l; }
     Vector3D get_surface_temperatures() const { return state.fluid->T(state.h_l); }
@@ -38,5 +40,4 @@ private:
     Vector2D T_inlet;
     Vector2D P_inlet;
     Vector2D lhr;
-    State state;
 };
