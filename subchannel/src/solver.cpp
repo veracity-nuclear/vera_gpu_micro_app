@@ -3,65 +3,59 @@
 Solver::Solver(
     std::shared_ptr<Geometry> geometry,
     std::shared_ptr<Water> fluid,
-    Vector2D inlet_temperature,
-    Vector2D inlet_pressure,
-    Vector2D linear_heat_rate,
-    Vector2D mass_flow_rate
-)
-    : T_inlet(inlet_temperature)
-    , P_inlet(inlet_pressure)
-{
+    Vector1D inlet_temperature,
+    Vector1D inlet_pressure,
+    Vector1D linear_heat_rate,
+    Vector1D mass_flow_rate
+) {
     state.geom = geometry;
     state.fluid = fluid;
 
     size_t nx = state.geom->nx();
     size_t ny = state.geom->ny();
     size_t nz = state.geom->naxial() + 1;
+    size_t nc = state.geom->nchannels();
     size_t ns = 4; // number of neighboring surfaces on an axial plane
     size_t nsurf = state.geom->nsurfaces();
 
     // initialize solution vectors
-    Vector::resize(state.h_l, nx, ny, nz);
-    Vector::resize(state.P, nx, ny, nz);
-    Vector::resize(state.W_l, nx, ny, nz);
-    Vector::resize(state.W_v, nx, ny, nz);
-    Vector::resize(state.alpha, nx, ny, nz);
-    Vector::resize(state.X, nx, ny, nz);
-    Vector::resize(state.lhr, nx, ny, state.geom->naxial());
-    Vector::resize(state.evap, nx, ny, state.geom->naxial());
+    Vector::resize(state.h_l, nc, nz);
+    Vector::resize(state.P, nc, nz);
+    Vector::resize(state.W_l, nc, nz);
+    Vector::resize(state.W_v, nc, nz);
+    Vector::resize(state.alpha, nc, nz);
+    Vector::resize(state.X, nc, nz);
+    Vector::resize(state.lhr, nc, state.geom->naxial());
+    Vector::resize(state.evap, nc, state.geom->naxial());
 
     // initialize surface source term vectors
-    Vector::resize(state.G_l_tm, nx, ny, nz, ns);
-    Vector::resize(state.G_v_tm, nx, ny, nz, ns);
-    Vector::resize(state.Q_m_tm, nx, ny, nz, ns);
-    Vector::resize(state.M_m_tm, nx, ny, nz, ns);
-    Vector::resize(state.G_l_vd, nx, ny, nz, ns);
-    Vector::resize(state.G_v_vd, nx, ny, nz, ns);
-    Vector::resize(state.Q_m_vd, nx, ny, nz, ns);
-    Vector::resize(state.M_m_vd, nx, ny, nz, ns);
+    Vector::resize(state.G_l_tm, nc, nz, ns);
+    Vector::resize(state.G_v_tm, nc, nz, ns);
+    Vector::resize(state.Q_m_tm, nc, nz, ns);
+    Vector::resize(state.M_m_tm, nc, nz, ns);
+    Vector::resize(state.G_l_vd, nc, nz, ns);
+    Vector::resize(state.G_v_vd, nc, nz, ns);
+    Vector::resize(state.Q_m_vd, nc, nz, ns);
+    Vector::resize(state.M_m_vd, nc, nz, ns);
 
     // set inlet boundary conditions
     for (size_t k = 0; k < nz; ++k) {
-        for (size_t j = 0; j < ny; ++j) {
-            for (size_t i = 0; i < nx; ++i) {
-                state.h_l[i][j][k] = fluid->h(T_inlet[i][j]);
-                state.P[i][j][k] = P_inlet[i][j];
-                state.W_l[i][j][k] = mass_flow_rate[i][j];
-                state.lhr[i][j][k] = linear_heat_rate[i][j];
-            }
+        for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+            state.h_l[i][k] = fluid->h(inlet_temperature[i]);
+            state.P[i][k] = inlet_pressure[i];
+            state.W_l[i][k] = mass_flow_rate[i];
+            state.lhr[i][k] = linear_heat_rate[i];
         }
     }
 
     std::cout << "Solver initialized." << std::endl;
 }
 
-Vector3D Solver::get_evaporation_rates() const {
-    Vector3D evap_rates = state.evap;
+Vector2D Solver::get_evaporation_rates() const {
+    Vector2D evap_rates = state.evap;
     for (size_t k = 0; k < state.geom->naxial(); ++k) {
-        for (size_t j = 0; j < state.geom->ny(); ++j) {
-            for (size_t i = 0; i < state.geom->nx(); ++i) {
-                evap_rates[i][j][k] = state.evap[i][j][k] * state.geom->dz();
-            }
+        for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+            evap_rates[i][k] = state.evap[i][k] * state.geom->dz();
         }
     }
     return evap_rates;

@@ -26,12 +26,12 @@ TEST(SubchannelTest, SingleChannel) {
     Water fluid;
 
     // create 2D array for each solver parameters
-    Vector2D inlet_mass_flow(N, Vector1D(N, 2.25 / 9)); // kg/s
-    Vector2D inlet_temperature(N, Vector1D(N, 278.0 + 273.15)); // K
-    Vector2D inlet_pressure(N, Vector1D(N, 7.255e6)); // Pa
-    Vector2D linear_heat_rate(N, Vector1D(N, 29.1e3)); // W/m
+    Vector1D inlet_mass_flow(N*N, 2.25 / 9); // kg/s
+    Vector1D inlet_temperature(N*N, 278.0 + 273.15); // K
+    Vector1D inlet_pressure(N*N, 7.255e6); // Pa
+    Vector1D linear_heat_rate(N*N, 29.1e3); // W/m
 
-    std::cout << "Linear heat rate: " << linear_heat_rate[0][0] << " W/m" << std::endl;
+    std::cout << "Linear heat rate: " << linear_heat_rate[0] << " W/m" << std::endl;
 
     Solver solver(
         std::make_shared<Geometry>(geometry),
@@ -43,14 +43,14 @@ TEST(SubchannelTest, SingleChannel) {
     );
     solver.solve();
 
-    Vector3D h = solver.get_surface_liquid_enthalpies();
-    Vector3D T = solver.get_surface_temperatures();
-    Vector3D P = solver.get_surface_pressures();
-    Vector3D alpha = solver.get_surface_void_fractions();
-    Vector3D X = solver.get_surface_qualities();
-    Vector3D evap = solver.get_evaporation_rates();
-    Vector3D W_l = solver.get_surface_liquid_flow_rates();
-    Vector3D W_v = solver.get_surface_vapor_flow_rates();
+    Vector2D h = solver.get_surface_liquid_enthalpies();
+    Vector2D T = solver.get_surface_temperatures();
+    Vector2D P = solver.get_surface_pressures();
+    Vector2D alpha = solver.get_surface_void_fractions();
+    Vector2D X = solver.get_surface_qualities();
+    Vector2D evap = solver.get_evaporation_rates();
+    Vector2D W_l = solver.get_surface_liquid_flow_rates();
+    Vector2D W_v = solver.get_surface_vapor_flow_rates();
 
     // Print table of results
     std::cout << std::fixed << std::setprecision(2) << std::endl;
@@ -77,25 +77,25 @@ TEST(SubchannelTest, SingleChannel) {
 
     for (size_t k = 0; k < naxial + 1; ++k) {
         std::cout << std::setw(6)  << std::setprecision(2) << k
-                  << std::setw(12) << std::setprecision(2) << h[0][0][k] / 1000.0
-                  << std::setw(12) << std::setprecision(2) << fluid.T(h[0][0][k])
-                  << std::setw(12) << std::setprecision(2) << P[0][0][k] / 1000.0
-                  << std::setw(12) << std::setprecision(3) << alpha[0][0][k]
-                  << std::setw(12) << std::setprecision(3) << X[0][0][k]
-                  << std::setw(12) << std::setprecision(3) << W_l[0][0][k]
-                  << std::setw(12) << std::setprecision(3) << W_v[0][0][k]
+                  << std::setw(12) << std::setprecision(2) << h[0][k] / 1000.0
+                  << std::setw(12) << std::setprecision(2) << fluid.T(h[0][k])
+                  << std::setw(12) << std::setprecision(2) << P[0][k] / 1000.0
+                  << std::setw(12) << std::setprecision(3) << alpha[0][k]
+                  << std::setw(12) << std::setprecision(3) << X[0][k]
+                  << std::setw(12) << std::setprecision(3) << W_l[0][k]
+                  << std::setw(12) << std::setprecision(3) << W_v[0][k]
                   << std::endl;
     }
     std::cout << std::endl;
 
     double expected_deltaT = 21.729682; // expected temperature rise in subchannel, K
-    double actual_deltaT = T[0][0].back() - T[0][0].front();
+    double actual_deltaT = T[0].back() - T[0].front();
     std::cout << "Total temperature rise: " << actual_deltaT << " K" << std::endl;
 
     // check total temperature rise in subchannel
     EXPECT_NEAR(actual_deltaT, expected_deltaT, 1e-6);
 
-    double total_pressure_drop = P[0][0].front() - P[0][0].back();
+    double total_pressure_drop = P[0].front() - P[0].back();
     double expected_pressure_drop = 73058.774; // expected pressure drop in subchannel, Pa
     std::cout << "Total pressure drop: " << total_pressure_drop / 1000.0 << " kPa" << std::endl;
 

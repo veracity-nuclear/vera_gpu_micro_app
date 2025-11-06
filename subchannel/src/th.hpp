@@ -24,7 +24,6 @@ void solve_enthalpy(State& state);
 void solve_void_fraction(State& state);
 void solve_quality(State& state);
 void solve_pressure(State& state);
-std::pair<size_t, size_t> __get_neighbor_ij(size_t i, size_t j, size_t ns, size_t nx, size_t ny);
 double __Reynolds(double G, double D_h, double mu);
 double __Prandtl(double Cp, double mu, double k);
 double __Peclet(double Re, double Pr);

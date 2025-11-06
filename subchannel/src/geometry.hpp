@@ -33,6 +33,7 @@ public:
     size_t ny() const { return _ny; }
     size_t naxial() const { return _nz; }
     size_t nsurfaces() const;
+    size_t nchannels() const { return _nx * _ny; }
     size_t global_surf_index(size_t i, size_t j, size_t ns) const;
     size_t local_surf_index(Surface surf, size_t node_idx) const;
     std::pair<size_t, size_t> get_ij(size_t idx) const;
