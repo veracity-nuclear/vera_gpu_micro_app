@@ -14,36 +14,43 @@ Solver::Solver(
     size_t nx = state.geom->nx();
     size_t ny = state.geom->ny();
     size_t nz = state.geom->naxial() + 1;
-    size_t nc = state.geom->nchannels();
-    size_t ns = 4; // number of neighboring surfaces on an axial plane
+    size_t nchan = state.geom->nchannels();
     size_t nsurf = state.geom->nsurfaces();
 
     // initialize solution vectors
-    Vector::resize(state.h_l, nc, nz);
-    Vector::resize(state.P, nc, nz);
-    Vector::resize(state.W_l, nc, nz);
-    Vector::resize(state.W_v, nc, nz);
-    Vector::resize(state.alpha, nc, nz);
-    Vector::resize(state.X, nc, nz);
-    Vector::resize(state.lhr, nc, state.geom->naxial());
-    Vector::resize(state.evap, nc, state.geom->naxial());
+    Vector::resize(state.h_l, nchan, nz);
+    Vector::resize(state.P, nchan, nz);
+    Vector::resize(state.W_l, nchan, nz);
+    Vector::resize(state.W_v, nchan, nz);
+    Vector::resize(state.alpha, nchan, nz);
+    Vector::resize(state.X, nchan, nz);
+    Vector::resize(state.lhr, nchan, state.geom->naxial());
+    Vector::resize(state.evap, nchan, state.geom->naxial());
+    Vector::resize(state.qz, nchan, state.geom->naxial());
 
     // initialize surface source term vectors
-    Vector::resize(state.G_l_tm, nc, nz, ns);
-    Vector::resize(state.G_v_tm, nc, nz, ns);
-    Vector::resize(state.Q_m_tm, nc, nz, ns);
-    Vector::resize(state.M_m_tm, nc, nz, ns);
-    Vector::resize(state.G_l_vd, nc, nz, ns);
-    Vector::resize(state.G_v_vd, nc, nz, ns);
-    Vector::resize(state.Q_m_vd, nc, nz, ns);
-    Vector::resize(state.M_m_vd, nc, nz, ns);
+    Vector::resize(state.G_l_tm, nsurf);
+    Vector::resize(state.G_v_tm, nsurf);
+    Vector::resize(state.Q_m_tm, nsurf);
+    Vector::resize(state.M_m_tm, nsurf);
+    Vector::resize(state.G_l_vd, nsurf);
+    Vector::resize(state.G_v_vd, nsurf);
+    Vector::resize(state.Q_m_vd, nsurf);
+    Vector::resize(state.M_m_vd, nsurf);
+    Vector::resize(state.gk, nsurf, state.geom->naxial());
 
-    // set inlet boundary conditions
+    // set inlet boundary conditions for surface quantities (0 to naxial)
     for (size_t k = 0; k < nz; ++k) {
         for (size_t i = 0; i < state.geom->nchannels(); ++i) {
             state.h_l[i][k] = fluid->h(inlet_temperature[i]);
             state.P[i][k] = inlet_pressure[i];
             state.W_l[i][k] = mass_flow_rate[i];
+        }
+    }
+
+    // set node quantities (0 to naxial-1)
+    for (size_t k = 0; k < state.geom->naxial(); ++k) {
+        for (size_t i = 0; i < state.geom->nchannels(); ++i) {
             state.lhr[i][k] = linear_heat_rate[i];
         }
     }
@@ -73,8 +80,7 @@ void Solver::solve(size_t max_outer_iter, size_t max_inner_iter) {
 
         // closure relations
         TH::solve_evaporation_term(state);
-        // TH::solve_turbulent_mixing(state);
-        // TH::solve_void_drift(state);
+        TH::solve_mixing(state);
 
         // closure relations use lagging edge values, so update after solving them
         state.surface_plane = k;
@@ -82,7 +88,7 @@ void Solver::solve(size_t max_outer_iter, size_t max_inner_iter) {
         // outer iteration (solution for full axial plane)
         for (size_t outer_iter = 0; outer_iter < max_outer_iter; ++outer_iter) {
 
-            TH::solve_surface_mass_flux(state);
+            // TH::solve_surface_mass_flux(state);
 
             // inner iteration
             for (size_t inner_iter = 0; inner_iter < max_inner_iter; ++inner_iter) {

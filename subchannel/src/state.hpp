@@ -16,16 +16,81 @@ struct State {
     Vector2D X;         // quality
     Vector2D lhr;       // linear heat rate
     Vector2D evap;      // evaporation term [kg/m/s]
+    Vector2D qz;        // heat flux [W/m^2]
 
-    Vector3D G_l_tm;    // turbulent mixing liquid mass transfer [kg/m^2/s]
-    Vector3D G_v_tm;    // turbulent mixing vapor mass transfer [kg/m^2/s]
-    Vector3D Q_m_tm;    // turbulent mixing energy transfer [W/m^2]
-    Vector3D M_m_tm;    // turbulent mixing momentum transfer [Pa]
+    Vector1D G_l_tm;    // turbulent mixing liquid mass transfer [kg/m^2/s]
+    Vector1D G_v_tm;    // turbulent mixing vapor mass transfer [kg/m^2/s]
+    Vector1D Q_m_tm;    // turbulent mixing energy transfer [W/m^2]
+    Vector1D M_m_tm;    // turbulent mixing momentum transfer [Pa]
 
-    Vector3D G_l_vd;    // void drift liquid mass transfer [kg/m^2/s]
-    Vector3D G_v_vd;    // void drift vapor mass transfer [kg/m^2/s]
-    Vector3D Q_m_vd;    // void drift energy transfer [W/m^2]
-    Vector3D M_m_vd;    // void drift momentum transfer [Pa]
+    Vector1D G_l_vd;    // void drift liquid mass transfer [kg/m^2/s]
+    Vector1D G_v_vd;    // void drift vapor mass transfer [kg/m^2/s]
+    Vector1D Q_m_vd;    // void drift energy transfer [W/m^2]
+    Vector1D M_m_vd;    // void drift momentum transfer [Pa]
+
+    Vector2D gk;        // surface mass fluxes [kg/m/s]
+        // -------------------------
+    // Constructors
+    // -------------------------
+    State() = default;
+
+    // copy constructor (deep copy of data; shared_ptrs are shared)
+    State(const State& other)
+        : surface_plane(other.surface_plane),
+          node_plane(other.node_plane),
+          fluid(other.fluid), // shared_ptr copy — shares ownership
+          geom(other.geom),   // shared_ptr copy — shares ownership
+          h_l(other.h_l),
+          W_l(other.W_l),
+          W_v(other.W_v),
+          P(other.P),
+          alpha(other.alpha),
+          X(other.X),
+          lhr(other.lhr),
+          evap(other.evap),
+          qz(other.qz),
+          G_l_tm(other.G_l_tm),
+          G_v_tm(other.G_v_tm),
+          Q_m_tm(other.Q_m_tm),
+          M_m_tm(other.M_m_tm),
+          G_l_vd(other.G_l_vd),
+          G_v_vd(other.G_v_vd),
+          Q_m_vd(other.Q_m_vd),
+          M_m_vd(other.M_m_vd),
+          gk(other.gk) {}
+
+    // copy assignment
+    State& operator=(const State& other) {
+        if (this != &other) {
+            surface_plane = other.surface_plane;
+            node_plane = other.node_plane;
+            fluid = other.fluid;
+            geom = other.geom;
+            h_l = other.h_l;
+            W_l = other.W_l;
+            W_v = other.W_v;
+            P = other.P;
+            alpha = other.alpha;
+            X = other.X;
+            lhr = other.lhr;
+            evap = other.evap;
+            qz = other.qz;
+            G_l_tm = other.G_l_tm;
+            G_v_tm = other.G_v_tm;
+            Q_m_tm = other.Q_m_tm;
+            M_m_tm = other.M_m_tm;
+            G_l_vd = other.G_l_vd;
+            G_v_vd = other.G_v_vd;
+            Q_m_vd = other.Q_m_vd;
+            M_m_vd = other.M_m_vd;
+            gk = other.gk;
+        }
+        return *this;
+    }
+
+    // move constructor and assignment for efficiency
+    State(State&&) noexcept = default;
+    State& operator=(State&&) noexcept = default;
 
     // mixture enthalpy
     Vector2D h_m() const {

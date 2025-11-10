@@ -15,10 +15,12 @@ target_link_libraries(subchannel_lib
 # --- Tests ---
 enable_testing()
 set(TEST_EXECUTABLES
+    test_geometry
     test_single_channel
     test_3x3_channels
 )
 set(TEST_LABELS
+    "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
 )

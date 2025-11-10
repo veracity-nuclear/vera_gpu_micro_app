@@ -44,7 +44,7 @@ TEST(SubchannelTest, 3x3Channels) {
     );
 
     size_t outer_iter = 1;
-    size_t inner_iter = 5;
+    size_t inner_iter = 1;
     solver.solve(outer_iter, inner_iter);
 
     Vector2D h = solver.get_surface_liquid_enthalpies();

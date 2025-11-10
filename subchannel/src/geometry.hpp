@@ -11,7 +11,6 @@ struct Surface {
     size_t idx;         // surface index
     size_t from_node;   // upstream node index
     size_t to_node;     // downstream node index
-    double G;           // mixture cross-flow mass flux [kg/m^2-s]
 };
 
 
@@ -34,11 +33,7 @@ public:
     size_t naxial() const { return _nz; }
     size_t nsurfaces() const;
     size_t nchannels() const { return _nx * _ny; }
-    size_t global_surf_index(size_t i, size_t j, size_t ns) const;
-    size_t local_surf_index(Surface surf, size_t node_idx) const;
-    std::pair<size_t, size_t> get_ij(size_t idx) const;
-    std::pair<size_t, size_t> get_donor_ij(size_t ns) const;
-    std::pair<size_t, size_t> get_neighbor_ij(size_t i, size_t j, size_t ns) const;
+    size_t global_surf_index(size_t i, size_t ns) const;
 
 private:
     double H;       // height of the subchannel
