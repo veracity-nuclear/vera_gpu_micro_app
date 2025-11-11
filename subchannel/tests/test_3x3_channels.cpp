@@ -20,7 +20,7 @@ TEST(SubchannelTest, 3x3Channels) {
     double hydraulic_diameter = 1.436e-2; // m
     double gap_width = 0.39e-2; // m
     double length = 1.3e-2; // m, length of axial momentum cell
-    size_t naxial = 10; // number of axial nodes to discretize to
+    size_t naxial = 50; // number of axial nodes to discretize to
     Geometry geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, N, naxial);
 
     // working fluid is water
