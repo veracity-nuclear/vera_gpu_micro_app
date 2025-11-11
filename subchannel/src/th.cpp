@@ -174,14 +174,10 @@ void TH::solve_mixing(State& state) {
             alpha_i * rho_l_i * V_l_i + alpha_j * rho_l_j * V_l_j
             - (alpha_i * V_v_i + alpha_j * V_v_j) * state.fluid->rho_g()
         ); // Eq. 44 from ANTS Theory
-
-        // state.gk[ns][k_node] = state.G_l_tm[ns] + state.G_v_tm[ns] + state.G_l_vd[ns] + state.G_v_vd[ns];
     }
 }
 
 void TH::solve_surface_mass_flux(State& state) {
-
-    bool debug = false;
 
     const size_t nchan = state.geom->nx() * state.geom->ny();
     const size_t nsurf = state.geom->nsurfaces();
@@ -206,19 +202,15 @@ void TH::solve_surface_mass_flux(State& state) {
         planar(state);
 
         // calculate the residual vector f0
-        if (debug) std::cout << "\nResidual vector: at plane: " << state.node_plane << std::endl;
         for (size_t ns = 0; ns < nsurf; ++ns) {
             size_t i = state.geom->surfaces[ns].from_node;
             size_t j = state.geom->surfaces[ns].to_node;
-            size_t i_donor;
-            if (state.gk[ns][k_node] >= 0) i_donor = i;
-            else i_donor = j;
+            size_t i_donor = (state.gk[ns][k_node] >= 0) ? i : j;
 
             double rho_m = state.fluid->rho_m(state.X[i_donor][k]);
-            double deltaP = state.P[i][k] - state.P[j][k];
-            double Fns = 0.5 * K_ns * state.gk[ns][k_node] * std::abs(state.gk[ns][k_node]) / rho_m;
-            f0[ns] = -dz * aspect * (deltaP - Fns);
-            if (debug) std::cout << std::setw(13) << f0[ns] << std::endl;
+            double deltaP = state.P[i][k] - state.P[j][k]; // Eq. 56 from ANTS Theory
+            double Fns = 0.5 * K_ns * state.gk[ns][k_node] * std::abs(state.gk[ns][k_node]) / rho_m; // Eq. 57 from ANTS Theory
+            f0[ns] = -dz * aspect * (deltaP - Fns); // Eq. 55 from ANTS Theory
         }
 
         // calculate max residual
@@ -232,13 +224,12 @@ void TH::solve_surface_mass_flux(State& state) {
             break;
         }
 
-        if (debug) std::cout << "\nJacobian Matrix: at plane: " << state.node_plane << std::endl;
         for (size_t ns1 = 0; ns1 < nsurf; ++ns1) {
 
             State perturb_state = state; // reset state to reference prior to perturbation
 
             // perturb the mass flux at surface ns1
-            if (perturb_state.gk[ns1][k_node] > 0) perturb_state.gk[ns1][k_node] -= gtol;
+            if (perturb_state.gk[ns1][k_node] >= 0) perturb_state.gk[ns1][k_node] -= gtol;
             else perturb_state.gk[ns1][k_node] += gtol;
 
             // PLANAR_PERTURB solve
@@ -247,9 +238,7 @@ void TH::solve_surface_mass_flux(State& state) {
             for (size_t ns = 0; ns < nsurf; ++ns) {
                 size_t i = state.geom->surfaces[ns].from_node;
                 size_t j = state.geom->surfaces[ns].to_node;
-                size_t i_donor;
-                if (perturb_state.gk[ns][k_node] >= 0) i_donor = i;
-                else i_donor = j;
+                size_t i_donor = (perturb_state.gk[ns][k_node] >= 0) ? i : j;
 
                 double rho_m = perturb_state.fluid->rho_m(perturb_state.X[i_donor][k]);
                 double deltaP = perturb_state.P[i][k] - perturb_state.P[j][k];
@@ -257,19 +246,14 @@ void TH::solve_surface_mass_flux(State& state) {
                 f3[ns] = -dz * aspect * (deltaP - Fns);
 
                 dfdg[ns][ns1] = (f3[ns] - f0[ns]) / (perturb_state.gk[ns1][k_node] - state.gk[ns1][k_node]);
-                if (debug) std::cout << std::setw(13) << dfdg[ns][ns1];
             }
-            if (debug) std::cout << std::endl;
         }
 
         // solve the system of equations (overwrites f0 as solution vector)
         solve_linear_system(nsurf, dfdg, f0);
 
-        if (debug) std::cout << "\nLinear system solution: dG" << std::endl;
-
         // update mass fluxes from solution
         for (size_t ns = 0; ns < nsurf; ++ns) {
-            if (debug) std::cout << f0[ns] << std::endl;
             state.gk[ns][k_node] -= f0[ns];
         }
 
@@ -288,12 +272,7 @@ void TH::solve_flow_rates(State& state) {
         size_t ns = surf.idx;
         size_t i = surf.from_node;
         size_t j = surf.to_node;
-        size_t i_donor;
-        if (state.gk[ns][k_node] >= 0) {
-            i_donor = i;
-        } else {
-            i_donor = j;
-        }
+        size_t i_donor = (state.gk[ns][k_node] >= 0) ? i : j;
 
         double sl = state.gk[ns][k_node] * (1.0 - state.X[i_donor][k-1]) + state.G_l_tm[ns] + state.G_l_vd[ns];
         SS_l[i] += state.geom->gap_width() * sl;
@@ -342,12 +321,7 @@ void TH::solve_enthalpy(State& state) {
         size_t ns = surf.idx;
         size_t i = surf.from_node;
         size_t j = surf.to_node;
-        size_t i_donor;
-        if (state.gk[ns][k_node] >= 0) {
-            i_donor = i;
-        } else {
-            i_donor = j;
-        }
+        size_t i_donor = (state.gk[ns][k_node] >= 0) ? i : j;
 
         double h_l_donor = state.h_l[i_donor][k-1];
 
@@ -489,12 +463,8 @@ void TH::solve_pressure(State& state) {
         size_t ns = surf.idx;
         size_t i = surf.from_node;
         size_t j = surf.to_node;
-        size_t i_donor;
-        if (state.gk[ns][k_node] >= 0) {
-            i_donor = i;
-        } else {
-            i_donor = j;
-        }
+        size_t i_donor = (state.gk[ns][k_node] >= 0) ? i : j;
+
         CF_SS[i] += state.geom->gap_width() * state.gk[ns][k_node] * state.V_m(i_donor, k-1);
         CF_SS[j] -= state.geom->gap_width() * state.gk[ns][k_node] * state.V_m(i_donor, k-1);
 
