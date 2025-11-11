@@ -10,221 +10,259 @@
  * https://doi.org/10.1016/j.nucengdes.2023.112328
  */
 
-// void TH::planar(State& state) {
+void TH::planar(State& state, Vector1D mmix, Vector1D mdrift, Vector1D wbarms, Vector1D wbarvs, Vector1D whbars, Vector1D &wvms) {
 
-//     size_t k = state.surface_plane;
+    size_t k = state.surface_plane;
+    size_t k_node = state.node_plane;
 
-//     size_t nz = state.geom->naxial(); + 1;
+    size_t nz = state.geom->naxial();
 
-//     double dz = state.geom->dz();
-//     double A_f = state.geom->flow_area();
-//     double S_ij = state.geom->gap_width();
+    double dz = state.geom->dz();
+    double A_f = state.geom->flow_area();
+    double S_ij = state.geom->gap_width();
 
-//     double rho_f = state.fluid->rho_f();
-//     double rho_g = state.fluid->rho_g();
+    double rho_f = state.fluid->rho_f();
+    double rho_g = state.fluid->rho_g();
 
-//     for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
-//         state.alpha[ij][k] = state.alpha[ij][k - 1];
-//     }
+    Vector2D gv(state.geom->nchannels(), Vector1D(nz + 1, 0.0));   // axial momentum
+    Vector2D vmn(state.geom->nchannels(), Vector1D(nz + 1, 0.0));  // axial mixture velocity
 
-//     for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
+    for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
+        state.alpha[ij][k] = state.alpha[ij][k - 1];
+    }
 
-//         //=======================================================================
-//         // * solve for Wm(+), Hm{+), Xf(+), Wml(+), Wmg(+), Hl(+), Rhol(+)
-//         //=======================================================================
-//         FUNCV_ENTHALPY(wm(ij,k-1), wbarms(ij), hm(ij,k-1), whbars(ij), qz(ij,k), wmg(ij,k-1), wbarvs(ij), gam(ij,k),
-//         wml(ij,k), wmg(ij,k), wm(ij,k), hl(ij,k), hm(ij,k), xf(ij,k), rho_l[ij][k]);
-//         //=======================================================================
-//         // * solve for Alpha(+)
-//         //=======================================================================
-//         state.alpha[ij][k] = FUNCV_ALPHA(k, ij, wml(ij,k), wmg(ij,k), rho_l[ij][k]);
-//         //
-//         //   update mixture specific volume and velocity used in axial and transverse pressure drop
-//         //       spv   -  specific volume (1/Rhomix) used in the calculation of transverse mixture velocity, mixing and drift terms
-//         //       vmn   -  axial mixture velocity (Vmix) used in the calculation of axial and transverse momentum
-//         //
-//         spv[ij][k] = (1.0 - xf[ij][k])**2 / ((1.0 - state.alpha[ij][k]) * rho_l[ij][k]) + xf[ij][k]**2 / (state.alpha[ij][k] * rho_g + 1.0e-20);
-//         vmn[ij][k] = (wml[ij][k] + wmg[ij][k]) * spv[ij][k] / A_f;
-//         //
-//         //   axial momentum used in acceleration pressure drop calculation
-//         //
-//         gv[ij][k] = spv[ij][k] * ((wml[ij][k] + wmg[ij][k]) / A_f)**2;
+    for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
 
-//     }
+        //=======================================================================
+        // * solve for Wm(+), Hm{+), Xf(+), Wml(+), Wmg(+), Hl(+), Rhol(+)
+        //=======================================================================
+        FUNCV_ENTHALPY(state, state.W_m(ij, k-1), wbarms[ij], state.h_m(ij, k-1), whbars[ij], state.qz[ij][k], state.W_v[ij][k-1], wbarvs[ij], state.evap[ij][k],
+        state.W_l[ij][k], state.W_v[ij][k], state.W_m(ij, k), state.h_l[ij][k], state.h_m(ij, k), state.X[ij][k]);
+        //=======================================================================
+        // * solve for Alpha(+)
+        //=======================================================================
+        state.alpha[ij][k] = FUNCV_ALPHA(state, k, ij, state.W_l[ij][k], state.W_v[ij][k]);
+        //
+        //   update mixture specific volume and velocity used in axial and transverse pressure drop
+        //       spv   -  specific volume (1/Rhomix) used in the calculation of transverse mixture velocity, mixing and drift terms
+        //       vmn   -  axial mixture velocity (Vmix) used in the calculation of axial and transverse momentum
+        //
+        double spv = std::pow(1.0 - state.X[ij][k], 2) / ((1.0 - state.alpha[ij][k]) * state.fluid->rho(state.h_l[ij][k])) + std::pow(state.X[ij][k], 2) / (state.alpha[ij][k] * rho_g + 1.0e-20);
+        vmn[ij][k] = (state.W_l[ij][k] + state.W_v[ij][k]) * spv / A_f;
+        //
+        //   axial momentum used in acceleration pressure drop calculation
+        //
+        gv[ij][k] = spv * std::pow((state.W_l[ij][k] + state.W_v[ij][k]) / A_f, 2);
 
-//     double wvms=0.0;
-//     for (auto& surf : state.geom->surfaces) {
-//         size_t ns = surf.idx;
-//         size_t i = surf.from_node;
-//         size_t j = surf.to_node;
+    }
 
-//         size_t idonor;
-//         if (gk[ns][k] >= 0) {
-//             idonor = i;
-//         } else {
-//             idonor = j;
-//         }
-//         gkv[ns][k]= gk[ns][k] * vmn[idonor][k];
-//         wvms[i] += dz * S_ij * (gkv[ns][k] + mmix[ns] + mdrift[ns]);    // lateral momentum outflow from channel (+)
-//         wvms[j] -= dz * S_ij * (gkv[ns][k] + mmix[ns] + mdrift[ns]);    // lateral momentum inflow to channel (-)
-//     }
+    for (auto& surf : state.geom->surfaces) {
+        size_t ns = surf.idx;
+        size_t i = surf.from_node;
+        size_t j = surf.to_node;
 
-//     for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
-//         double deltap = DELTAP_AXIAL(wml(ij,k), wmg(ij,k), state.alpha[ij][k], rho_l[ij][k], xf(ij,k), gv(ij,k), gv(ij,k-1), wvms(ij), xz(k));
-//         prz(ij,k)= prz(ij,k-1) - deltap;
-//     }
-// }
+        size_t idonor;
+        if (state.gk[ns][k_node] >= 0) {
+            idonor = i;
+        } else {
+            idonor = j;
+        }
+        double gkv = state.gk[ns][k_node] * vmn[idonor][k];
+        wvms[i] += dz * S_ij * (gkv + mmix[ns] + mdrift[ns]);    // lateral momentum outflow from channel (+)
+        wvms[j] -= dz * S_ij * (gkv + mmix[ns] + mdrift[ns]);    // lateral momentum inflow to channel (-)
+    }
 
-// void TH::FUNCV_ENTHALPY( double wmm, double wbarms, double hmm, double whbars, double qz, double wmgm,
-//     double wbarvs, double gam, double wmlp, double wmgp, double wmp, double hlp, double hmp, double xfp, double rholp) {
+    for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
+        double deltap = DELTAP_AXIAL(state, k, ij, state.W_l[ij][k], state.W_v[ij][k], state.alpha[ij][k], state.X[ij][k], gv[ij][k], gv[ij][k-1], wvms[ij]);
+        state.P[ij][k]= state.P[ij][k-1] - deltap;
+    }
+}
 
-//     double wmg_local;
-//     double xf_local;
-//     double hl_local;
+void TH::FUNCV_ENTHALPY(State& state, double wmm, double wbarms, double hmm, double whbars, double qz, double wmgm,
+    double wbarvs, double gam, double wmlp, double wmgp, double wmp, double hlp, double hmp, double xfp) {
 
-//     double A_f = state.geom->flow_area();
-//     double A_wall = state.geom->heated_perimeter() * state.geom->dz();
+    double wmg_local;
+    double xf_local;
+    double hl_local;
 
-//     //=======================================================================
-//     // * solve for Wm(+) and Hm(+), this will be true regardless based on
-//     //   mass and energy balance
-//     //=======================================================================
-//     wmp = wmm - wbarms;
-//     hmp = (wmm * hmm + qz * A_wall - whbars) / wmp;
-//     //=======================================================================
-//     // * solve for Xf(+) and Hl(+), noting Hl(+) cannot exceed saturation
-//     //
-//     //   1) for Hl(+) < state.fluid->h_f(), calculate Xf(+) from Wv(+) and Gam(+)
-//     //   2) otherwise, Hl(+) = state.fluid->h_f() and Xf(+) calculated directly from Hm(+)
-//     //=======================================================================
-//     wmg_local = wmgm - wbarvs + gam * A_f;
-//     wmg_local = max(0.0, wmg_local);
-//     xf_local =  wmg_local / wmp;
-//     hl_local = (hmp - xf_local * state.fluid->h_g()) / (1.0 - xf_local);
-//     if (hl_local >= state.fluid->h_f()) {
-//         xf_local = (hmp - state.fluid->h_f()) / (state.fluid->h_g() - state.fluid->h_f());
-//         hlp = state.fluid->h_f();
-//     } else {
-//         xfp = xf_local;
-//         hlp = hl_local;
-//     }
-//     //=======================================================================
-//     // * given Xf(+), calculate updated Wl(+), Wg(+), and Rhol(+)
-//     //=======================================================================
-//     wmlp = (1.0 - xfp)*wmp;
-//     wmgp = xfp*wmp;
-//     rholp = state.fluid->rho(hlp);
-// }
+    double A_f = state.geom->flow_area();
+    double A_wall = state.geom->heated_perimeter() * state.geom->dz();
 
-// double TH::FUNCV_ALPHA(k, ij, wmlp, wmgp, rholp) {
-//     USE UTIL_MOD, only  : C0SC, VGJ
-//     USE FLUX_MODB, only : A_f, max_inners, rhog, eps, atol
-//     integer          ::               k
-//     integer          ::               ij
-//     double              wmlp
-//     double              wmgp
-//     double              rholp
-//     double              alphzp
-//     double              gl
-//     double              gv
-//     double              alphx
-//     double              fv0
-//     double              fv1
-//     double              dfda
-//     double              delta_a
-//     double              alphx1
-//     integer::                         its
-//     if (wmlp < eps) then
-//         write(*,*) 'k: ',k,' ij0: ',ij,' Negative liquid flow: ',wmlp,wmgp
-//         stop
-//     endif
-//     gl = wmlp/A_f
-//     gv = wmgp/A_f
-//     alphx = alphzp
-//     do its = 1, max_inners
-//         fv0 = alphx*C0SC(alphx)*(rhog/rholp*gl + gv) + alphx*rhog*VGJ(alphx) - gv
-//         if (abs(fv0) < eps) exit
-//         alphx1 = alphx + atol
-//         fv1 = alphx1*C0SC(alphx1)*(rhog/rholp*gl + gv) + alphx1*rhog*VGJ(alphx1) - gv
-//         dfda= (fv1 - fv0)/atol
-//         delta_a = -fv0/dfda
-//         delta_a =min(delta_a, 0.1d0)
-//         delta_a =max(delta_a,-0.1d0)
-//         alphx = alphx + delta_a
-//         alphx = min(alphx,(1.d0 - eps))
-//         alphx = max(alphx,0.d0)
-//     end do
-//     alphzp = alphx
-// }
+    //=======================================================================
+    // * solve for Wm(+) and Hm(+), this will be true regardless based on
+    //   mass and energy balance
+    //=======================================================================
+    wmp = wmm - wbarms;
+    hmp = (wmm * hmm + qz * A_wall - whbars) / wmp;
+    //=======================================================================
+    // * solve for Xf(+) and Hl(+), noting Hl(+) cannot exceed saturation
+    //
+    //   1) for Hl(+) < state.fluid->h_f(), calculate Xf(+) from Wv(+) and Gam(+)
+    //   2) otherwise, Hl(+) = state.fluid->h_f() and Xf(+) calculated directly from Hm(+)
+    //=======================================================================
+    wmg_local = wmgm - wbarvs + gam * A_f;
+    wmg_local = std::max(0.0, wmg_local);
+    xf_local =  wmg_local / wmp;
+    hl_local = (hmp - xf_local * state.fluid->h_g()) / (1.0 - xf_local);
+    if (hl_local >= state.fluid->h_f()) {
+        xf_local = (hmp - state.fluid->h_f()) / (state.fluid->h_g() - state.fluid->h_f());
+        hlp = state.fluid->h_f();
+    } else {
+        xfp = xf_local;
+        hlp = hl_local;
+    }
+    //=======================================================================
+    // * given Xf(+), calculate updated Wl(+), Wg(+), and Rhol(+)
+    //=======================================================================
+    wmlp = (1.0 - xfp)*wmp;
+    wmgp = xfp*wmp;
+}
 
-// double TH::DELTAP_AXIAL(wmlp, wmgp, alphzp, rholp, xfp, gvp, gvm, wvms, xzp) {
-//     USE FLUX_MODB, only   : rhog, vfff, viscf0, bstar, gamasq1, dzth, dh, A_f
-//     USE PROPS_MODB, only  : ggrav
-//     double wmlp;
-//     double wmgp;
-//     double alphzp;
-//     double rholp;
-//     double xfp;
-//     double gvp;
-//     double gvm;
-//     double wvms;
-//     double xzp;
-//     double deltap;
-//     double gbara;
-//     double b;
-//     double xfp9;
-//     double thomo;
-//     double tchsm;
-//     double re;
-//     double kbar;
-//     double dP1;
-//     double dP2;
-//     double dP3;
-//     double dP4;
-//     double dP0e;
-//     double dP0c;
-//     gbara=abs(wmlp+wmgp)/A_f
-//     //-----------------------------------------------------------------------
-//     // * calculate homogeneous 2-phase multiplier
-//     //-----------------------------------------------------------------------
-//     thomo=1.d0+xfp*(rholp/rhog - 1.d0)
-//     //-----------------------------------------------------------------------
-//     // * calculate Chisholm-Baroczy 2-phase multiplier
-//     //-----------------------------------------------------------------------
-//     if (xfp < 1.d0) then
-//         b=bstar/dsqrt(gbara)
-//         xfp9=xfp**.9d0
-//         tchsm=1.d0+gamasq1*(b*xfp9*(1.d0-xfp)**0.9d0+xfp9*xfp9)
-//     else
-//         tchsm=1.d0+gamasq1
-//     endif
-//     //-----------------------------------------------------------------------
-//     // * calculate Reynold's number using node average mass flux and
-//     //   saturated liquid dynamic viscosity; calculate effective loss
-//     //   coefficient
-//     //-----------------------------------------------------------------------
-//     re=gbara*dh/viscf0
-//     kbar=0.1892d0*re**(-0.2d0)*dzth/dh*tchsm + xzp*thomo
-//     //
-//     // ... dP1 is based on the NEW Wliq, Wvap, and Xf
+double TH::FUNCV_ALPHA(State& state, size_t k, size_t ij, double wmlp, double wmgp) {
 
-//     dP1= 0.5d0*kbar*gbara*gbara*vfff
-//     //
-//     // ... dP2 is the net momentum outflow based on the PREVIOUS outer iteration values of Gk*V, mixing momentum, and drift momentum
-//     //
-//     dP2= wvms/A_f
-//     //
-//     // ... dP3 is based on the NEW Hliq and Alpha
-//     //
-//     dP3= ggrav*dzth*((1.d0-alphzp)*rholp + alphzp*rhog)
-//     //
-//     // ... dP4 is based on the NEW G*V
-//     //
-//     dP4= gvp - gvm
-//     dP0e= 0.d0
-//     dP0c= 0.d0
-//     deltap= dP0e + dP0c + dP1 + dP2 + dP3 + dP4
-// }
+    const double atol = 1.0e-6;
+    double alphzp;
+    double gl;
+    double gv;
+    double alphx;
+    double fv0;
+    double fv1;
+    double dfda;
+    double delta_a;
+    double alphx1;
+
+    double A_f = state.geom->flow_area();
+    double D_h = state.geom->hydraulic_diameter();
+    double eps = 1.0e-20;
+    double rho_g = state.fluid->rho_g();
+    double rho_f = state.fluid->rho_f();
+    double rholp = state.fluid->rho(state.h_l[ij][k]);
+    double mu_l = state.fluid->mu(state.h_l[ij][k]);
+    double mu_v = state.fluid->mu_g();
+    double P = state.P[ij][k];
+    double sigma = state.fluid->sigma();
+
+    gl = wmlp / A_f;
+    gv = wmgp / A_f;
+    alphx = alphzp;
+    for (size_t its = 0; its < state.max_inner_iter; ++its) {
+
+        double Re_g = __Reynolds(gv, D_h, mu_v); // local vapor Reynolds number
+        double Re_f = __Reynolds(gl, D_h, mu_l); // local liquid Reynolds number
+        double Re;
+        if (Re_g > Re_f) {
+            Re = Re_g;
+        } else {
+            Re = Re_f;
+        }
+        double A1 = 1 / (1 + exp(-Re / 60000));
+        double B1 = std::min(0.8, A1); // from Zuber correlation
+        double B2 = 1.41;
+
+        auto C0SC = [B1, B2, P, rho_g, rho_f] (double alpha) {
+
+            // calculate distribution parameter, C_0
+            double C1 = 4.0 * P_crit * P_crit / (P * (P_crit - P)); // Eq. 24 from ANTS Theory
+            double L = (1.0 - std::exp(-C1 * alpha)) / (1.0 - std::exp(-C1)); // Eq. 23 from ANTS Theory
+            double K0 = B1 + (1 - B1) * pow(rho_g / rho_f, 0.25); // Eq. 25 from ANTS Theory
+            double r = (1 + 1.57 * (rho_g / rho_f)) / (1 - B1); // Eq. 26 from ANTS Theory
+            double C0 = L / (K0 + (1 - K0) * pow(alpha, r)); // Eq. 22 from ANTS Theory
+
+            return C0;
+        };
+
+        auto VGJ = [B1, B2, rho_g, rho_f, sigma] (double alpha) {
+
+            // calculate drift velocity, V_gj
+            double Vgj0 = B2 * pow(((rho_f - rho_g) * g * sigma) / (rho_f * rho_f), 0.25); // Eq. 28 from ANTS Theory
+            double Vgj = Vgj0 * pow(1.0 - alpha, B1); // Eq. 27 from ANTS Theory
+
+            return Vgj;
+        };
+
+        fv0 = alphx * C0SC(alphx) * (rho_g / rholp * gl + gv) + alphx * rho_g * VGJ(alphx) - gv;
+        if (std::abs(fv0) < eps) break;
+        alphx1 = alphx + atol;
+        fv1 = alphx1 * C0SC(alphx1) * (rho_g / rholp * gl + gv) + alphx1 * rho_g * VGJ(alphx1) - gv;
+        dfda = (fv1 - fv0) / atol;
+        delta_a = -fv0 / dfda;
+        delta_a = std::min(delta_a, 0.1);
+        delta_a = std::max(delta_a, -0.1);
+        alphx = alphx + delta_a;
+        alphx = std::min(alphx, (1.0 - eps));
+        alphx = std::max(alphx, 0.0);
+    }
+    alphzp = alphx;
+    return alphzp;
+}
+
+double TH::DELTAP_AXIAL(State& state, size_t k, size_t ij, double wmlp, double wmgp, double alphzp, double xfp, double gvp, double gvm, double wvms) {
+    double deltap;
+    double gbara;
+    double b;
+    double xfp9;
+    double thomo;
+    double tchsm;
+    double re;
+    double kbar;
+    double dP1;
+    double dP2;
+    double dP3;
+    double dP4;
+
+    double D_h = state.geom->hydraulic_diameter();
+    double A_f = state.geom->flow_area();
+    double dz = state.geom->dz();
+
+    double rho_g = state.fluid->rho_g();
+    double rholp = state.fluid->rho(state.h_l[0][k]);
+    double viscf0 = state.fluid->mu_f();
+    double vfff = state.fluid->v_f();
+
+    gbara = std::abs(wmlp + wmgp) / A_f;
+    //-----------------------------------------------------------------------
+    // * calculate homogeneous 2-phase multiplier
+    //-----------------------------------------------------------------------
+    thomo = 1.0 + xfp * (rholp / rho_g - 1.0);
+    //-----------------------------------------------------------------------
+    // * calculate Chisholm-Baroczy 2-phase multiplier
+    //-----------------------------------------------------------------------
+    double gamma = pow(state.fluid->rho_f() / state.fluid->rho_g(), 0.5) * pow(state.fluid->mu_g() / state.fluid->mu_f(), 0.2); // Eq. 33 from ANTS Theory
+    double gamasq1 = gamma * gamma;
+    if (xfp < 1.0) {
+        b = 55.0 / std::sqrt(gbara);
+        xfp9 = std::pow(xfp, 0.9);
+        tchsm = 1.0 + gamasq1 * (b * xfp9 * std::pow(1.0 - xfp, 0.9) + xfp9 * xfp9);
+    } else {
+        tchsm = 1.0 + gamasq1;
+    }
+    //-----------------------------------------------------------------------
+    // * calculate Reynold's number using node average mass flux and
+    //   saturated liquid dynamic viscosity; calculate effective loss
+    //   coefficient
+    //-----------------------------------------------------------------------
+    re = gbara * D_h / viscf0;
+    kbar = 0.1892 * std::pow(re, -0.2) * dz / D_h * tchsm;
+    //
+    // ... dP1 is based on the NEW Wliq, Wvap, and Xf
+
+    dP1 = 0.5 * kbar * gbara * gbara * vfff;
+    //
+    // ... dP2 is the net momentum outflow based on the PREVIOUS outer iteration values of Gk*V, mixing momentum, and drift momentum
+    //
+    dP2 = wvms / A_f;
+    //
+    // ... dP3 is based on the NEW Hliq and Alpha
+    //
+    dP3 = g * dz * ((1.0 - alphzp) * rholp + alphzp * rho_g);
+    //
+    // ... dP4 is based on the NEW G*V
+    //
+    dP4 = gvp - gvm;
+    deltap = dP1 + dP2 + dP3 + dP4;
+    std::cout << "DELTAP_AXIAL debug: ij=" << ij << ", k=" << k << ", deltap=" << deltap << std::endl;
+    return deltap;
+}
 
 void TH::solve_evaporation_term(State& state) {
     double D_h = state.geom->hydraulic_diameter(); // hydraulic diameter [m]
@@ -286,7 +324,7 @@ void TH::solve_mixing(State& state) {
     Vector2D rho_l = state.fluid->rho(state.h_l);
     Vector2D spv = state.fluid->mu(state.h_l);
     double rhof = state.fluid->rho_f();
-    double rhog = state.fluid->rho_g();
+    double rho_g = state.fluid->rho_g();
 
     double A_f = state.geom->flow_area(); // flow area [m^2]
     double D_rod = state.geom->heated_perimeter() / M_PI; // rod diameter [m], assuming square array
@@ -302,7 +340,7 @@ void TH::solve_mixing(State& state) {
         gbar0[ij] = (state.W_l[ij][k] + state.W_v[ij][k]) / A_f;
         reyn0[ij] = gbar0[ij] * D_h / viscmi;
 
-        double Xmm = (0.4 * std::sqrt(rhof * (rhof - rhog) * g * D_h) / gbar0[ij] + 0.6) / (std::sqrt(rhof / rhog) + 0.6);
+        double Xmm = (0.4 * std::sqrt(rhof * (rhof - rho_g) * g * D_h) / gbar0[ij] + 0.6) / (std::sqrt(rhof / rho_g) + 0.6);
         double X0m = 0.57 * std::pow(reyn0[ij], 0.0417);
         double Xfm = state.X[ij][k] / Xmm;
         if (state.X[ij][k] < Xmm) {
@@ -330,8 +368,8 @@ void TH::solve_mixing(State& state) {
         double alpha_j = state.alpha[j][k];
         double V_l_i = __liquid_velocity(state.W_l[i][k], A_f, alpha_i, rho_l_i);
         double V_l_j = __liquid_velocity(state.W_l[j][k], A_f, alpha_j, rho_l_j);
-        double V_v_i = __vapor_velocity(state.W_v[i][k], A_f, alpha_i, rhog);
-        double V_v_j = __vapor_velocity(state.W_v[j][k], A_f, alpha_j, rhog);
+        double V_v_i = __vapor_velocity(state.W_v[i][k], A_f, alpha_i, rho_g);
+        double V_v_j = __vapor_velocity(state.W_v[j][k], A_f, alpha_j, rho_g);
         double Re = __Reynolds(G_m_avg, D_h, state.fluid->mu(h_l_avg));
         double X_bar = __quality_avg(G_m_i, G_m_j);
         double tp_mult = 0.5 * (Theta[i] + Theta[j]);
@@ -390,107 +428,144 @@ void TH::solve_mixing(State& state) {
 
 void TH::solve_surface_mass_flux(State& state) {
 
+    bool debug = false;
+
     const size_t nchan = state.geom->nx() * state.geom->ny();
     const size_t nsurf = state.geom->nsurfaces();
-    const size_t k = state.node_plane;
-    const double gtol = 1e-6; // mass flux perturbation amount
+    const size_t k = state.surface_plane;
+    const size_t k_node = state.node_plane;
+    const double K_ns = 0.5; // gap loss coefficient
+    const double gtol = 1e-3; // mass flux perturbation amount
     const double dz = state.geom->dz();
     const double S_ij = state.geom->gap_width();
     const double aspect = state.geom->aspect_ratio();
 
     // outer loop for newton iteration convergence
+    for (size_t outer_iter = 0; outer_iter < 10; ++outer_iter) {
+        // mixture outflow, vapor outflow, and mixture energy outflow
+        Vector1D wbarms(nchan);
+        Vector1D wbarvs(nchan);
+        Vector1D whbars(nchan);
 
-    // mixture outflow, vapor outflow, and mixture energy outflow
-    Vector1D wbarms(nchan);
-    Vector1D wbarvs(nchan);
-    Vector1D whbars(nchan);
+        // vectors for solution variables
+        Vector2D &gk = state.gk; // total transverse mass flux
+        Vector2D hm(nchan, Vector1D(state.geom->naxial())); // mixture enthalpy
+        Vector1D glmix(nsurf);   // liq. turbulent mixing
+        Vector1D gvmix(nsurf);   // vap. turbulent mixing
+        Vector1D gldrift(nsurf); // liq. void drift
+        Vector1D gvdrift(nsurf); // vap. void drift
+        Vector1D hmix(nsurf);    // turbulent mixing energy transfer
+        Vector1D hdrift(nsurf);  // void drift energy transfer
+        Vector1D mmix(nsurf);    // mixture momentum (turbulent mixing)
+        Vector1D mdrift(nsurf);  // mixture momentum (void drift)
+        Vector1D wvms(nchan);    // mixture momentum (outflow)
 
-    // vectors for solution variables
-    Vector2D &gk = state.gk; // total transverse mass flux
-    Vector2D hm(nchan, Vector1D(state.geom->naxial())); // mixture enthalpy
-    Vector1D glmix(nsurf);   // liq. turbulent mixing
-    Vector1D gvmix(nsurf);   // vap. turbulent mixing
-    Vector1D gldrift(nsurf); // liq. void drift
-    Vector1D gvdrift(nsurf); // vap. void drift
-    Vector1D hmix(nsurf);    // turbulent mixing energy transfer
-    Vector1D hdrift(nsurf);  // void drift energy transfer
+        // Residual vectors and Jacobian Matrix
+        Vector1D f0(nsurf);
+        Vector1D f3(nsurf);
+        Vector2D dfdg(nsurf, Vector1D(nsurf));
 
-    // Vectors for temporary reference solution variables
-    Vector1D gk0(nsurf);
-
-    // Residual vectors and Jacobian Matrix
-    Vector1D f0(nsurf);
-    Vector1D f3(nsurf);
-    Vector2D dfdg(nsurf, Vector1D(nsurf));
-
-    // calculate wbarms, wbarvs, whbars for isurf, jsurf with donored properties
-    for (auto& surf : state.geom->surfaces) {
-        size_t ns = surf.idx;
-        size_t idonor;
-        if (gk[ns][k] > 0) idonor = surf.from_node;
-        else idonor = surf.to_node;
-        wbarms[surf.from_node] += dz * S_ij * (gk[ns][k] + glmix[ns] + gvmix[ns] + gldrift[ns] + gvdrift[ns]);
-        wbarms[surf.to_node]   -= dz * S_ij * (gk[ns][k] + glmix[ns] + gvmix[ns] + gldrift[ns] + gvdrift[ns]);
-        wbarvs[surf.from_node] += dz * S_ij * (gk[ns][k] + gvmix[ns] + gvdrift[ns]);
-        wbarvs[surf.to_node]   -= dz * S_ij * (gk[ns][k] + gvmix[ns] + gvdrift[ns]);
-        whbars[surf.from_node] += dz * S_ij * (gk[ns][k] * hm[idonor][k-1] + hmix[ns] + hdrift[ns]);
-        whbars[surf.to_node]   -= dz * S_ij * (gk[ns][k] * hm[idonor][k-1] + hmix[ns] + hdrift[ns]);
-    }
-
-    // some sort of boundary conditions loop ?
-
-    // PLANAR solve
-
-    // calculate the residual vector f0
-    for (size_t ns = 0; ns < nsurf; ++ns) {
-        f0[ns] = 0.0;
-    }
-
-    // store reference values prior to perturbations
-    for (size_t ns = 0; ns < nsurf; ++ns) {
-        gk0[ns] = gk[ns][k];
-    }
-
-    // check convergence and exit early if criteria is met
-
-    std::cout << "\nJacobian Matrix: at plane: " << state.surface_plane << std::endl;
-    for (size_t ns1 = 0; ns1 < nsurf; ++ns1) {
-
-        // reset reference values for all variables
-        for (size_t ns0 = 0; ns0 < nsurf; ++ns0) {
-            gk[ns0][k] = gk0[ns0];
-        }
-
-        // perturb the mass flux at surface ns1
-        if (gk[ns1][k] > 0) gk[ns1][k] -= gtol;
-        else gk[ns1][k] += gtol;
-
-        // PLANAR_PERTURB solve
-
-        for (size_t ns = 0; ns < nsurf; ++ns) {
+        // calculate wbarms, wbarvs, whbars for isurf, jsurf with donored properties
+        for (auto& surf : state.geom->surfaces) {
+            size_t ns = surf.idx;
             size_t idonor;
-            if (gk[ns][k] > 0) idonor = state.geom->surfaces[ns].from_node;
-            else idonor = state.geom->surfaces[ns].to_node;
-
-            f3[ns] = 0.0;
-            dfdg[ns][ns1] = (f3[ns] - f0[ns]) / (gk[ns1][k] - gk0[ns1]);
-            std::cout << std::setw(8) << dfdg[ns][ns1];
+            if (gk[ns][k_node] > 0) idonor = surf.from_node;
+            else idonor = surf.to_node;
+            wbarms[surf.from_node] += dz * S_ij * (gk[ns][k_node] + glmix[ns] + gvmix[ns] + gldrift[ns] + gvdrift[ns]);
+            wbarms[surf.to_node]   -= dz * S_ij * (gk[ns][k_node] + glmix[ns] + gvmix[ns] + gldrift[ns] + gvdrift[ns]);
+            wbarvs[surf.from_node] += dz * S_ij * (gk[ns][k_node] + gvmix[ns] + gvdrift[ns]);
+            wbarvs[surf.to_node]   -= dz * S_ij * (gk[ns][k_node] + gvmix[ns] + gvdrift[ns]);
+            whbars[surf.from_node] += dz * S_ij * (gk[ns][k_node] * hm[idonor][k_node-1] + hmix[ns] + hdrift[ns]);
+            whbars[surf.to_node]   -= dz * S_ij * (gk[ns][k_node] * hm[idonor][k_node-1] + hmix[ns] + hdrift[ns]);
         }
-        std::cout << std::endl;
-    }
 
-    // solve the system of equations (overwrites f0 as solution vector)
-    solve_linear_system(nsurf, dfdg, f0);
+        // some sort of boundary conditions loop ?
 
-    std::cout << "Linear system solution: dG" << std::endl;
+        // // DEBUG - print wvms vector
+        // std::cout << "\nwvms vector before planar solve: " << std::endl;
+        // for (size_t i = 0; i < nchan; ++i) {
+        //     std::cout << std::setw(13) << wvms[i] << std::endl;
+        // }
 
-    // update mass fluxes from solution
-    for (size_t ns = 0; ns < nsurf; ++ns) {
-        std::cout << f0[ns] << std::endl;
-        gk[ns][k] -= f0[ns];
-    }
+        // PLANAR solve
+        planar(state, mmix, mdrift, wbarms, wbarvs, whbars, wvms);
 
-    // } // end outer iteration loop
+        // // DEBUG - print wvms vector
+        // std::cout << "\nwvms vector after planar solve: " << std::endl;
+        // for (size_t i = 0; i < nchan; ++i) {
+        //     std::cout << std::setw(13) << wvms[i] << std::endl;
+        // }
+
+        // calculate the residual vector f0
+        if (debug) std::cout << "\nResidual vector: at plane: " << state.node_plane << std::endl;
+        for (size_t ns = 0; ns < nsurf; ++ns) {
+            size_t i = state.geom->surfaces[ns].from_node;
+            size_t j = state.geom->surfaces[ns].to_node;
+            size_t i_donor;
+            if (state.gk[ns][k_node] >= 0) i_donor = i;
+            else i_donor = j;
+
+            double rho_m = state.fluid->rho_m(state.X[i_donor][k]);
+            double deltaP = state.P[i][k] - state.P[j][k];
+            double Fns = 0.5 * K_ns * state.gk[ns][k_node] * std::abs(state.gk[ns][k_node]) / rho_m;
+            f0[ns] = -dz * aspect * (deltaP - Fns);
+            if (debug) std::cout << std::setw(13) << f0[ns] << std::endl;
+        }
+
+        // check convergence and exit early if criteria is met
+
+        // store reference values prior to perturbations
+        
+
+        if (debug) std::cout << "\nJacobian Matrix: at plane: " << state.node_plane << std::endl;
+        for (size_t ns1 = 0; ns1 < nsurf; ++ns1) {
+
+            State perturb_state = state; // reset state to reference prior to perturbation
+
+            // perturb the mass flux at surface ns1
+            if (perturb_state.gk[ns1][k_node] > 0) perturb_state.gk[ns1][k_node] -= gtol;
+            else perturb_state.gk[ns1][k_node] += gtol;
+
+            // PLANAR_PERTURB solve
+            planar(perturb_state, mmix, mdrift, wbarms, wbarvs, whbars, wvms);
+
+            for (size_t ns = 0; ns < nsurf; ++ns) {
+                size_t i = state.geom->surfaces[ns].from_node;
+                size_t j = state.geom->surfaces[ns].to_node;
+                size_t i_donor;
+                if (perturb_state.gk[ns][k_node] >= 0) i_donor = i;
+                else i_donor = j;
+
+                double rho_m = perturb_state.fluid->rho_m(perturb_state.X[i_donor][k]);
+                double deltaP = perturb_state.P[i][k] - perturb_state.P[j][k];
+                double Fns = 0.5 * K_ns * perturb_state.gk[ns][k_node] * std::abs(perturb_state.gk[ns][k_node]) / rho_m;
+                f3[ns] = -dz * aspect * (deltaP - Fns);
+
+                dfdg[ns][ns1] = (f3[ns] - f0[ns]) / (perturb_state.gk[ns1][k_node] - state.gk[ns1][k_node]);
+                if (debug) std::cout << std::setw(13) << dfdg[ns][ns1];
+            }
+            if (debug) std::cout << std::endl;
+        }
+
+        // solve the system of equations (overwrites f0 as solution vector)
+        solve_linear_system(nsurf, dfdg, f0);
+
+        if (debug) std::cout << "\nLinear system solution: dG" << std::endl;
+
+        // update mass fluxes from solution
+        for (size_t ns = 0; ns < nsurf; ++ns) {
+            if (debug) std::cout << f0[ns] << std::endl;
+            state.gk[ns][k_node] -= 0.1 * f0[ns];
+        }
+
+        // print out max residual
+        double max_res = 0.0;
+        for (size_t ns = 0; ns < nsurf; ++ns) {
+            max_res = std::max(max_res, std::abs(f0[ns]));
+        }
+        // std::cout << "Residual from iter " << outer_iter + 1 << ": " << max_res << std::endl;
+
+    } // end outer iteration loop
 }
 
 void TH::solve_flow_rates(State& state) {
@@ -505,23 +580,36 @@ void TH::solve_flow_rates(State& state) {
         size_t ns = surf.idx;
         size_t i = surf.from_node;
         size_t j = surf.to_node;
-
-        SS_l[i] += state.geom->gap_width() * (state.G_l_tm[ns] + state.G_l_vd[ns]);
-        SS_l[j] -= state.geom->gap_width() * (state.G_l_tm[ns] + state.G_l_vd[ns]);
-
-        SS_v[i] += state.geom->gap_width() * (state.G_v_tm[ns] + state.G_v_vd[ns]);
-        SS_v[j] -= state.geom->gap_width() * (state.G_v_tm[ns] + state.G_v_vd[ns]);
-    }
-
-    if (k_node == 3) {
-        for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-            std::cout << "Channel " << i << " SS_l: " << SS_l[i] << " SS_v: " << SS_v[i] << std::endl;
+        size_t i_donor;
+        if (state.gk[ns][k_node] >= 0) {
+            i_donor = i;
+        } else {
+            i_donor = j;
         }
+
+        SS_l[i] += state.geom->gap_width() * (state.gk[ns][k_node] * (1.0 - state.X[i_donor][k]));
+        SS_l[j] -= state.geom->gap_width() * (state.gk[ns][k_node] * (1.0 - state.X[i_donor][k]));
+
+        SS_v[i] += state.geom->gap_width() * (state.gk[ns][k_node] * state.X[i_donor][k]);
+        SS_v[j] -= state.geom->gap_width() * (state.gk[ns][k_node] * state.X[i_donor][k]);
     }
+
+    // std::cout << "\nSource terms SS_l at plane " << k_node << ": " << std::endl;
+    // for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+    //     std::cout << std::setw(13) << SS_l[i];
+    //     if ((i + 1) % state.geom->nx() == 0) std::cout << std::endl;
+    // }
+
+    // std::cout << "\nSource terms SS_v at plane " << k_node << ": " << std::endl;
+    // for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+    //     std::cout << std::setw(13) << SS_v[i];
+    //     if ((i + 1) % state.geom->nx() == 0) std::cout << std::endl;
+    // }
 
     for (size_t i = 0; i < state.geom->nchannels(); ++i) {
 
         state.W_l[i][k] = state.W_l[i][k-1] - state.geom->dz() * (state.evap[i][k_node] + SS_l[i]); // Eq. 61 from ANTS Theory
+        state.W_l[i][k] = std::max(state.W_l[i][k], 0.0); // prevent negative liquid flow rate
 
         // throw error if liquid flow rate becomes negative and add debug info
         if (state.W_l[i][k] < 0) {
@@ -533,6 +621,7 @@ void TH::solve_flow_rates(State& state) {
         }
 
         state.W_v[i][k] = state.W_v[i][k-1] + state.geom->dz() * (state.evap[i][k_node] - SS_v[i]); // Eq. 62 from ANTS Theory
+        state.W_v[i][k] = std::max(state.W_v[i][k], 0.0); // prevent negative vapor flow rate
 
         // throw error if vapor flow rate becomes negative and add debug info
         if (state.W_v[i][k] < 0) {
@@ -543,35 +632,6 @@ void TH::solve_flow_rates(State& state) {
                 "SS_v: " + std::to_string(SS_v[i]) + "\n");
         }
     }
-
-    // std::cout << " ----- PLANE " << k << " ----- " << std::endl;
-
-    // std::cout << "Liq. Mass Flow Rates:" << std::endl;
-    // for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-    //     std::cout << std::setw(12) << state.W_l[i][k];
-    //     if ((i + 1) % 3 == 0) {
-    //         std::cout << std::endl;
-    //     }
-    // }
-    // std::cout << std::endl;
-
-    // std::cout << "Vap. Mass Flow Rates:" << std::endl;
-    // for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-    //     std::cout << std::setw(12) << state.W_v[i][k];
-    //     if ((i + 1) % 3 == 0) {
-    //         std::cout << std::endl;
-    //     }
-    // }
-    // std::cout << std::endl;
-
-    // std::cout << "Total Mass Flow Rates:" << std::endl;
-    // for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-    //     std::cout << std::setw(12) << (state.W_l[i][k] + state.W_v[i][k]);
-    //     if ((i + 1) % 3 == 0) {
-    //         std::cout << std::endl;
-    //     }
-    // }
-    // std::cout << std::endl;
 }
 
 void TH::solve_enthalpy(State& state) {
@@ -584,9 +644,17 @@ void TH::solve_enthalpy(State& state) {
         size_t ns = surf.idx;
         size_t i = surf.from_node;
         size_t j = surf.to_node;
+        size_t i_donor;
+        if (state.gk[ns][k_node] >= 0) {
+            i_donor = i;
+        } else {
+            i_donor = j;
+        }
 
-        SS_m[i] += state.geom->gap_width() * (state.Q_m_tm[ns] + state.Q_m_vd[ns]);
-        SS_m[j] -= state.geom->gap_width() * (state.Q_m_tm[ns] + state.Q_m_vd[ns]);
+        double h_l_donor = state.h_l[i_donor][k-1];
+
+        SS_m[i] += state.geom->gap_width() * (state.gk[ns][k_node] * h_l_donor + state.Q_m_tm[ns] + state.Q_m_vd[ns]);
+        SS_m[j] -= state.geom->gap_width() * (state.gk[ns][k_node] * h_l_donor + state.Q_m_tm[ns] + state.Q_m_vd[ns]);
     }
 
     for (size_t i = 0; i < state.geom->nchannels(); ++i) {
@@ -639,7 +707,7 @@ void TH::solve_void_fraction(State& state) {
         double B1 = std::min(0.8, A1); // from Zuber correlation
         double B2 = 1.41;
 
-        auto f = [A1, B1, B2, P, rho_g, rho_f, rho_l, sigma, Gv, Gl] (double alpha) {
+        auto f = [B1, B2, P, rho_g, rho_f, rho_l, sigma, Gv, Gl] (double alpha) {
 
             // calculate distribution parameter, C_0
             double C1 = 4.0 * P_crit * P_crit / (P * (P_crit - P)); // Eq. 24 from ANTS Theory
@@ -716,12 +784,21 @@ void TH::solve_pressure(State& state) {
     size_t k_node = state.node_plane;
 
     // loop over transverse surfaces to add source terms to pressure drops
+    Vector1D CF_SS(state.geom->nchannels()); // sum of cross-flow momentum exchange terms [Pa]
     Vector1D TM_SS(state.geom->nchannels()); // sum of turbulent mixing liquid momentum exchange terms [Pa]
     Vector1D VD_SS(state.geom->nchannels()); // sum of void drift liquid momentum exchange terms [Pa]
     for (auto& surf : state.geom->surfaces) {
         size_t ns = surf.idx;
         size_t i = surf.from_node;
         size_t j = surf.to_node;
+        size_t i_donor;
+        if (state.gk[ns][k_node] >= 0) {
+            i_donor = i;
+        } else {
+            i_donor = j;
+        }
+        CF_SS[i] += state.geom->gap_width() * state.gk[ns][k_node] * state.V_m(i_donor, k-1);
+        CF_SS[j] -= state.geom->gap_width() * state.gk[ns][k_node] * state.V_m(i_donor, k-1);
 
         TM_SS[i] += state.geom->gap_width() * state.M_m_tm[ns];
         TM_SS[j] -= state.geom->gap_width() * state.M_m_tm[ns];
@@ -806,7 +883,7 @@ void TH::solve_pressure(State& state) {
         double dP_grav = rho[i][k] * g * dz;
 
         // ----- momentum exchange due to pressure-directed crossflow, turbulent mixing, and void drift -----
-        double dP_CF = 0.0; // implement to complete Issue #73
+        double dP_CF = dz / A_f * CF_SS[i];
         double dP_TM = dz / A_f * TM_SS[i];
         double dP_VD = dz / A_f * VD_SS[i];
         double dP_momexch = dP_CF + dP_TM + dP_VD;

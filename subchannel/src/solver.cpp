@@ -38,6 +38,7 @@ Solver::Solver(
     Vector::resize(state.Q_m_vd, nsurf);
     Vector::resize(state.M_m_vd, nsurf);
     Vector::resize(state.gk, nsurf, state.geom->naxial());
+    Vector::resize(state.gkv, nsurf, state.geom->naxial());
 
     // set inlet boundary conditions for surface quantities (0 to naxial)
     for (size_t k = 0; k < nz; ++k) {
@@ -71,6 +72,9 @@ Vector2D Solver::get_evaporation_rates() const {
 void Solver::solve(size_t max_outer_iter, size_t max_inner_iter) {
 
     state.surface_plane = 0; // start at inlet axial plane
+    state.node_plane = 0;    // start at first node axial plane
+    state.max_outer_iter = max_outer_iter;
+    state.max_inner_iter = max_inner_iter;
 
     // loop over axial planes
     for (size_t k = 1; k < state.geom->naxial() + 1; ++k) {
@@ -80,24 +84,72 @@ void Solver::solve(size_t max_outer_iter, size_t max_inner_iter) {
 
         // closure relations
         TH::solve_evaporation_term(state);
-        TH::solve_mixing(state);
+        // TH::solve_mixing(state);
 
         // closure relations use lagging edge values, so update after solving them
         state.surface_plane = k;
 
-        // outer iteration (solution for full axial plane)
-        for (size_t outer_iter = 0; outer_iter < max_outer_iter; ++outer_iter) {
-
-            // TH::solve_surface_mass_flux(state);
-
-            // inner iteration
-            for (size_t inner_iter = 0; inner_iter < max_inner_iter; ++inner_iter) {
-                TH::solve_flow_rates(state);
-                TH::solve_enthalpy(state);
-                TH::solve_void_fraction(state);
-                TH::solve_quality(state);
-                TH::solve_pressure(state);
+        // set mass fluxes to the previous plane as a good initial guess
+        if (state.node_plane > 0) {
+            for (size_t ns = 0; ns < state.geom->nsurfaces(); ++ns) {
+                state.gk[ns][state.node_plane] = state.gk[ns][state.node_plane - 1];
             }
         }
+
+        std::cout << "\nPLANE " << k << std::endl;
+
+        TH::solve_surface_mass_flux(state);
+
+        // std::cout << "Gk after solve: " << std::endl;
+        // for (size_t ns = 0; ns < state.geom->nsurfaces(); ++ns) {
+        //     std::cout << "ns = " << ns << ": " << state.gk[ns][state.node_plane] << std::endl;
+        // }
+        // std::cout << std::endl;
+
+        // inner iteration
+        // for (size_t inner_iter = 0; inner_iter < max_inner_iter; ++inner_iter) {
+        //     TH::solve_flow_rates(state);
+        //     TH::solve_enthalpy(state);
+        //     TH::solve_void_fraction(state);
+        //     TH::solve_quality(state);
+        //     TH::solve_pressure(state);
+        // }
+
+        std::cout << "\nPressure:" << std::endl;
+        for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+            std::cout << std::setw(14) << state.P[i][k] / 1e6 << " ";
+            if ((i + 1) % state.geom->nx() == 0) std::cout << std::endl;
+        }
+        std::cout << std::endl;
+
+        std::cout << "\nLiquid Flow Rate:" << std::endl;
+        for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+            std::cout << std::setw(14) << state.W_l[i][k] << " ";
+            if ((i + 1) % state.geom->nx() == 0) std::cout << std::endl;
+        }
+        std::cout << std::endl;
+
+        std::cout << "\nVapor Flow Rate:" << std::endl;
+        for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+            std::cout << std::setw(14) << state.W_v[i][k] << " ";
+            if ((i + 1) % state.geom->nx() == 0) std::cout << std::endl;
+        }
+        std::cout << std::endl;
+
+        std::cout << "\nAlpha:" << std::endl;
+        for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+            std::cout << std::setw(14) << state.alpha[i][k] << " ";
+            if ((i + 1) % state.geom->nx() == 0) std::cout << std::endl;
+        }
+        std::cout << std::endl;
+
+        std::cout << "\nQuality:" << std::endl;
+        for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+            std::cout << std::setw(14) << state.X[i][k] << " ";
+            if ((i + 1) % state.geom->nx() == 0) std::cout << std::endl;
+        }
+        std::cout << std::endl;
+
+        if (state.node_plane == 2) return;
     }
 }

@@ -5,6 +5,8 @@
 struct State {
     size_t surface_plane = 0;       // current surface axial plane being solved
     size_t node_plane = 0;          // current node axial plane being solved
+    size_t max_outer_iter;          // maximum outer iterations
+    size_t max_inner_iter;          // maximum inner iterations
     std::shared_ptr<Water> fluid;   // reference to fluid properties
     std::shared_ptr<Geometry> geom; // reference to geometry
 
@@ -29,7 +31,9 @@ struct State {
     Vector1D M_m_vd;    // void drift momentum transfer [Pa]
 
     Vector2D gk;        // surface mass fluxes [kg/m/s]
-        // -------------------------
+    Vector2D gkv;       // surface momentum fluxes [Pa]
+
+    // -------------------------
     // Constructors
     // -------------------------
     State() = default;
@@ -38,6 +42,8 @@ struct State {
     State(const State& other)
         : surface_plane(other.surface_plane),
           node_plane(other.node_plane),
+          max_outer_iter(other.max_outer_iter),
+          max_inner_iter(other.max_inner_iter),
           fluid(other.fluid), // shared_ptr copy — shares ownership
           geom(other.geom),   // shared_ptr copy — shares ownership
           h_l(other.h_l),
@@ -64,6 +70,8 @@ struct State {
         if (this != &other) {
             surface_plane = other.surface_plane;
             node_plane = other.node_plane;
+            max_outer_iter = other.max_outer_iter;
+            max_inner_iter = other.max_inner_iter;
             fluid = other.fluid;
             geom = other.geom;
             h_l = other.h_l;
