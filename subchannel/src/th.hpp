@@ -15,11 +15,7 @@
 
 namespace TH {
 
-void planar(State& state, Vector1D mmix, Vector1D mdrift, Vector1D wbarms, Vector1D wbarvs, Vector1D whbars, Vector1D &wvms);
-void FUNCV_ENTHALPY(State& state, double wmm, double wbarms, double hmm, double whbars, double qz, double wmgm,
-    double wbarvs, double gam, double wmlp, double wmgp, double wmp, double hlp, double hmp, double xfp);
-double FUNCV_ALPHA(State& state, size_t k, size_t ij, double wmlp, double wmgp);
-double DELTAP_AXIAL(State& state, size_t k, size_t ij, double wmlp, double wmgp, double alphzp, double xfp, double gvp, double gvm, double wvms);
+void planar(State& state);
 void solve_evaporation_term(State& state);
 void solve_mixing(State& state);
 void solve_surface_mass_flux(State& state);

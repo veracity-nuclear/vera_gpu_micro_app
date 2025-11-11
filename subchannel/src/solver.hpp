@@ -25,7 +25,8 @@ public:
 
     State state;
 
-    void solve(size_t max_outer_iter = 10, size_t max_inner_iter = 10);
+    void solve(size_t max_outer_iter = 10, size_t max_inner_iter = 10, bool debug = false);
+    void print_state_at_plane(size_t k);
 
     Vector2D get_surface_liquid_enthalpies() const { return state.h_l; }
     Vector2D get_surface_temperatures() const { return state.fluid->T(state.h_l); }

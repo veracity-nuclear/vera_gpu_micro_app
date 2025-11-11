@@ -43,8 +43,8 @@ TEST(SubchannelTest, 3x3Channels) {
         inlet_mass_flow
     );
 
-    size_t outer_iter = 1;
-    size_t inner_iter = 1;
+    size_t outer_iter = 100;
+    size_t inner_iter = 100;
     solver.solve(outer_iter, inner_iter);
 
     Vector2D h = solver.get_surface_liquid_enthalpies();
@@ -97,75 +97,75 @@ TEST(SubchannelTest, 3x3Channels) {
     }
     std::cout << std::endl;
 
-    // // print exit plane data to compare to ANTS Theory results
-    // std::cout << "Exit Void Distribution" << std::endl;
-    // for (size_t j = 0; j < N; ++j) {
-    //     for (size_t i = 0; i < N; ++i) {
-    //         size_t k = naxial;
-    //         std::cout << std::setw(12) << std::setprecision(3) << alpha[i + j*N][k] << " ";
-    //     }
-    //     std::cout << std::endl;
-    // }
-    // std::cout << std::endl;
+    // print exit plane data to compare to ANTS Theory results
+    std::cout << "Exit Void Distribution" << std::endl;
+    for (size_t j = 0; j < N; ++j) {
+        for (size_t i = 0; i < N; ++i) {
+            size_t k = naxial;
+            std::cout << std::setw(12) << std::setprecision(3) << alpha[i + j*N][k] << " ";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
 
-    // Vector2D ants_void({
-    //     {0.808745, 0.785275, 0.808745},
-    //     {0.785275, 0.695971, 0.785275},
-    //     {0.808745, 0.785275, 0.808745}
-    // });
+    Vector2D ants_void({
+        {0.808745, 0.785275, 0.808745},
+        {0.785275, 0.695971, 0.785275},
+        {0.808745, 0.785275, 0.808745}
+    });
 
-    // std::cout << "Exit Void Distribution Error vs. ANTS" << std::endl;
-    // double max_void_error = 0.0;
-    // for (size_t j = 0; j < N; ++j) {
-    //     for (size_t i = 0; i < N; ++i) {
-    //         size_t k = naxial;
-    //         double void_error = std::abs((alpha[i + j*N][k] - ants_void[i][j]) / ants_void[i][j]);
-    //         if (void_error > max_void_error) {
-    //             max_void_error = void_error;
-    //         }
-    //         std::cout << std::setw(12) << std::setprecision(3) << (alpha[i + j*N][k] - ants_void[i][j]) << " ";
-    //     }
-    //     std::cout << std::endl;
-    // }
-    // std::cout << std::endl;
+    std::cout << "Exit Void Distribution Error vs. ANTS" << std::endl;
+    double max_void_error = 0.0;
+    for (size_t j = 0; j < N; ++j) {
+        for (size_t i = 0; i < N; ++i) {
+            size_t k = naxial;
+            double void_error = std::abs((alpha[i + j*N][k] - ants_void[i][j]) / ants_void[i][j]);
+            if (void_error > max_void_error) {
+                max_void_error = void_error;
+            }
+            std::cout << std::setw(12) << std::setprecision(3) << (alpha[i + j*N][k] - ants_void[i][j]) << " ";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
 
-    // std::cout << "Maximum Void Error: " << std::setw(8) << std::setprecision(6) << max_void_error * 100.0 << " %" << std::endl;
-    // std::cout << std::endl;
+    std::cout << "Maximum Void Error: " << std::setw(8) << std::setprecision(6) << max_void_error * 100.0 << " %" << std::endl;
+    std::cout << std::endl;
 
-    // // print exit plane data to compare to ANTS Theory results
-    // std::cout << "Pressure Drop Distribution (kPa)" << std::endl;
-    // for (size_t j = 0; j < N; ++j) {
-    //     for (size_t i = 0; i < N; ++i) {
-    //         size_t k = naxial;
-    //         std::cout << std::setw(12) << std::setprecision(6) << (P[i + j*N][0] - P[i + j*N][k]) / 1000.0 << " ";
-    //     }
-    //     std::cout << std::endl;
-    // }
-    // std::cout << std::endl;
+    // print exit plane data to compare to ANTS Theory results
+    std::cout << "Pressure Drop Distribution (kPa)" << std::endl;
+    for (size_t j = 0; j < N; ++j) {
+        for (size_t i = 0; i < N; ++i) {
+            size_t k = naxial;
+            std::cout << std::setw(12) << std::setprecision(6) << (P[i + j*N][0] - P[i + j*N][k]) / 1000.0 << " ";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
 
-    // Vector2D ants_pressure_drop({
-    //     {81.685284, 81.685286, 81.685284},
-    //     {81.685286, 81.685310, 81.685286},
-    //     {81.685284, 81.685286, 81.685284}
-    // });
+    Vector2D ants_pressure_drop({
+        {81.685284, 81.685286, 81.685284},
+        {81.685286, 81.685310, 81.685286},
+        {81.685284, 81.685286, 81.685284}
+    });
 
-    // std::cout << "Pressure Drop Distribution Error vs. ANTS (kPa)" << std::endl;
-    // double max_pressure_drop_error = 0.0;
-    // for (size_t j = 0; j < N; ++j) {
-    //     for (size_t i = 0; i < N; ++i) {
-    //         size_t k = naxial;
-    //         double pressure_drop_error = std::abs((P[i + j*N][0] - P[i + j*N][k]) / 1000.0 - ants_pressure_drop[i][j]) / ants_pressure_drop[i][j];
-    //         if (pressure_drop_error > max_pressure_drop_error) {
-    //             max_pressure_drop_error = pressure_drop_error;
-    //         }
-    //         std::cout << std::setw(12) << std::setprecision(6) << ((P[i + j*N][0] - P[i + j*N][k])) / 1000.0 - ants_pressure_drop[i][j] << " ";
-    //     }
-    //     std::cout << std::endl;
-    // }
-    // std::cout << std::endl;
+    std::cout << "Pressure Drop Distribution Error vs. ANTS (kPa)" << std::endl;
+    double max_pressure_drop_error = 0.0;
+    for (size_t j = 0; j < N; ++j) {
+        for (size_t i = 0; i < N; ++i) {
+            size_t k = naxial;
+            double pressure_drop_error = std::abs((P[i + j*N][0] - P[i + j*N][k]) / 1000.0 - ants_pressure_drop[i][j]) / ants_pressure_drop[i][j];
+            if (pressure_drop_error > max_pressure_drop_error) {
+                max_pressure_drop_error = pressure_drop_error;
+            }
+            std::cout << std::setw(12) << std::setprecision(6) << ((P[i + j*N][0] - P[i + j*N][k])) / 1000.0 - ants_pressure_drop[i][j] << " ";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
 
-    // std::cout << "Maximum Pressure Drop Error: " << std::setw(8) << std::setprecision(6) << max_pressure_drop_error * 100.0 << " %" << std::endl;
-    // std::cout << std::endl;
+    std::cout << "Maximum Pressure Drop Error: " << std::setw(8) << std::setprecision(6) << max_pressure_drop_error * 100.0 << " %" << std::endl;
+    std::cout << std::endl;
 }
 
 int main(int argc, char **argv) {

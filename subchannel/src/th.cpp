@@ -10,258 +10,12 @@
  * https://doi.org/10.1016/j.nucengdes.2023.112328
  */
 
-void TH::planar(State& state, Vector1D mmix, Vector1D mdrift, Vector1D wbarms, Vector1D wbarvs, Vector1D whbars, Vector1D &wvms) {
-
-    size_t k = state.surface_plane;
-    size_t k_node = state.node_plane;
-
-    size_t nz = state.geom->naxial();
-
-    double dz = state.geom->dz();
-    double A_f = state.geom->flow_area();
-    double S_ij = state.geom->gap_width();
-
-    double rho_f = state.fluid->rho_f();
-    double rho_g = state.fluid->rho_g();
-
-    Vector2D gv(state.geom->nchannels(), Vector1D(nz + 1, 0.0));   // axial momentum
-    Vector2D vmn(state.geom->nchannels(), Vector1D(nz + 1, 0.0));  // axial mixture velocity
-
-    for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
-        state.alpha[ij][k] = state.alpha[ij][k - 1];
-    }
-
-    for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
-
-        //=======================================================================
-        // * solve for Wm(+), Hm{+), Xf(+), Wml(+), Wmg(+), Hl(+), Rhol(+)
-        //=======================================================================
-        FUNCV_ENTHALPY(state, state.W_m(ij, k-1), wbarms[ij], state.h_m(ij, k-1), whbars[ij], state.qz[ij][k], state.W_v[ij][k-1], wbarvs[ij], state.evap[ij][k],
-        state.W_l[ij][k], state.W_v[ij][k], state.W_m(ij, k), state.h_l[ij][k], state.h_m(ij, k), state.X[ij][k]);
-        //=======================================================================
-        // * solve for Alpha(+)
-        //=======================================================================
-        state.alpha[ij][k] = FUNCV_ALPHA(state, k, ij, state.W_l[ij][k], state.W_v[ij][k]);
-        //
-        //   update mixture specific volume and velocity used in axial and transverse pressure drop
-        //       spv   -  specific volume (1/Rhomix) used in the calculation of transverse mixture velocity, mixing and drift terms
-        //       vmn   -  axial mixture velocity (Vmix) used in the calculation of axial and transverse momentum
-        //
-        double spv = std::pow(1.0 - state.X[ij][k], 2) / ((1.0 - state.alpha[ij][k]) * state.fluid->rho(state.h_l[ij][k])) + std::pow(state.X[ij][k], 2) / (state.alpha[ij][k] * rho_g + 1.0e-20);
-        vmn[ij][k] = (state.W_l[ij][k] + state.W_v[ij][k]) * spv / A_f;
-        //
-        //   axial momentum used in acceleration pressure drop calculation
-        //
-        gv[ij][k] = spv * std::pow((state.W_l[ij][k] + state.W_v[ij][k]) / A_f, 2);
-
-    }
-
-    for (auto& surf : state.geom->surfaces) {
-        size_t ns = surf.idx;
-        size_t i = surf.from_node;
-        size_t j = surf.to_node;
-
-        size_t idonor;
-        if (state.gk[ns][k_node] >= 0) {
-            idonor = i;
-        } else {
-            idonor = j;
-        }
-        double gkv = state.gk[ns][k_node] * vmn[idonor][k];
-        wvms[i] += dz * S_ij * (gkv + mmix[ns] + mdrift[ns]);    // lateral momentum outflow from channel (+)
-        wvms[j] -= dz * S_ij * (gkv + mmix[ns] + mdrift[ns]);    // lateral momentum inflow to channel (-)
-    }
-
-    for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
-        double deltap = DELTAP_AXIAL(state, k, ij, state.W_l[ij][k], state.W_v[ij][k], state.alpha[ij][k], state.X[ij][k], gv[ij][k], gv[ij][k-1], wvms[ij]);
-        state.P[ij][k]= state.P[ij][k-1] - deltap;
-    }
-}
-
-void TH::FUNCV_ENTHALPY(State& state, double wmm, double wbarms, double hmm, double whbars, double qz, double wmgm,
-    double wbarvs, double gam, double wmlp, double wmgp, double wmp, double hlp, double hmp, double xfp) {
-
-    double wmg_local;
-    double xf_local;
-    double hl_local;
-
-    double A_f = state.geom->flow_area();
-    double A_wall = state.geom->heated_perimeter() * state.geom->dz();
-
-    //=======================================================================
-    // * solve for Wm(+) and Hm(+), this will be true regardless based on
-    //   mass and energy balance
-    //=======================================================================
-    wmp = wmm - wbarms;
-    hmp = (wmm * hmm + qz * A_wall - whbars) / wmp;
-    //=======================================================================
-    // * solve for Xf(+) and Hl(+), noting Hl(+) cannot exceed saturation
-    //
-    //   1) for Hl(+) < state.fluid->h_f(), calculate Xf(+) from Wv(+) and Gam(+)
-    //   2) otherwise, Hl(+) = state.fluid->h_f() and Xf(+) calculated directly from Hm(+)
-    //=======================================================================
-    wmg_local = wmgm - wbarvs + gam * A_f;
-    wmg_local = std::max(0.0, wmg_local);
-    xf_local =  wmg_local / wmp;
-    hl_local = (hmp - xf_local * state.fluid->h_g()) / (1.0 - xf_local);
-    if (hl_local >= state.fluid->h_f()) {
-        xf_local = (hmp - state.fluid->h_f()) / (state.fluid->h_g() - state.fluid->h_f());
-        hlp = state.fluid->h_f();
-    } else {
-        xfp = xf_local;
-        hlp = hl_local;
-    }
-    //=======================================================================
-    // * given Xf(+), calculate updated Wl(+), Wg(+), and Rhol(+)
-    //=======================================================================
-    wmlp = (1.0 - xfp)*wmp;
-    wmgp = xfp*wmp;
-}
-
-double TH::FUNCV_ALPHA(State& state, size_t k, size_t ij, double wmlp, double wmgp) {
-
-    const double atol = 1.0e-6;
-    double alphzp;
-    double gl;
-    double gv;
-    double alphx;
-    double fv0;
-    double fv1;
-    double dfda;
-    double delta_a;
-    double alphx1;
-
-    double A_f = state.geom->flow_area();
-    double D_h = state.geom->hydraulic_diameter();
-    double eps = 1.0e-20;
-    double rho_g = state.fluid->rho_g();
-    double rho_f = state.fluid->rho_f();
-    double rholp = state.fluid->rho(state.h_l[ij][k]);
-    double mu_l = state.fluid->mu(state.h_l[ij][k]);
-    double mu_v = state.fluid->mu_g();
-    double P = state.P[ij][k];
-    double sigma = state.fluid->sigma();
-
-    gl = wmlp / A_f;
-    gv = wmgp / A_f;
-    alphx = alphzp;
-    for (size_t its = 0; its < state.max_inner_iter; ++its) {
-
-        double Re_g = __Reynolds(gv, D_h, mu_v); // local vapor Reynolds number
-        double Re_f = __Reynolds(gl, D_h, mu_l); // local liquid Reynolds number
-        double Re;
-        if (Re_g > Re_f) {
-            Re = Re_g;
-        } else {
-            Re = Re_f;
-        }
-        double A1 = 1 / (1 + exp(-Re / 60000));
-        double B1 = std::min(0.8, A1); // from Zuber correlation
-        double B2 = 1.41;
-
-        auto C0SC = [B1, B2, P, rho_g, rho_f] (double alpha) {
-
-            // calculate distribution parameter, C_0
-            double C1 = 4.0 * P_crit * P_crit / (P * (P_crit - P)); // Eq. 24 from ANTS Theory
-            double L = (1.0 - std::exp(-C1 * alpha)) / (1.0 - std::exp(-C1)); // Eq. 23 from ANTS Theory
-            double K0 = B1 + (1 - B1) * pow(rho_g / rho_f, 0.25); // Eq. 25 from ANTS Theory
-            double r = (1 + 1.57 * (rho_g / rho_f)) / (1 - B1); // Eq. 26 from ANTS Theory
-            double C0 = L / (K0 + (1 - K0) * pow(alpha, r)); // Eq. 22 from ANTS Theory
-
-            return C0;
-        };
-
-        auto VGJ = [B1, B2, rho_g, rho_f, sigma] (double alpha) {
-
-            // calculate drift velocity, V_gj
-            double Vgj0 = B2 * pow(((rho_f - rho_g) * g * sigma) / (rho_f * rho_f), 0.25); // Eq. 28 from ANTS Theory
-            double Vgj = Vgj0 * pow(1.0 - alpha, B1); // Eq. 27 from ANTS Theory
-
-            return Vgj;
-        };
-
-        fv0 = alphx * C0SC(alphx) * (rho_g / rholp * gl + gv) + alphx * rho_g * VGJ(alphx) - gv;
-        if (std::abs(fv0) < eps) break;
-        alphx1 = alphx + atol;
-        fv1 = alphx1 * C0SC(alphx1) * (rho_g / rholp * gl + gv) + alphx1 * rho_g * VGJ(alphx1) - gv;
-        dfda = (fv1 - fv0) / atol;
-        delta_a = -fv0 / dfda;
-        delta_a = std::min(delta_a, 0.1);
-        delta_a = std::max(delta_a, -0.1);
-        alphx = alphx + delta_a;
-        alphx = std::min(alphx, (1.0 - eps));
-        alphx = std::max(alphx, 0.0);
-    }
-    alphzp = alphx;
-    return alphzp;
-}
-
-double TH::DELTAP_AXIAL(State& state, size_t k, size_t ij, double wmlp, double wmgp, double alphzp, double xfp, double gvp, double gvm, double wvms) {
-    double deltap;
-    double gbara;
-    double b;
-    double xfp9;
-    double thomo;
-    double tchsm;
-    double re;
-    double kbar;
-    double dP1;
-    double dP2;
-    double dP3;
-    double dP4;
-
-    double D_h = state.geom->hydraulic_diameter();
-    double A_f = state.geom->flow_area();
-    double dz = state.geom->dz();
-
-    double rho_g = state.fluid->rho_g();
-    double rholp = state.fluid->rho(state.h_l[0][k]);
-    double viscf0 = state.fluid->mu_f();
-    double vfff = state.fluid->v_f();
-
-    gbara = std::abs(wmlp + wmgp) / A_f;
-    //-----------------------------------------------------------------------
-    // * calculate homogeneous 2-phase multiplier
-    //-----------------------------------------------------------------------
-    thomo = 1.0 + xfp * (rholp / rho_g - 1.0);
-    //-----------------------------------------------------------------------
-    // * calculate Chisholm-Baroczy 2-phase multiplier
-    //-----------------------------------------------------------------------
-    double gamma = pow(state.fluid->rho_f() / state.fluid->rho_g(), 0.5) * pow(state.fluid->mu_g() / state.fluid->mu_f(), 0.2); // Eq. 33 from ANTS Theory
-    double gamasq1 = gamma * gamma;
-    if (xfp < 1.0) {
-        b = 55.0 / std::sqrt(gbara);
-        xfp9 = std::pow(xfp, 0.9);
-        tchsm = 1.0 + gamasq1 * (b * xfp9 * std::pow(1.0 - xfp, 0.9) + xfp9 * xfp9);
-    } else {
-        tchsm = 1.0 + gamasq1;
-    }
-    //-----------------------------------------------------------------------
-    // * calculate Reynold's number using node average mass flux and
-    //   saturated liquid dynamic viscosity; calculate effective loss
-    //   coefficient
-    //-----------------------------------------------------------------------
-    re = gbara * D_h / viscf0;
-    kbar = 0.1892 * std::pow(re, -0.2) * dz / D_h * tchsm;
-    //
-    // ... dP1 is based on the NEW Wliq, Wvap, and Xf
-
-    dP1 = 0.5 * kbar * gbara * gbara * vfff;
-    //
-    // ... dP2 is the net momentum outflow based on the PREVIOUS outer iteration values of Gk*V, mixing momentum, and drift momentum
-    //
-    dP2 = wvms / A_f;
-    //
-    // ... dP3 is based on the NEW Hliq and Alpha
-    //
-    dP3 = g * dz * ((1.0 - alphzp) * rholp + alphzp * rho_g);
-    //
-    // ... dP4 is based on the NEW G*V
-    //
-    dP4 = gvp - gvm;
-    deltap = dP1 + dP2 + dP3 + dP4;
-    std::cout << "DELTAP_AXIAL debug: ij=" << ij << ", k=" << k << ", deltap=" << deltap << std::endl;
-    return deltap;
+void TH::planar(State& state) {
+    solve_flow_rates(state);
+    solve_enthalpy(state);
+    solve_void_fraction(state);
+    solve_quality(state);
+    solve_pressure(state);
 }
 
 void TH::solve_evaporation_term(State& state) {
@@ -277,13 +31,13 @@ void TH::solve_evaporation_term(State& state) {
 
     size_t k = state.surface_plane;
     size_t k_node = state.node_plane;
-    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-        double Re = __Reynolds(state.W_l[i][k] / A_f, D_h, mu[i][k]); // Reynolds number
-        double Pr = __Prandtl(Cp[i][k], mu[i][k], cond[i][k]); // Prandtl number
+    for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
+        double Re = __Reynolds(state.W_l[ij][k] / A_f, D_h, mu[ij][k]); // Reynolds number
+        double Pr = __Prandtl(Cp[ij][k], mu[ij][k], cond[ij][k]); // Prandtl number
         double Pe = __Peclet(Re, Pr); // Peclet number
-        double Qflux_wall = state.lhr[i][k] / P_H; // wall heat flux [W/m^2]
-        double G_l = state.W_l[i][k] / A_f; // liquid mass flux [kg/m^2-s]
-        double G_v = state.W_v[i][k] / A_f; // vapor mass flux [kg/m^2-s]
+        double Qflux_wall = state.lhr[ij][k] / P_H; // wall heat flux [W/m^2]
+        double G_l = state.W_l[ij][k] / A_f; // liquid mass flux [kg/m^2-s]
+        double G_v = state.W_v[ij][k] / A_f; // vapor mass flux [kg/m^2-s]
         double G_m = G_l + G_v; // mixture mass flux [kg/m^2-s], Eq. 11 from ANTS Theory
 
         double void_dc; // void departure, Eq. 52 from ANTS Theory
@@ -294,23 +48,22 @@ void TH::solve_evaporation_term(State& state) {
         }
 
         double Qflux_boil; // boiling heat flux [W/m], Eq. 51 from ANTS Theory
-        if (state.h_l[i][k] < state.fluid->h_f()) {
-            if ((state.fluid->h_f() - state.h_l[i][k]) < void_dc) {
-                Qflux_boil = Qflux_wall * (1 - ((state.fluid->h_f() - state.h_l[i][k]) / void_dc));
+        if (state.h_l[ij][k] < state.fluid->h_f()) {
+            if ((state.fluid->h_f() - state.h_l[ij][k]) < void_dc) {
+                Qflux_boil = Qflux_wall * (1 - ((state.fluid->h_f() - state.h_l[ij][k]) / void_dc));
             } else {
                 Qflux_boil = 0.0;
             }
 
-            double epsilon = rho[i][k] * (state.fluid->h_f() - state.h_l[i][k]) / (state.fluid->rho_g() * state.fluid->h_fg()); // pumping parameter, Eq. 53 from ANTS Theory
+            double epsilon = rho[ij][k] * (state.fluid->h_f() - state.h_l[ij][k]) / (state.fluid->rho_g() * state.fluid->h_fg()); // pumping parameter, Eq. 53 from ANTS Theory
             double H_0 = 0.075; // [s^-1 K^-1], condensation parameter; value recommended by Lahey and Moody (1996)
-            double gamma_cond = (H_0 * (1 / state.fluid->v_fg()) * A_f * state.alpha[i][k] * (state.fluid->Tsat() - T[i][k])) / P_H; // condensation rate [kg/m^3-s], Eq. 54 from ANTS Theory
-            state.evap[i][k_node] = P_H * Qflux_boil / (state.fluid->h_fg() * (1 + epsilon)) - P_H * gamma_cond; // Eq. 50 from ANTS Theory
+            double gamma_cond = (H_0 * (1 / state.fluid->v_fg()) * A_f * state.alpha[ij][k] * (state.fluid->Tsat() - T[ij][k])) / P_H; // condensation rate [kg/m^3-s], Eq. 54 from ANTS Theory
+            state.evap[ij][k_node] = P_H * Qflux_boil / (state.fluid->h_fg() * (1 + epsilon)) - P_H * gamma_cond; // Eq. 50 from ANTS Theory
 
         } else {
             Qflux_boil = Qflux_wall;
-            state.evap[i][k_node] = P_H * Qflux_boil / state.fluid->h_fg();
+            state.evap[ij][k_node] = P_H * Qflux_boil / state.fluid->h_fg();
         }
-        state.qz[i][k_node] = Qflux_boil; // heat flux [W/m^2]
     }
 }
 
@@ -422,7 +175,7 @@ void TH::solve_mixing(State& state) {
             - (alpha_i * V_v_i + alpha_j * V_v_j) * state.fluid->rho_g()
         ); // Eq. 44 from ANTS Theory
 
-        state.gk[ns][k_node] = state.G_l_tm[ns] + state.G_v_tm[ns] + state.G_l_vd[ns] + state.G_v_vd[ns];
+        // state.gk[ns][k_node] = state.G_l_tm[ns] + state.G_v_tm[ns] + state.G_l_vd[ns] + state.G_v_vd[ns];
     }
 }
 
@@ -436,65 +189,21 @@ void TH::solve_surface_mass_flux(State& state) {
     const size_t k_node = state.node_plane;
     const double K_ns = 0.5; // gap loss coefficient
     const double gtol = 1e-3; // mass flux perturbation amount
+    const double tol = 1e-8; // convergence tolerance
     const double dz = state.geom->dz();
     const double S_ij = state.geom->gap_width();
     const double aspect = state.geom->aspect_ratio();
 
     // outer loop for newton iteration convergence
-    for (size_t outer_iter = 0; outer_iter < 10; ++outer_iter) {
-        // mixture outflow, vapor outflow, and mixture energy outflow
-        Vector1D wbarms(nchan);
-        Vector1D wbarvs(nchan);
-        Vector1D whbars(nchan);
-
-        // vectors for solution variables
-        Vector2D &gk = state.gk; // total transverse mass flux
-        Vector2D hm(nchan, Vector1D(state.geom->naxial())); // mixture enthalpy
-        Vector1D glmix(nsurf);   // liq. turbulent mixing
-        Vector1D gvmix(nsurf);   // vap. turbulent mixing
-        Vector1D gldrift(nsurf); // liq. void drift
-        Vector1D gvdrift(nsurf); // vap. void drift
-        Vector1D hmix(nsurf);    // turbulent mixing energy transfer
-        Vector1D hdrift(nsurf);  // void drift energy transfer
-        Vector1D mmix(nsurf);    // mixture momentum (turbulent mixing)
-        Vector1D mdrift(nsurf);  // mixture momentum (void drift)
-        Vector1D wvms(nchan);    // mixture momentum (outflow)
+    for (size_t outer_iter = 0; outer_iter < state.max_outer_iter; ++outer_iter) {
 
         // Residual vectors and Jacobian Matrix
         Vector1D f0(nsurf);
         Vector1D f3(nsurf);
         Vector2D dfdg(nsurf, Vector1D(nsurf));
 
-        // calculate wbarms, wbarvs, whbars for isurf, jsurf with donored properties
-        for (auto& surf : state.geom->surfaces) {
-            size_t ns = surf.idx;
-            size_t idonor;
-            if (gk[ns][k_node] > 0) idonor = surf.from_node;
-            else idonor = surf.to_node;
-            wbarms[surf.from_node] += dz * S_ij * (gk[ns][k_node] + glmix[ns] + gvmix[ns] + gldrift[ns] + gvdrift[ns]);
-            wbarms[surf.to_node]   -= dz * S_ij * (gk[ns][k_node] + glmix[ns] + gvmix[ns] + gldrift[ns] + gvdrift[ns]);
-            wbarvs[surf.from_node] += dz * S_ij * (gk[ns][k_node] + gvmix[ns] + gvdrift[ns]);
-            wbarvs[surf.to_node]   -= dz * S_ij * (gk[ns][k_node] + gvmix[ns] + gvdrift[ns]);
-            whbars[surf.from_node] += dz * S_ij * (gk[ns][k_node] * hm[idonor][k_node-1] + hmix[ns] + hdrift[ns]);
-            whbars[surf.to_node]   -= dz * S_ij * (gk[ns][k_node] * hm[idonor][k_node-1] + hmix[ns] + hdrift[ns]);
-        }
-
-        // some sort of boundary conditions loop ?
-
-        // // DEBUG - print wvms vector
-        // std::cout << "\nwvms vector before planar solve: " << std::endl;
-        // for (size_t i = 0; i < nchan; ++i) {
-        //     std::cout << std::setw(13) << wvms[i] << std::endl;
-        // }
-
         // PLANAR solve
-        planar(state, mmix, mdrift, wbarms, wbarvs, whbars, wvms);
-
-        // // DEBUG - print wvms vector
-        // std::cout << "\nwvms vector after planar solve: " << std::endl;
-        // for (size_t i = 0; i < nchan; ++i) {
-        //     std::cout << std::setw(13) << wvms[i] << std::endl;
-        // }
+        planar(state);
 
         // calculate the residual vector f0
         if (debug) std::cout << "\nResidual vector: at plane: " << state.node_plane << std::endl;
@@ -512,10 +221,16 @@ void TH::solve_surface_mass_flux(State& state) {
             if (debug) std::cout << std::setw(13) << f0[ns] << std::endl;
         }
 
-        // check convergence and exit early if criteria is met
-
-        // store reference values prior to perturbations
-        
+        // calculate max residual
+        double max_res = 0.0;
+        for (size_t ns = 0; ns < nsurf; ++ns) {
+            max_res = std::max(max_res, std::abs(f0[ns]));
+        }
+        // std::cout << "Residual from iter " << outer_iter + 1 << ": " << max_res << std::endl;
+        if (max_res < tol) {
+            std::cout << "Converged surface mass fluxes in " << outer_iter + 1 << " iterations." << std::endl;
+            break;
+        }
 
         if (debug) std::cout << "\nJacobian Matrix: at plane: " << state.node_plane << std::endl;
         for (size_t ns1 = 0; ns1 < nsurf; ++ns1) {
@@ -527,7 +242,7 @@ void TH::solve_surface_mass_flux(State& state) {
             else perturb_state.gk[ns1][k_node] += gtol;
 
             // PLANAR_PERTURB solve
-            planar(perturb_state, mmix, mdrift, wbarms, wbarvs, whbars, wvms);
+            planar(perturb_state);
 
             for (size_t ns = 0; ns < nsurf; ++ns) {
                 size_t i = state.geom->surfaces[ns].from_node;
@@ -555,15 +270,8 @@ void TH::solve_surface_mass_flux(State& state) {
         // update mass fluxes from solution
         for (size_t ns = 0; ns < nsurf; ++ns) {
             if (debug) std::cout << f0[ns] << std::endl;
-            state.gk[ns][k_node] -= 0.1 * f0[ns];
+            state.gk[ns][k_node] -= f0[ns];
         }
-
-        // print out max residual
-        double max_res = 0.0;
-        for (size_t ns = 0; ns < nsurf; ++ns) {
-            max_res = std::max(max_res, std::abs(f0[ns]));
-        }
-        // std::cout << "Residual from iter " << outer_iter + 1 << ": " << max_res << std::endl;
 
     } // end outer iteration loop
 }
@@ -587,49 +295,39 @@ void TH::solve_flow_rates(State& state) {
             i_donor = j;
         }
 
-        SS_l[i] += state.geom->gap_width() * (state.gk[ns][k_node] * (1.0 - state.X[i_donor][k]));
-        SS_l[j] -= state.geom->gap_width() * (state.gk[ns][k_node] * (1.0 - state.X[i_donor][k]));
+        double sl = state.gk[ns][k_node] * (1.0 - state.X[i_donor][k-1]) + state.G_l_tm[ns] + state.G_l_vd[ns];
+        SS_l[i] += state.geom->gap_width() * sl;
+        SS_l[j] -= state.geom->gap_width() * sl;
 
-        SS_v[i] += state.geom->gap_width() * (state.gk[ns][k_node] * state.X[i_donor][k]);
-        SS_v[j] -= state.geom->gap_width() * (state.gk[ns][k_node] * state.X[i_donor][k]);
+        double sv = state.gk[ns][k_node] * state.X[i_donor][k-1] + state.G_v_tm[ns] + state.G_v_vd[ns];
+        SS_v[i] += state.geom->gap_width() * sv;
+        SS_v[j] -= state.geom->gap_width() * sv;
     }
 
-    // std::cout << "\nSource terms SS_l at plane " << k_node << ": " << std::endl;
-    // for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-    //     std::cout << std::setw(13) << SS_l[i];
-    //     if ((i + 1) % state.geom->nx() == 0) std::cout << std::endl;
-    // }
+    for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
 
-    // std::cout << "\nSource terms SS_v at plane " << k_node << ": " << std::endl;
-    // for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-    //     std::cout << std::setw(13) << SS_v[i];
-    //     if ((i + 1) % state.geom->nx() == 0) std::cout << std::endl;
-    // }
-
-    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-
-        state.W_l[i][k] = state.W_l[i][k-1] - state.geom->dz() * (state.evap[i][k_node] + SS_l[i]); // Eq. 61 from ANTS Theory
-        state.W_l[i][k] = std::max(state.W_l[i][k], 0.0); // prevent negative liquid flow rate
+        state.W_l[ij][k] = state.W_l[ij][k-1] - state.geom->dz() * (state.evap[ij][k_node] + SS_l[ij]); // Eq. 61 from ANTS Theory
+        state.W_l[ij][k] = std::max(state.W_l[ij][k], 0.0); // prevent negative liquid flow rate
 
         // throw error if liquid flow rate becomes negative and add debug info
-        if (state.W_l[i][k] < 0) {
-            throw std::runtime_error("Error: Liquid flow rate has become negative in channel " + std::to_string(i) + " at plane " + std::to_string(k) + ".\n"
+        if (state.W_l[ij][k] < 0) {
+            throw std::runtime_error("Error: Liquid flow rate has become negative in channel " + std::to_string(ij) + " at plane " + std::to_string(k) + ".\n"
                 "Debug Info:\n"
-                "Previous W_l: " + std::to_string(state.W_l[i][k-1]) + "\n"
-                "Evaporation term: " + std::to_string(state.evap[i][k_node]) + "\n"
-                "SS_l: " + std::to_string(SS_l[i]) + "\n");
+                "Previous W_l: " + std::to_string(state.W_l[ij][k-1]) + "\n"
+                "Evaporation term: " + std::to_string(state.evap[ij][k_node]) + "\n"
+                "SS_l: " + std::to_string(SS_l[ij]) + "\n");
         }
 
-        state.W_v[i][k] = state.W_v[i][k-1] + state.geom->dz() * (state.evap[i][k_node] - SS_v[i]); // Eq. 62 from ANTS Theory
-        state.W_v[i][k] = std::max(state.W_v[i][k], 0.0); // prevent negative vapor flow rate
+        state.W_v[ij][k] = state.W_v[ij][k-1] + state.geom->dz() * (state.evap[ij][k_node] - SS_v[ij]); // Eq. 62 from ANTS Theory
+        state.W_v[ij][k] = std::max(state.W_v[ij][k], 0.0); // prevent negative vapor flow rate
 
         // throw error if vapor flow rate becomes negative and add debug info
-        if (state.W_v[i][k] < 0) {
-            throw std::runtime_error("Error: Vapor flow rate has become negative in channel " + std::to_string(i) + " at plane " + std::to_string(k) + ".\n"
+        if (state.W_v[ij][k] < 0) {
+            throw std::runtime_error("Error: Vapor flow rate has become negative in channel " + std::to_string(ij) + " at plane " + std::to_string(k) + ".\n"
                 "Debug Info:\n"
-                "Previous W_v: " + std::to_string(state.W_v[i][k-1]) + "\n"
-                "Evaporation term: " + std::to_string(state.evap[i][k_node]) + "\n"
-                "SS_v: " + std::to_string(SS_v[i]) + "\n");
+                "Previous W_v: " + std::to_string(state.W_v[ij][k-1]) + "\n"
+                "Evaporation term: " + std::to_string(state.evap[ij][k_node]) + "\n"
+                "SS_v: " + std::to_string(SS_v[ij]) + "\n");
         }
     }
 }
@@ -657,13 +355,13 @@ void TH::solve_enthalpy(State& state) {
         SS_m[j] -= state.geom->gap_width() * (state.gk[ns][k_node] * h_l_donor + state.Q_m_tm[ns] + state.Q_m_vd[ns]);
     }
 
-    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+    for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
 
-        state.h_l[i][k] = (
-            (state.W_v[i][k-1] - state.W_v[i][k]) * state.fluid->h_g()
-            + state.W_l[i][k-1] * state.h_l[i][k-1] + state.geom->dz() * state.lhr[i][k_node]
-            - state.geom->dz() * SS_m[i]
-        ) / state.W_l[i][k]; // Eq. 63 from ANTS Theory
+        state.h_l[ij][k] = (
+            (state.W_v[ij][k-1] - state.W_v[ij][k]) * state.fluid->h_g()
+            + state.W_l[ij][k-1] * state.h_l[ij][k-1] + state.geom->dz() * state.lhr[ij][k_node]
+            - state.geom->dz() * SS_m[ij]
+        ) / state.W_l[ij][k]; // Eq. 63 from ANTS Theory
     }
 }
 
@@ -677,17 +375,17 @@ void TH::solve_void_fraction(State& state) {
     double D_h = state.geom->hydraulic_diameter();
 
     size_t k = state.surface_plane;
-    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-        double Gv = state.W_v[i][k] / A; // vapor mass flux
-        double Gl = state.W_l[i][k] / A; // liquid mass flux
+    for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
+        double Gv = state.W_v[ij][k] / A; // vapor mass flux
+        double Gl = state.W_l[ij][k] / A; // liquid mass flux
 
         if (Gv < eps) {
-            state.alpha[i][k] = 0.0;
+            state.alpha[ij][k] = 0.0;
             continue;
         }
 
-        double h_l = state.h_l[i][k];
-        double h_v = state.fluid->h_f() + state.X[i][k] * state.fluid->h_fg();
+        double h_l = state.h_l[ij][k];
+        double h_v = state.fluid->h_f() + state.X[ij][k] * state.fluid->h_fg();
         double rho_g = state.fluid->rho_g();
         double rho_f = state.fluid->rho_f();
         double rho_l = state.fluid->rho(h_l);
@@ -695,8 +393,8 @@ void TH::solve_void_fraction(State& state) {
         double mu_l = state.fluid->mu(h_l);
         double sigma = state.fluid->sigma();
 
-        double Re_g = __Reynolds(state.W_v[i][k] / A, D_h, mu_v); // local vapor Reynolds number
-        double Re_f = __Reynolds(state.W_l[i][k] / A, D_h, mu_l); // local liquid Reynolds number
+        double Re_g = __Reynolds(state.W_v[ij][k] / A, D_h, mu_v); // local vapor Reynolds number
+        double Re_f = __Reynolds(state.W_l[ij][k] / A, D_h, mu_l); // local liquid Reynolds number
         double Re;
         if (Re_g > Re_f) {
             Re = Re_g;
@@ -746,20 +444,20 @@ void TH::solve_void_fraction(State& state) {
             return 0.5 * (a + b);
         };
 
-        state.alpha[i][k] = bisection(f, 0.0, 1.0, tol, 100); // solve for void fraction using bisection method
+        state.alpha[ij][k] = bisection(f, 0.0, 1.0, tol, state.max_inner_iter); // solve for void fraction using bisection method
     }
 }
 
 void TH::solve_quality(State& state) {
     size_t k = state.surface_plane;
-    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-        double G_v = state.W_v[i][k] / state.geom->flow_area(); // vapor mass flux, Eq. 8 from ANTS Theory
-        double G_l = state.W_l[i][k] / state.geom->flow_area(); // liquid mass flux, Eq. 9 from ANTS Theory
-        state.X[i][k] = G_v / (G_v + G_l); // Eq. 17 from ANTS Theory
+    for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
+        double G_v = state.W_v[ij][k] / state.geom->flow_area(); // vapor mass flux, Eq. 8 from ANTS Theory
+        double G_l = state.W_l[ij][k] / state.geom->flow_area(); // liquid mass flux, Eq. 9 from ANTS Theory
+        state.X[ij][k] = G_v / (G_v + G_l); // Eq. 17 from ANTS Theory
 
         // throw error if quality becomes negative and add debug info
-        if (state.X[i][k] < 0.0) {
-            throw std::runtime_error("Error: Quality has become negative in channel " + std::to_string(i) + " at plane " + std::to_string(k) + ".\n"
+        if (state.X[ij][k] < 0.0) {
+            throw std::runtime_error("Error: Quality has become negative in channel " + std::to_string(ij) + " at plane " + std::to_string(k) + ".\n"
                 "Debug Info:\n"
                 "G_v: " + std::to_string(G_v) + "\n"
                 "G_l: " + std::to_string(G_l) + "\n");
@@ -807,16 +505,16 @@ void TH::solve_pressure(State& state) {
         VD_SS[j] -= state.geom->gap_width() * state.M_m_vd[ns];
     }
 
-    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+    for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
 
         // ----- two-phase acceleration pressure drop -----
-        double dP_accel = (state.W_m(i, k) * state.V_m(i, k) - state.W_m(i, k-1) * state.V_m(i, k-1)) / A_f;
+        double dP_accel = (state.W_m(ij, k) * state.V_m(ij, k) - state.W_m(ij, k-1) * state.V_m(ij, k-1)) / A_f;
 
         // ----- two-phase frictional pressure drop -----
         // mass flux
-        double G = (state.W_l[i][k] + state.W_v[i][k]) / A_f;
+        double G = (state.W_l[ij][k] + state.W_v[ij][k]) / A_f;
         // Reynolds number
-        double Re = __Reynolds(G, D_h, mu[i][k]);
+        double Re = __Reynolds(G, D_h, mu[ij][k]);
 
         // frictional pressure drop from wall shear
         double f = a_1 * pow(Re, n); // single phase friction factor, Eq. 31 from ANTS Theory
@@ -834,27 +532,27 @@ void TH::solve_pressure(State& state) {
         }
 
         // two-phase multiplier for wall shear (Chisholm), Eq. 32 from ANTS Theory
-        double phi2_ch = 1.0 + (gamma * gamma - 1.0) * (b * pow(state.X[i][k], 0.9) * pow((1.0 - state.X[i][k]), 0.9) + pow(state.X[i][k], 1.8));
+        double phi2_ch = 1.0 + (gamma * gamma - 1.0) * (b * pow(state.X[ij][k], 0.9) * pow((1.0 - state.X[ij][k]), 0.9) + pow(state.X[ij][k], 1.8));
 
         // throw error if phi2_ch is NaN and add debug info
         if (std::isnan(phi2_ch)) {
-            throw std::runtime_error("Error: Two-phase multiplier has become NaN in channel " + std::to_string(i) + " at plane " + std::to_string(k) + ".\n"
+            throw std::runtime_error("Error: Two-phase multiplier has become NaN in channel " + std::to_string(ij) + " at plane " + std::to_string(k) + ".\n"
                 "Debug Info:\n"
                 "gamma: " + std::to_string(gamma) + "\n"
                 "b: " + std::to_string(b) + "\n"
-                "X: " + std::to_string(state.X[i][k]) + "\n");
+                "X: " + std::to_string(state.X[ij][k]) + "\n");
         }
 
         // two-phase wall shear pressure drop, Eq. 29 from ANTS Theory
-        double dP_wall_shear = K * G * G / (2.0 * rho[i][k]) * phi2_ch;
+        double dP_wall_shear = K * G * G / (2.0 * rho[ij][k]) * phi2_ch;
 
         // throw error if dP_wall_shear is NaN and add debug info
         if (std::isnan(dP_wall_shear)) {
-            throw std::runtime_error("Error: Two-phase wall shear pressure drop has become NaN in channel " + std::to_string(i) + " at plane " + std::to_string(k) + ".\n"
+            throw std::runtime_error("Error: Two-phase wall shear pressure drop has become NaN in channel " + std::to_string(ij) + " at plane " + std::to_string(k) + ".\n"
                 "Debug Info:\n"
                 "K: " + std::to_string(K) + "\n"
                 "G: " + std::to_string(G) + "\n"
-                "rho: " + std::to_string(rho[i][k]) + "\n"
+                "rho: " + std::to_string(rho[ij][k]) + "\n"
                 "phi2_ch: " + std::to_string(phi2_ch) + "\n"
             );
         }
@@ -863,38 +561,38 @@ void TH::solve_pressure(State& state) {
         double K_loss = 0.0;
 
         // two-phase multiplier for form losses (homogeneous), Eq. 35 from ANTS Theory
-        double phi2_hom = 1.0 + state.X[i][k] * (rho[i][k] / state.fluid->rho_g() - 1.0);
+        double phi2_hom = 1.0 + state.X[ij][k] * (rho[ij][k] / state.fluid->rho_g() - 1.0);
 
         // two-phase geometry form loss pressure drop, Eq. 36 from ANTS Theory
-        double dP_form = K_loss * G * G / (2.0 * rho[i][k]) * phi2_hom;
+        double dP_form = K_loss * G * G / (2.0 * rho[ij][k]) * phi2_hom;
 
         // two-phase frictional pressure drop, Eq. 36 from ANTS Theory
         double dP_tpfric = dP_wall_shear + dP_form;
 
         // throw error if dP_tpfric is NaN and add debug info
         if (std::isnan(dP_tpfric)) {
-            throw std::runtime_error("Error: Two-phase frictional pressure drop has become NaN in channel " + std::to_string(i) + " at plane " + std::to_string(k) + ".\n"
+            throw std::runtime_error("Error: Two-phase frictional pressure drop has become NaN in channel " + std::to_string(ij) + " at plane " + std::to_string(k) + ".\n"
                 "Debug Info:\n"
                 "dP_wall_shear: " + std::to_string(dP_wall_shear) + "\n"
                 "dP_form: " + std::to_string(dP_form) + "\n");
         }
 
         // ----- two-phase gravitational pressure drop -----
-        double dP_grav = rho[i][k] * g * dz;
+        double dP_grav = rho[ij][k] * g * dz;
 
         // ----- momentum exchange due to pressure-directed crossflow, turbulent mixing, and void drift -----
-        double dP_CF = dz / A_f * CF_SS[i];
-        double dP_TM = dz / A_f * TM_SS[i];
-        double dP_VD = dz / A_f * VD_SS[i];
+        double dP_CF = dz / A_f * CF_SS[ij];
+        double dP_TM = dz / A_f * TM_SS[ij];
+        double dP_VD = dz / A_f * VD_SS[ij];
         double dP_momexch = dP_CF + dP_TM + dP_VD;
 
         // ----- total pressure drop over this axial plane -----
         double dP_total = dP_accel + dP_tpfric + dP_grav + dP_momexch; // Eq. 65 from ANTS Theory
-        state.P[i][k] = state.P[i][k-1] - dP_total;
+        state.P[ij][k] = state.P[ij][k-1] - dP_total;
 
         // throw error if pressure goes NaN and add debug info (dP_accel, dP_tpfric, dP_grav, dP_momexch, dP_total)
-        if (std::isnan(state.P[i][k])) {
-            throw std::runtime_error("Error: Pressure has become NaN in channel " + std::to_string(i) + " at plane " + std::to_string(k) + ".\n"
+        if (std::isnan(state.P[ij][k])) {
+            throw std::runtime_error("Error: Pressure has become NaN in channel " + std::to_string(ij) + " at plane " + std::to_string(k) + ".\n"
                 "Debug Info:\n"
                 "dP_accel: " + std::to_string(dP_accel) + "\n"
                 "dP_tpfric: " + std::to_string(dP_tpfric) + "\n"
