@@ -511,10 +511,14 @@ void TH::solve_pressure(State& state) {
         double dP_accel = (state.W_m(ij, k) * state.V_m(ij, k) - state.W_m(ij, k-1) * state.V_m(ij, k-1)) / A_f;
 
         // ----- two-phase frictional pressure drop -----
-        // mass flux
+        // mass flux (liq. only)
+        double G_l = (state.W_l[ij][k]) / A_f;
+
+        // mass flux (mixture)
         double G = (state.W_l[ij][k] + state.W_v[ij][k]) / A_f;
-        // Reynolds number
-        double Re = __Reynolds(G, D_h, mu[ij][k]);
+
+        // Reynolds number (liq. only)
+        double Re = __Reynolds(G_l, D_h, mu[ij][k]);
 
         // frictional pressure drop from wall shear
         double f = a_1 * pow(Re, n); // single phase friction factor, Eq. 31 from ANTS Theory
@@ -544,7 +548,7 @@ void TH::solve_pressure(State& state) {
         }
 
         // two-phase wall shear pressure drop, Eq. 29 from ANTS Theory
-        double dP_wall_shear = K * G * G / (2.0 * rho[ij][k]) * phi2_ch;
+        double dP_wall_shear = K * G * G / (2.0 * state.fluid->rho_f()) * phi2_ch;
 
         // throw error if dP_wall_shear is NaN and add debug info
         if (std::isnan(dP_wall_shear)) {
@@ -552,7 +556,7 @@ void TH::solve_pressure(State& state) {
                 "Debug Info:\n"
                 "K: " + std::to_string(K) + "\n"
                 "G: " + std::to_string(G) + "\n"
-                "rho: " + std::to_string(rho[ij][k]) + "\n"
+                "rho: " + std::to_string(state.fluid->rho_f()) + "\n"
                 "phi2_ch: " + std::to_string(phi2_ch) + "\n"
             );
         }
@@ -561,10 +565,10 @@ void TH::solve_pressure(State& state) {
         double K_loss = 0.0;
 
         // two-phase multiplier for form losses (homogeneous), Eq. 35 from ANTS Theory
-        double phi2_hom = 1.0 + state.X[ij][k] * (rho[ij][k] / state.fluid->rho_g() - 1.0);
+        double phi2_hom = 1.0 + state.X[ij][k] * (state.fluid->rho_f() / state.fluid->rho_g() - 1.0);
 
         // two-phase geometry form loss pressure drop, Eq. 36 from ANTS Theory
-        double dP_form = K_loss * G * G / (2.0 * rho[ij][k]) * phi2_hom;
+        double dP_form = K_loss * G * G / (2.0 * state.fluid->rho_f()) * phi2_hom;
 
         // two-phase frictional pressure drop, Eq. 36 from ANTS Theory
         double dP_tpfric = dP_wall_shear + dP_form;
