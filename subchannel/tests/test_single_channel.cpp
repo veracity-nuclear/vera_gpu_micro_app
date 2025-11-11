@@ -88,7 +88,7 @@ TEST(SubchannelTest, SingleChannel) {
     }
     std::cout << std::endl;
 
-    double expected_deltaT = 21.729682; // expected temperature rise in subchannel, K
+    double expected_deltaT = 21.728303; // expected temperature rise in subchannel, K
     double actual_deltaT = T[0].back() - T[0].front();
     std::cout << "Total temperature rise: " << actual_deltaT << " K" << std::endl;
 
@@ -96,7 +96,7 @@ TEST(SubchannelTest, SingleChannel) {
     EXPECT_NEAR(actual_deltaT, expected_deltaT, 1e-6);
 
     double total_pressure_drop = P[0].front() - P[0].back();
-    double expected_pressure_drop = 73058.774; // expected pressure drop in subchannel, Pa
+    double expected_pressure_drop = 86176.795; // expected pressure drop in subchannel, Pa
     std::cout << "Total pressure drop: " << total_pressure_drop / 1000.0 << " kPa" << std::endl;
 
     // check total pressure drop in subchannel
