@@ -164,6 +164,14 @@ int main(int argc, char* argv[]) {
             Kokkos::finalize();
             return 1;
             #endif
+        } else if (device_type == "sycl") {
+            #ifdef KOKKOS_ENABLE_SYCL
+            sweeper = create_kokkos_moc_with_precision<Kokkos::SYCL>(parser);
+            #else
+            std::cerr << "SYCL execution space not enabled in Kokkos!" << std::endl;
+            Kokkos::finalize();
+            return 1;
+            #endif
         } else {
             throw std::runtime_error("Unsupported Kokkos execution space: " + device_type);
         }

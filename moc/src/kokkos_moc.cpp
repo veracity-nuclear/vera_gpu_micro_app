@@ -5,6 +5,7 @@
 #include <cassert>
 #include <algorithm>
 #include <vector>
+#include <random>
 #include <highfive/H5Easy.hpp>
 #include <highfive/highfive.hpp>
 #include "c5g7_library.hpp"
@@ -152,21 +153,20 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
             angface_to_ray[iazi][iface].resize(bc_sizes[iazi][iface] * _num_planes);
         }
     }
+    std::cout << "here" << std::endl;
 
     // Build map from face/BC index to ray index
-    for (int iplane = 0; iplane < _num_planes; iplane++) {
-        for (size_t i = 0; i < _n_rays_per_plane; i++) {
-            int iray = iplane * _n_rays_per_plane + i;
-            const auto& ray = _h_rays(iray);
-            int ang = ray.angle();
-            int bc_index = ray.bc_index(RAY_START) + bc_sizes[ang][ray.bc_face(RAY_START)] * iplane;
-            if (bc_index >= 0) {
-                angface_to_ray[ang][ray.bc_face(RAY_START)][bc_index] = iray;
-            }
-            bc_index = ray.bc_index(RAY_END) + bc_sizes[ang][ray.bc_face(RAY_END)] * iplane;
-            if (bc_index >= 0) {
-                angface_to_ray[ang][ray.bc_face(RAY_END)][bc_index] = _n_rays + iray;
-            }
+    for (size_t iray = 0; iray < _num_planes*_n_rays_per_plane; iray++) {
+        const auto& ray = _h_rays(iray);
+        int iplane = ray.plane();
+        int ang = ray.angle();
+        int bc_index = ray.bc_index(RAY_START) + bc_sizes[ang][ray.bc_face(RAY_START)] * iplane;
+        if (bc_index >= 0) {
+            angface_to_ray[ang][ray.bc_face(RAY_START)][bc_index] = iray;
+        }
+        bc_index = ray.bc_index(RAY_END) + bc_sizes[ang][ray.bc_face(RAY_END)] * iplane;
+        if (bc_index >= 0) {
+            angface_to_ray[ang][ray.bc_face(RAY_END)][bc_index] = _n_rays + iray;
         }
     }
 
@@ -175,47 +175,45 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
     _h_old_angflux = HViewReal3D("old_angflux", total_bc_points * 2 * _num_planes + 2, _npol, _ng);
 
     // Calculate BC indices and populate ray/segment data directly
-    for (int iplane = 0; iplane < _num_planes; iplane++) {
-        for (size_t i = 0; i < _n_rays_per_plane; i++) {
-            int iray = iplane * _n_rays_per_plane + i;
-            const auto& ray = _h_rays(iray);
-            int ang = ray.angle();
-            int irefl = ang % 2 == 0 ? ang + 1 : ang - 1;
-            int bc_frwd_start, bc_frwd_end, bc_bkwd_start, bc_bkwd_end;
+    for (size_t iray = 0; iray < _num_planes*_n_rays_per_plane; iray++) {
+        const auto& ray = _h_rays(iray);
+        int iplane = ray.plane();
+        int ang = ray.angle();
+        int irefl = ang % 2 == 0 ? ang + 1 : ang - 1;
+        int bc_frwd_start, bc_frwd_end, bc_bkwd_start, bc_bkwd_end;
 
-            if (ray.bc_index(RAY_START) == -1) {
-                bc_frwd_start = total_bc_points * 2 * _num_planes;
-                bc_bkwd_end = total_bc_points * 2 * _num_planes + 1;
-            } else {
-                int start_index = ray.bc_index(RAY_START) + bc_sizes[ang][ray.bc_face(RAY_START)] * iplane;
-                bc_frwd_start = angface_to_ray[ang][ray.bc_face(RAY_START)][start_index];
-                bc_bkwd_end = angface_to_ray[irefl][ray.bc_face(RAY_START)][start_index];
-                for (size_t ipol = 0; ipol < _npol; ipol++) {
-                    for (size_t ig = 0; ig < _ng; ig++) {
-                        _h_angflux(bc_frwd_start, ipol, ig) = 0.0;
-                        _h_angflux(bc_bkwd_end, ipol, ig) = 0.0;
-                    }
+        if (ray.bc_index(RAY_START) == -1) {
+            bc_frwd_start = total_bc_points * 2 * _num_planes;
+            bc_bkwd_end = total_bc_points * 2 * _num_planes + 1;
+        } else {
+            int start_index = ray.bc_index(RAY_START) + bc_sizes[ang][ray.bc_face(RAY_START)] * iplane;
+            bc_frwd_start = angface_to_ray[ang][ray.bc_face(RAY_START)][start_index];
+            bc_bkwd_end = angface_to_ray[irefl][ray.bc_face(RAY_START)][start_index];
+            for (size_t ipol = 0; ipol < _npol; ipol++) {
+                for (size_t ig = 0; ig < _ng; ig++) {
+                    _h_angflux(bc_frwd_start, ipol, ig) = 0.0;
+                    _h_angflux(bc_bkwd_end, ipol, ig) = 0.0;
                 }
             }
-
-            if (ray.bc_index(RAY_END) == -1) {
-                bc_bkwd_start = total_bc_points * 2 * _num_planes;
-                bc_frwd_end = total_bc_points * 2 * _num_planes + 1;
-            } else {
-                int start_index = ray.bc_index(RAY_END) + bc_sizes[ang][ray.bc_face(RAY_END)] * iplane;
-                bc_frwd_end = angface_to_ray[irefl][ray.bc_face(RAY_END)][start_index];
-                bc_bkwd_start = angface_to_ray[ang][ray.bc_face(RAY_END)][start_index];
-                for (size_t ipol = 0; ipol < _npol; ipol++) {
-                    for (size_t ig = 0; ig < _ng; ig++) {
-                        _h_angflux(bc_frwd_end, ipol, ig) = 0.0;
-                        _h_angflux(bc_bkwd_start, ipol, ig) = 0.0;
-                    }
-                }
-            }
-
-            // Set the processed BC indices in the ray object
-            _h_rays(iray).set_angflux_bc_indices(bc_frwd_start, bc_frwd_end, bc_bkwd_start, bc_bkwd_end);
         }
+
+        if (ray.bc_index(RAY_END) == -1) {
+            bc_bkwd_start = total_bc_points * 2 * _num_planes;
+            bc_frwd_end = total_bc_points * 2 * _num_planes + 1;
+        } else {
+            int start_index = ray.bc_index(RAY_END) + bc_sizes[ang][ray.bc_face(RAY_END)] * iplane;
+            bc_frwd_end = angface_to_ray[irefl][ray.bc_face(RAY_END)][start_index];
+            bc_bkwd_start = angface_to_ray[ang][ray.bc_face(RAY_END)][start_index];
+            for (size_t ipol = 0; ipol < _npol; ipol++) {
+                for (size_t ig = 0; ig < _ng; ig++) {
+                    _h_angflux(bc_frwd_end, ipol, ig) = 0.0;
+                    _h_angflux(bc_bkwd_start, ipol, ig) = 0.0;
+                }
+            }
+        }
+
+        // Set the processed BC indices in the ray object
+        _h_rays(iray).set_angflux_bc_indices(bc_frwd_start, bc_frwd_end, bc_bkwd_start, bc_bkwd_end);
     }
     Kokkos::deep_copy(_h_old_angflux, _h_angflux);
 
@@ -304,9 +302,13 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
     _d_old_angflux = Kokkos::create_mirror(ExecutionSpace(), _h_old_angflux);
     Kokkos::deep_copy(_d_old_angflux, _h_old_angflux);
 
+#ifdef KOKKOS_ENABLE_OPENMP
     if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
         _d_thread_scalar_flux = DViewReal3D("thread_scalar_flux", ExecutionSpace::concurrency(), _nfsr, _ng);
     }
+#else
+    _d_thread_scalar_flux = DViewReal3D("thread_scalar_flux", 1, _nfsr, _ng);
+#endif
     Kokkos::Profiling::popRegion();
 }
 
@@ -332,7 +334,7 @@ KokkosMOC<ExecutionSpace, RealType>::_read_ray_infos() {
                     if (rayName.substr(0, 8) == "LongRay_") {
                         auto rayGroup = angleGroup.getGroup(rayName);
                         int ray_nsegs = rayGroup.getDataSet("FSRs").template read<std::vector<int>>().size();
-                        ray_infos.emplace_back(objName, rayName, angleIndex, ray_nsegs, rayGroup);
+                        ray_infos.emplace_back(objName, rayName, angleIndex, ray_nsegs, iplane, rayGroup);
                         _n_rays++;
                     }
                 }
@@ -354,6 +356,11 @@ KokkosMOC<ExecutionSpace, RealType>::_read_ray_infos() {
                   [](const RayInfo& a, const RayInfo& b) {
                       return a.nsegs < b.nsegs;
                   });
+    } else if (_ray_sort == "random") {
+        // Shuffle rays
+        std::random_device rd;
+        std::mt19937 g(rd());
+        std::shuffle(ray_infos.begin(), ray_infos.end(), g);
     }
     // If _ray_sort == "none", do nothing (default behavior)
 
@@ -372,7 +379,7 @@ KokkosMOC<ExecutionSpace, RealType>::_read_rays(
     int nsegs = 0;
     for (int iray = 0; iray < _n_rays; iray++) {
         const auto& ray_info = ray_infos[iray];
-        _h_rays(iray) = KokkosLongRay(ray_info.ray_group, ray_info.angle_index, ray_info.nsegs, nsegs);
+        _h_rays(iray) = KokkosLongRay(ray_info.ray_group, ray_info.angle_index, ray_info.nsegs, nsegs, ray_info.plane_index);
         nsegs += ray_info.nsegs;
     }
 
@@ -390,25 +397,24 @@ KokkosMOC<ExecutionSpace, RealType>::_read_segments(
         const auto& ray_info = ray_infos[iray];
         nsegs += ray_info.nsegs;
     }
+    // print number of ray segments for problem size debugging
+    if constexpr(true) {    // future debugging condition
+        std::cout << nsegs << " Ray Segments" << std::endl;
+    }
     HViewKokkosRaySegment1D _h_segments("segments", nsegs);
 
     // Set up segments using the sorted order
     nsegs = 0;
-    int iray = 0;
-    for (int iplane = 0; iplane < _num_planes; iplane++) {
-        for (int i = 0; i < _n_rays_per_plane; i++) {
-            iray = iplane * _n_rays_per_plane + i;
-            const auto& ray_info = ray_infos[iray];
-            auto fsrs = ray_info.ray_group.getDataSet("FSRs").template read<std::vector<int>>();
-            auto segs = ray_info.ray_group.getDataSet("Segments").template read<std::vector<double>>();
-            for (size_t iseg = 0; iseg < fsrs.size(); iseg++) {
-                _h_segments(nsegs + iseg) = KokkosRaySegment<RealType>(
-                    fsrs[iseg] - 1 + iplane * _nfsr_per_plane,
-                    static_cast<RealType>(segs[iseg])
-                );
-            }
-            nsegs += ray_info.nsegs;
+    for (const RayInfo& ray_info : ray_infos){
+        auto fsrs = ray_info.ray_group.getDataSet("FSRs").template read<std::vector<int>>();
+        auto segs = ray_info.ray_group.getDataSet("Segments").template read<std::vector<double>>();
+        for (size_t iseg = 0; iseg < fsrs.size(); iseg++) {
+            _h_segments(nsegs + iseg) = KokkosRaySegment<RealType>(
+                fsrs[iseg] - 1 + ray_info.plane_index * _nfsr_per_plane,
+                static_cast<RealType>(segs[iseg])
+            );
         }
+        nsegs += ray_info.nsegs;
     }
 
     // Print a message with the number of rays and filename
@@ -565,8 +571,12 @@ template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
 RealType eval_exp_arg(RealType exparg, const RealType xstr, const RealType ray_segment, const RealType rsinpolang)
 {
-#ifdef KOKKOS_ENABLE_CUDA
+#if defined KOKKOS_ENABLE_CUDA
     if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
+        return static_cast<RealType>(1.0) - Kokkos::exp(-xstr * ray_segment * rsinpolang);
+    } else
+#elif defined KOKKOS_ENABLE_SYCL
+    if constexpr (std::is_same_v<ExecutionSpace, Kokkos::SYCL>) {
         return static_cast<RealType>(1.0) - Kokkos::exp(-xstr * ray_segment * rsinpolang);
     } else
 #endif
@@ -625,9 +635,12 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
 
     // Initialize the scalar flux to 0.0
     Kokkos::deep_copy(scalar_flux, 0.0);
+
+#ifdef KOKKOS_ENABLE_OPENMP
     if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
         Kokkos::deep_copy(thread_scalar_flux, 0.0);
     }
+#endif
 
     // Use the specialized team policy configuration
     typedef typename Kokkos::TeamPolicy<ExecutionSpace>::member_type team_member;
@@ -635,7 +648,7 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
 
     // Add scratch space for exponential arguments
     size_t scratch_size;
-    if (_device != "cuda") {
+    if ((_device != "cuda") && (_device != "sycl")) {
         scratch_size = ScratchViewReal1D::shmem_size(_max_segments);
     } else {
         scratch_size = 0;
@@ -655,8 +668,12 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
         // Create thread-local exparg array for non-CUDA execution spaces using scratch space
         ScratchViewReal1D exparg(teamMember.team_scratch(0), ray->nsegs());
         int nsegs;
-#ifdef KOKKOS_ENABLE_CUDA
+#if defined KOKKOS_ENABLE_CUDA
         if constexpr(std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
+            nsegs = 0;
+        } else
+#elif defined KOKKOS_ENABLE_SYCL
+        if constexpr(std::is_same_v<ExecutionSpace, Kokkos::SYCL>) {
             nsegs = 0;
         } else
 #endif
@@ -699,6 +716,7 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
     });
 
     // Reduction for OpenMP
+#ifdef KOKKOS_ENABLE_OPENMP
     if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
         for (int k = 0; k < ExecutionSpace::concurrency(); k++) {
             for (int i = 0; i < _nfsr; i++) {
@@ -708,6 +726,7 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
             }
         }
     }
+#endif
 
     // Scale the flux with source, volume, and transport XS
     auto dz = _plane_height;
@@ -739,4 +758,9 @@ template class KokkosMOC<Kokkos::OpenMP, double>;
 #ifdef KOKKOS_ENABLE_CUDA
 template class KokkosMOC<Kokkos::Cuda, float>;
 template class KokkosMOC<Kokkos::Cuda, double>;
+#endif
+
+#ifdef KOKKOS_ENABLE_SYCL
+template class KokkosMOC<Kokkos::SYCL, float>;
+template class KokkosMOC<Kokkos::SYCL, double>;
 #endif
