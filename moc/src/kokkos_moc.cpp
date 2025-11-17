@@ -153,7 +153,6 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
             angface_to_ray[iazi][iface].resize(bc_sizes[iazi][iface] * _num_planes);
         }
     }
-    std::cout << "here" << std::endl;
 
     // Build map from face/BC index to ray index
     for (size_t iray = 0; iray < _num_planes*_n_rays_per_plane; iray++) {
