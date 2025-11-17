@@ -396,10 +396,6 @@ KokkosMOC<ExecutionSpace, RealType>::_read_segments(
         const auto& ray_info = ray_infos[iray];
         nsegs += ray_info.nsegs;
     }
-    // print number of ray segments for problem size debugging
-    if constexpr(true) {    // future debugging condition
-        std::cout << nsegs << " Ray Segments" << std::endl;
-    }
     HViewKokkosRaySegment1D _h_segments("segments", nsegs);
 
     // Set up segments using the sorted order
