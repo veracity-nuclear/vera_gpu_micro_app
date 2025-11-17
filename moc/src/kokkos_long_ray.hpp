@@ -39,6 +39,7 @@ struct KokkosLongRay
         int _nsegs;
         int _bc_face[2];     // size 2: [start, end]
         int _bc_index[2];    // size 2: [start, end]
+        int _plane;
 
         // Processed boundary condition indices for angular flux mapping
         int _angflux_bc_frwd_start;
@@ -54,10 +55,11 @@ struct KokkosLongRay
 
         // Constructor that initializes the KokkosLongRay object from a HighFive::Group
         // for a specific angle index
-        KokkosLongRay(const HighFive::Group& group, int angle_index, int nsegs, int first_segment)
+        KokkosLongRay(const HighFive::Group& group, int angle_index, int nsegs, int first_segment, int plane)
         : _angle_index(angle_index),
           _nsegs(nsegs),
-          _first_seg(first_segment)
+          _first_seg(first_segment),
+          _plane(plane)
         {
             // Read data from HDF5
             auto bc_face = group.getDataSet("BC_face").read<std::vector<int>>();
@@ -125,5 +127,10 @@ struct KokkosLongRay
         KOKKOS_INLINE_FUNCTION
         int angflux_bc_bkwd_end() const {
             return _angflux_bc_bkwd_end;
+        }
+
+        KOKKOS_INLINE_FUNCTION
+        int plane() const {
+            return _plane;
         }
 };
