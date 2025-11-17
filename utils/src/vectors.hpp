@@ -45,4 +45,32 @@ inline void resize(Vector4D& vec, size_t N1, size_t N2, size_t N3, size_t N4, do
     }
 }
 
+inline void fill(Vector1D& vec, double value) {
+    std::fill(vec.begin(), vec.end(), value);
+}
+
+inline void fill(Vector2D& vec, double value) {
+    for (auto& v1 : vec) {
+        std::fill(v1.begin(), v1.end(), value);
+    }
+}
+
+inline void fill(Vector3D& vec, double value) {
+    for (auto& v2 : vec) {
+        for (auto& v1 : v2) {
+            std::fill(v1.begin(), v1.end(), value);
+        }
+    }
+}
+
+inline void fill(Vector4D& vec, double value) {
+    for (auto& v3 : vec) {
+        for (auto& v2 : v3) {
+            for (auto& v1 : v2) {
+                std::fill(v1.begin(), v1.end(), value);
+            }
+        }
+    }
+}
+
 } // namespace Vector

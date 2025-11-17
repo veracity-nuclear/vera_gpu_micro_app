@@ -3,72 +3,76 @@
 Solver::Solver(
     std::shared_ptr<Geometry> geometry,
     std::shared_ptr<Water> fluid,
-    Vector2D inlet_temperature,
-    Vector2D inlet_pressure,
-    Vector2D linear_heat_rate,
-    Vector2D mass_flow_rate
-)
-    : T_inlet(inlet_temperature)
-    , P_inlet(inlet_pressure)
-{
+    Vector1D inlet_temperature,
+    Vector1D inlet_pressure,
+    Vector1D linear_heat_rate,
+    Vector1D mass_flow_rate
+) {
     state.geom = geometry;
     state.fluid = fluid;
 
     size_t nx = state.geom->nx();
     size_t ny = state.geom->ny();
     size_t nz = state.geom->naxial() + 1;
-    size_t ns = 4; // number of neighboring surfaces on an axial plane
+    size_t nchan = state.geom->nchannels();
+    size_t nsurf = state.geom->nsurfaces();
 
     // initialize solution vectors
-    Vector::resize(state.h_l, nx, ny, nz);
-    Vector::resize(state.P, nx, ny, nz);
-    Vector::resize(state.W_l, nx, ny, nz);
-    Vector::resize(state.W_v, nx, ny, nz);
-    Vector::resize(state.alpha, nx, ny, nz);
-    Vector::resize(state.X, nx, ny, nz);
-    Vector::resize(state.lhr, nx, ny, state.geom->naxial());
-    Vector::resize(state.evap, nx, ny, state.geom->naxial());
+    Vector::resize(state.h_l, nchan, nz);
+    Vector::resize(state.P, nchan, nz);
+    Vector::resize(state.W_l, nchan, nz);
+    Vector::resize(state.W_v, nchan, nz);
+    Vector::resize(state.alpha, nchan, nz);
+    Vector::resize(state.X, nchan, nz);
+    Vector::resize(state.lhr, nchan, state.geom->naxial());
+    Vector::resize(state.evap, nchan, state.geom->naxial());
 
     // initialize surface source term vectors
-    Vector::resize(state.G_l_tm, nx, ny, nz, ns);
-    Vector::resize(state.G_v_tm, nx, ny, nz, ns);
-    Vector::resize(state.Q_m_tm, nx, ny, nz, ns);
-    Vector::resize(state.M_m_tm, nx, ny, nz, ns);
-    Vector::resize(state.G_l_vd, nx, ny, nz, ns);
-    Vector::resize(state.G_v_vd, nx, ny, nz, ns);
-    Vector::resize(state.Q_m_vd, nx, ny, nz, ns);
-    Vector::resize(state.M_m_vd, nx, ny, nz, ns);
+    Vector::resize(state.G_l_tm, nsurf);
+    Vector::resize(state.G_v_tm, nsurf);
+    Vector::resize(state.Q_m_tm, nsurf);
+    Vector::resize(state.M_m_tm, nsurf);
+    Vector::resize(state.G_l_vd, nsurf);
+    Vector::resize(state.G_v_vd, nsurf);
+    Vector::resize(state.Q_m_vd, nsurf);
+    Vector::resize(state.M_m_vd, nsurf);
+    Vector::resize(state.gk, nsurf, state.geom->naxial());
 
-    // set inlet boundary conditions
+    // set inlet boundary conditions for surface quantities (0 to naxial)
     for (size_t k = 0; k < nz; ++k) {
-        for (size_t j = 0; j < ny; ++j) {
-            for (size_t i = 0; i < nx; ++i) {
-                state.h_l[i][j][k] = fluid->h(T_inlet[i][j]);
-                state.P[i][j][k] = P_inlet[i][j];
-                state.W_l[i][j][k] = mass_flow_rate[i][j];
-                state.lhr[i][j][k] = linear_heat_rate[i][j];
-            }
+        for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+            state.h_l[i][k] = fluid->h(inlet_temperature[i]);
+            state.P[i][k] = inlet_pressure[i];
+            state.W_l[i][k] = mass_flow_rate[i];
+        }
+    }
+
+    // set node quantities (0 to naxial-1)
+    for (size_t k = 0; k < state.geom->naxial(); ++k) {
+        for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+            state.lhr[i][k] = linear_heat_rate[i];
         }
     }
 
     std::cout << "Solver initialized." << std::endl;
 }
 
-Vector3D Solver::get_evaporation_rates() const {
-    Vector3D evap_rates = state.evap;
+Vector2D Solver::get_evaporation_rates() const {
+    Vector2D evap_rates = state.evap;
     for (size_t k = 0; k < state.geom->naxial(); ++k) {
-        for (size_t j = 0; j < state.geom->ny(); ++j) {
-            for (size_t i = 0; i < state.geom->nx(); ++i) {
-                evap_rates[i][j][k] = state.evap[i][j][k] * state.geom->dz();
-            }
+        for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+            evap_rates[i][k] = state.evap[i][k] * state.geom->dz();
         }
     }
     return evap_rates;
 }
 
-void Solver::solve() {
+void Solver::solve(size_t max_outer_iter, size_t max_inner_iter, bool debug) {
 
     state.surface_plane = 0; // start at inlet axial plane
+    state.node_plane = 0;    // start at first node axial plane
+    state.max_outer_iter = max_outer_iter;
+    state.max_inner_iter = max_inner_iter;
 
     // loop over axial planes
     for (size_t k = 1; k < state.geom->naxial() + 1; ++k) {
@@ -78,24 +82,57 @@ void Solver::solve() {
 
         // closure relations
         TH::solve_evaporation_term(state);
-        TH::solve_turbulent_mixing(state);
-        TH::solve_void_drift(state);
+        TH::solve_mixing(state);
 
         // closure relations use lagging edge values, so update after solving them
         state.surface_plane = k;
 
-        // outer iteration (solution for full axial plane)
-        for (size_t outer_iter = 0; outer_iter < 10; ++outer_iter) { // fixed number of iterations for now
-            TH::solve_surface_mass_flux(state);  // --- TODO: Issue #75 ---
+        TH::solve_surface_mass_flux(state);
 
-            // inner iteration
-            for (size_t inner_iter = 0; inner_iter < 10; ++inner_iter) { // fixed number of iterations for now
-                TH::solve_flow_rates(state);
-                TH::solve_enthalpy(state);
-                TH::solve_void_fraction(state);
-                TH::solve_quality(state);
-                TH::solve_pressure(state);
-            }
+        if (debug) {
+            print_state_at_plane(k);
         }
+
     }
+}
+
+void Solver::print_state_at_plane(size_t k) {
+
+    std::cout << "\nPLANE " << k << std::endl;
+
+    std::cout << "\nPressure:" << std::endl;
+    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+        std::cout << std::setw(14) << state.P[i][k] / 1e6 << " ";
+        if ((i + 1) % state.geom->nx() == 0) std::cout << std::endl;
+    }
+    std::cout << std::endl;
+
+    std::cout << "\nLiquid Flow Rate:" << std::endl;
+    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+        std::cout << std::setw(14) << state.W_l[i][k] << " ";
+        if ((i + 1) % state.geom->nx() == 0) std::cout << std::endl;
+    }
+    std::cout << std::endl;
+
+    std::cout << "\nVapor Flow Rate:" << std::endl;
+    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+        std::cout << std::setw(14) << state.W_v[i][k] << " ";
+        if ((i + 1) % state.geom->nx() == 0) std::cout << std::endl;
+    }
+    std::cout << std::endl;
+
+    std::cout << "\nAlpha:" << std::endl;
+    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+        std::cout << std::setw(14) << state.alpha[i][k] << " ";
+        if ((i + 1) % state.geom->nx() == 0) std::cout << std::endl;
+    }
+    std::cout << std::endl;
+
+    std::cout << "\nQuality:" << std::endl;
+    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+        std::cout << std::setw(14) << state.X[i][k] << " ";
+        if ((i + 1) % state.geom->nx() == 0) std::cout << std::endl;
+    }
+    std::cout << std::endl;
+
 }
