@@ -305,8 +305,6 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
     if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
         _d_thread_scalar_flux = DViewReal3D("thread_scalar_flux", ExecutionSpace::concurrency(), _nfsr, _ng);
     }
-#else
-    _d_thread_scalar_flux = DViewReal3D("thread_scalar_flux", 1, _nfsr, _ng);
 #endif
     Kokkos::Profiling::popRegion();
 }
