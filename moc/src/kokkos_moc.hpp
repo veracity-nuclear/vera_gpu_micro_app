@@ -74,10 +74,11 @@ class KokkosMOC : public BaseMOC {
             std::string ray_name;
             int angle_index;
             int nsegs;
+            int plane_index;
             HighFive::Group ray_group;
 
-            RayInfo(const std::string& ang_name, const std::string& r_name, int ang_idx, int nseg, HighFive::Group group)
-                : angle_name(ang_name), ray_name(r_name), angle_index(ang_idx), nsegs(nseg), ray_group(group) {}
+            RayInfo(const std::string& ang_name, const std::string& r_name, int ang_idx, int nseg, int p_idx, HighFive::Group group)
+                : angle_name(ang_name), ray_name(r_name), angle_index(ang_idx), nsegs(nseg), plane_index(p_idx), ray_group(group) {}
         };
 
         std::vector<RayInfo> _read_ray_infos();

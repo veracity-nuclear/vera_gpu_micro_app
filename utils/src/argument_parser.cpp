@@ -270,12 +270,12 @@ ArgumentParser ArgumentParser::vera_gpu_moc_parser(const std::string& program_na
     parser.add_option("threads", "Number of threads to use", "0");
     parser.add_flag("verbose", "Enable verbose output");
     parser.add_option("sweeper", "Sweeper type (serial, kokkos)", "serial", {"serial", "kokkos"});
-    parser.add_option("device", "Device to use (serial, openmp, cuda)", "serial", {"serial", "openmp", "cuda"});
+    parser.add_option("device", "Device to use (serial, openmp, cuda, sycl)", "serial", {"serial", "openmp", "cuda", "sycl"});
     parser.add_option("precision", "Numerical precision (single, double)", "single", {"single", "double"});
     parser.add_option("max_iter", "Maximum number of iterations", "5000");
     parser.add_option("k_conv_crit", "K-eff convergence criteria threshold", "1e-8");
     parser.add_option("f_conv_crit", "Fission source convergence criteria threshold", "1e-8");
-    parser.add_option("ray_sort", "Ray sorting method (none, long, short)", "none", {"none", "long", "short"});
+    parser.add_option("ray_sort", "Ray sorting method (none, long, short, random)", "none", {"none", "long", "short", "random"});
     parser.add_option("num_planes", "The number of planes to simulate", "1");
 
     return parser;
