@@ -566,7 +566,7 @@ template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
 RealType eval_exp_arg(RealType exparg, const RealType xstr, const RealType ray_segment, const RealType rsinpolang)
 {
-#if defined KOKKOS_ENABLE_CUDA
+#ifdef KOKKOS_ENABLE_CUDA
     if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
         return static_cast<RealType>(1.0) - Kokkos::exp(-xstr * ray_segment * rsinpolang);
     } else
@@ -663,7 +663,7 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
         // Create thread-local exparg array for non-CUDA execution spaces using scratch space
         ScratchViewReal1D exparg(teamMember.team_scratch(0), ray->nsegs());
         int nsegs;
-#if defined KOKKOS_ENABLE_CUDA
+#ifdef KOKKOS_ENABLE_CUDA
         if constexpr(std::is_same_v<ExecutionSpace, Kokkos::Cuda>) {
             nsegs = 0;
         } else
