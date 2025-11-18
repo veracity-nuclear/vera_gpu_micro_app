@@ -7,12 +7,11 @@ double Water::h(double T) const {
 
 Water::DoubleView2D Water::h(const DoubleView2D& T) const {
     DoubleView2D h_values("h_values", T.extent(0), T.extent(1));
-    auto T_copy = T;
-    auto this_ptr = this;
-    Kokkos::parallel_for("Water::h", Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {T.extent(0), T.extent(1)}),
-        KOKKOS_LAMBDA(const size_t i, const size_t k) {
-            h_values(i, k) = this_ptr->h(T_copy(i, k));
-        });
+    for (size_t i = 0; i < T.extent(0); ++i) {
+        for (size_t k = 0; k < T.extent(1); ++k) {
+            h_values(i, k) = h(T(i, k));
+        }
+    }
     return h_values;
 }
 
@@ -22,12 +21,11 @@ double Water::T(double h) const {
 
 Water::DoubleView2D Water::T(const DoubleView2D& h) const {
     DoubleView2D T_values("T_values", h.extent(0), h.extent(1));
-    auto h_copy = h;
-    auto this_ptr = this;
-    Kokkos::parallel_for("Water::T", Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {h.extent(0), h.extent(1)}),
-        KOKKOS_LAMBDA(const size_t i, const size_t k) {
-            T_values(i, k) = this_ptr->T(h_copy(i, k));
-        });
+    for (size_t i = 0; i < h.extent(0); ++i) {
+        for (size_t k = 0; k < h.extent(1); ++k) {
+            T_values(i, k) = T(h(i, k));
+        }
+    }
     return T_values;
 }
 
@@ -38,12 +36,11 @@ double Water::rho(double h) const {
 
 Water::DoubleView2D Water::rho(const DoubleView2D& h) const {
     DoubleView2D rho_values("rho_values", h.extent(0), h.extent(1));
-    auto h_copy = h;
-    auto this_ptr = this;
-    Kokkos::parallel_for("Water::rho", Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {h.extent(0), h.extent(1)}),
-        KOKKOS_LAMBDA(const size_t i, const size_t k) {
-            rho_values(i, k) = this_ptr->rho(h_copy(i, k));
-        });
+    for (size_t i = 0; i < h.extent(0); ++i) {
+        for (size_t k = 0; k < h.extent(1); ++k) {
+            rho_values(i, k) = rho(h(i, k));
+        }
+    }
     return rho_values;
 }
 
@@ -54,12 +51,11 @@ double Water::Cp(double h) const {
 
 Water::DoubleView2D Water::Cp(const DoubleView2D& h) const {
     DoubleView2D Cp_values("Cp_values", h.extent(0), h.extent(1));
-    auto h_copy = h;
-    auto this_ptr = this;
-    Kokkos::parallel_for("Water::Cp", Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {h.extent(0), h.extent(1)}),
-        KOKKOS_LAMBDA(const size_t i, const size_t k) {
-            Cp_values(i, k) = this_ptr->Cp(h_copy(i, k));
-        });
+    for (size_t i = 0; i < h.extent(0); ++i) {
+        for (size_t k = 0; k < h.extent(1); ++k) {
+            Cp_values(i, k) = Cp(h(i, k));
+        }
+    }
     return Cp_values;
 }
 
@@ -70,12 +66,11 @@ double Water::mu(double h) const {
 
 Water::DoubleView2D Water::mu(const DoubleView2D& h) const {
     DoubleView2D mu_values("mu_values", h.extent(0), h.extent(1));
-    auto h_copy = h;
-    auto this_ptr = this;
-    Kokkos::parallel_for("Water::mu", Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {h.extent(0), h.extent(1)}),
-        KOKKOS_LAMBDA(const size_t i, const size_t k) {
-            mu_values(i, k) = this_ptr->mu(h_copy(i, k));
-        });
+    for (size_t i = 0; i < h.extent(0); ++i) {
+        for (size_t k = 0; k < h.extent(1); ++k) {
+            mu_values(i, k) = mu(h(i, k));
+        }
+    }
     return mu_values;
 }
 
@@ -86,11 +81,10 @@ double Water::k(double h) const {
 
 Water::DoubleView2D Water::k(const DoubleView2D& h) const {
     DoubleView2D k_values("k_values", h.extent(0), h.extent(1));
-    auto h_copy = h;
-    auto this_ptr = this;
-    Kokkos::parallel_for("Water::k", Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {h.extent(0), h.extent(1)}),
-        KOKKOS_LAMBDA(const size_t i, const size_t plane) {
-            k_values(i, plane) = this_ptr->k(h_copy(i, plane));
-        });
+    for (size_t i = 0; i < h.extent(0); ++i) {
+        for (size_t plane = 0; plane < h.extent(1); ++plane) {
+            k_values(i, plane) = k(h(i, plane));
+        }
+    }
     return k_values;
 }
