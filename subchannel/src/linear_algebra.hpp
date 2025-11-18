@@ -1,10 +1,9 @@
 #pragma once
 
 #include <iostream>
+#include <vector>
 
-#include "vectors.hpp"
-
-inline static int solve_linear_system(int n, Vector2D& A, Vector1D& b) {
+inline static int solve_linear_system(int n, std::vector<std::vector<double>>& A, std::vector<double>& b) {
     // Forward elimination with partial pivoting
     for (int k = 0; k < n - 1; ++k) {
         // Find pivot

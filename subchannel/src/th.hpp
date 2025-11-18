@@ -5,8 +5,8 @@
 #include <vector>
 #include <memory>
 #include <cmath>
+#include <Kokkos_Core.hpp>
 
-#include "vectors.hpp"
 #include "constants.hpp"
 #include "geometry.hpp"
 #include "materials.hpp"
