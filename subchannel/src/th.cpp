@@ -259,10 +259,10 @@ void TH::solve_surface_mass_flux(State& state) {
     // outer loop for newton iteration convergence
     for (size_t outer_iter = 0; outer_iter < state.max_outer_iter; ++outer_iter) {
 
-        // Residual vectors and Jacobian Matrix
-        std::vector<double> f0(nsurf);
-        std::vector<double> f3(nsurf);
-        std::vector<std::vector<double>> dfdg(nsurf, std::vector<double>(nsurf));
+        // Residual vectors and Jacobian Matrix as Kokkos Views
+        Kokkos::View<double*> f0("f0", nsurf);
+        Kokkos::View<double*> f3("f3", nsurf);
+        Kokkos::View<double**> dfdg("dfdg", nsurf, nsurf);
 
         // PLANAR solve
         planar(state);
@@ -281,13 +281,13 @@ void TH::solve_surface_mass_flux(State& state) {
             double rho_m = state.fluid->rho_m(h_X(i_donor, k));
             double deltaP = h_P(i, k) - h_P(j, k); // Eq. 56 from ANTS Theory
             double Fns = 0.5 * K_ns * h_gk(ns, k_node) * std::abs(h_gk(ns, k_node)) / rho_m; // Eq. 57 from ANTS Theory
-            f0[ns] = -dz * aspect * (deltaP - Fns); // Eq. 55 from ANTS Theory
+            f0(ns) = -dz * aspect * (deltaP - Fns); // Eq. 55 from ANTS Theory
         }
 
         // calculate max residual
         double max_res = 0.0;
         for (size_t ns = 0; ns < nsurf; ++ns) {
-            max_res = std::max(max_res, std::abs(f0[ns]));
+            max_res = std::max(max_res, std::abs(f0(ns)));
         }
         // std::cout << "Residual from iter " << outer_iter + 1 << ": " << max_res << std::endl;
         if (max_res < tol) {
@@ -327,9 +327,9 @@ void TH::solve_surface_mass_flux(State& state) {
                 double rho_m = perturb_state.fluid->rho_m(h_perturb_X(i_donor, k));
                 double deltaP = h_perturb_P(i, k) - h_perturb_P(j, k);
                 double Fns = 0.5 * K_ns * h_perturb_gk(ns, k_node) * std::abs(h_perturb_gk(ns, k_node)) / rho_m;
-                f3[ns] = -dz * aspect * (deltaP - Fns);
+                f3(ns) = -dz * aspect * (deltaP - Fns);
 
-                dfdg[ns][ns1] = (f3[ns] - f0[ns]) / (h_perturb_gk(ns1, k_node) - h_gk(ns1, k_node));
+                dfdg(ns, ns1) = (f3(ns) - f0(ns)) / (h_perturb_gk(ns1, k_node) - h_gk(ns1, k_node));
             }
         }
 
@@ -338,7 +338,7 @@ void TH::solve_surface_mass_flux(State& state) {
 
         // update mass fluxes from solution
         for (size_t ns = 0; ns < nsurf; ++ns) {
-            h_gk(ns, k_node) -= f0[ns];
+            h_gk(ns, k_node) -= f0(ns);
         }
 
         Kokkos::deep_copy(state.gk, h_gk);
