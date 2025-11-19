@@ -15,15 +15,33 @@
 
 namespace TH {
 
-void planar(State& state);
-void solve_evaporation_term(State& state);
-void solve_mixing(State& state);
-void solve_surface_mass_flux(State& state);
-void solve_flow_rates(State& state);
-void solve_enthalpy(State& state);
-void solve_void_fraction(State& state);
-void solve_quality(State& state);
-void solve_pressure(State& state);
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void planar(State<ExecutionSpace>& state);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_evaporation_term(State<ExecutionSpace>& state);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_mixing(State<ExecutionSpace>& state);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_surface_mass_flux(State<ExecutionSpace>& state);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_flow_rates(State<ExecutionSpace>& state);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_enthalpy(State<ExecutionSpace>& state);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_void_fraction(State<ExecutionSpace>& state);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_quality(State<ExecutionSpace>& state);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_pressure(State<ExecutionSpace>& state);
+
 double __Reynolds(double G, double D_h, double mu);
 double __Prandtl(double Cp, double mu, double k);
 double __Peclet(double Re, double Pr);

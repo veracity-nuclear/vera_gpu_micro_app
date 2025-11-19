@@ -2,15 +2,16 @@
 
 #include <Kokkos_Core.hpp>
 
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
 struct State {
-    using DoubleView1D = Kokkos::View<double*>;
-    using DoubleView2D = Kokkos::View<double**>;
+    using DoubleView1D = Kokkos::View<double*, ExecutionSpace>;
+    using DoubleView2D = Kokkos::View<double**, ExecutionSpace>;
 
     size_t surface_plane = 0;       // current surface axial plane being solved
     size_t node_plane = 0;          // current node axial plane being solved
     size_t max_outer_iter;          // maximum outer iterations
     size_t max_inner_iter;          // maximum inner iterations
-    std::shared_ptr<Water> fluid;   // reference to fluid properties
+    std::shared_ptr<Water<ExecutionSpace>> fluid;   // reference to fluid properties
     std::shared_ptr<Geometry> geom; // reference to geometry
 
     DoubleView2D h_l;       // liquid enthalpy

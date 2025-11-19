@@ -23,17 +23,17 @@ TEST(SubchannelTest, SingleChannel) {
     Geometry geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, N, naxial);
 
     // working fluid is water
-    Water<> fluid;
+    Water<Kokkos::Serial> fluid;
 
     // Initialize Kokkos
     Kokkos::initialize();
     {
 
     // create 1D views for each solver parameters
-    Kokkos::View<double*> inlet_mass_flow("inlet_mass_flow", N*N);
-    Kokkos::View<double*> inlet_temperature("inlet_temperature", N*N);
-    Kokkos::View<double*> inlet_pressure("inlet_pressure", N*N);
-    Kokkos::View<double*> linear_heat_rate("linear_heat_rate", N*N);
+    Kokkos::View<double*, Kokkos::Serial> inlet_mass_flow("inlet_mass_flow", N*N);
+    Kokkos::View<double*, Kokkos::Serial> inlet_temperature("inlet_temperature", N*N);
+    Kokkos::View<double*, Kokkos::Serial> inlet_pressure("inlet_pressure", N*N);
+    Kokkos::View<double*, Kokkos::Serial> linear_heat_rate("linear_heat_rate", N*N);
 
     auto h_inlet_mass_flow = Kokkos::create_mirror_view(inlet_mass_flow);
     auto h_inlet_temperature = Kokkos::create_mirror_view(inlet_temperature);
@@ -54,9 +54,9 @@ TEST(SubchannelTest, SingleChannel) {
 
     std::cout << "Linear heat rate: " << h_linear_heat_rate(0) << " W/m" << std::endl;
 
-    Solver<> solver(
+    Solver<Kokkos::Serial> solver(
         std::make_shared<Geometry>(geometry),
-        std::make_shared<Water<>>(fluid),
+        std::make_shared<Water<Kokkos::Serial>>(fluid),
         inlet_temperature,
         inlet_pressure,
         linear_heat_rate,

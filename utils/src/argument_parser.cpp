@@ -280,3 +280,19 @@ ArgumentParser ArgumentParser::vera_gpu_moc_parser(const std::string& program_na
 
     return parser;
 }
+
+ArgumentParser ArgumentParser::vera_gpu_subchannel_parser(const std::string& program_name) {
+    ArgumentParser parser(program_name, "VERA GPU Micro-App for eigenvalue calculations");
+
+    // Add required positional arguments
+    parser.add_argument("filename", "Input geometry file");
+    parser.add_argument("xs_file", "Cross-section data file");
+
+    // Add optional arguments
+    parser.add_option("threads", "Number of threads to use", "0");
+    parser.add_flag("verbose", "Enable verbose output");
+    parser.add_option("device", "Device to use (serial, openmp, cuda, sycl)", "serial", {"serial", "openmp", "cuda", "sycl"});
+    parser.add_option("max_iter", "Maximum number of iterations", "5000");
+
+    return parser;
+}

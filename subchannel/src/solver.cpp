@@ -1,9 +1,10 @@
 #include "solver.hpp"
 #include <iomanip>
 
-Solver::Solver(
+template <typename ExecutionSpace>
+Solver<ExecutionSpace>::Solver(
     std::shared_ptr<Geometry> geometry,
-    std::shared_ptr<Water> fluid,
+    std::shared_ptr<Water<ExecutionSpace>> fluid,
     DoubleView1D inlet_temperature,
     DoubleView1D inlet_pressure,
     DoubleView1D linear_heat_rate,
@@ -77,10 +78,11 @@ Solver::Solver(
     Kokkos::deep_copy(state.W_l, h_W_l);
     Kokkos::deep_copy(state.lhr, h_lhr);
 
-    std::cout << "Solver initialized." << std::endl;
+    std::cout << "Solver initialized (using " << ExecutionSpace::concurrency() << " execution resources)." << std::endl;
 }
 
-Solver::DoubleView2D Solver::get_evaporation_rates() const {
+template <typename ExecutionSpace>
+typename Solver<ExecutionSpace>::DoubleView2D Solver<ExecutionSpace>::get_evaporation_rates() const {
     DoubleView2D evap_rates("evap_rates", state.evap.extent(0), state.evap.extent(1));
     auto h_evap_rates = Kokkos::create_mirror_view(evap_rates);
     auto h_evap = Kokkos::create_mirror_view(state.evap);
@@ -96,7 +98,8 @@ Solver::DoubleView2D Solver::get_evaporation_rates() const {
     return evap_rates;
 }
 
-void Solver::solve(size_t max_outer_iter, size_t max_inner_iter, bool debug) {
+template <typename ExecutionSpace>
+void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter, bool debug) {
 
     state.surface_plane = 0; // start at inlet axial plane
     state.node_plane = 0;    // start at first node axial plane
@@ -110,13 +113,13 @@ void Solver::solve(size_t max_outer_iter, size_t max_inner_iter, bool debug) {
         state.node_plane = k - 1;
 
         // closure relations
-        TH::solve_evaporation_term(state);
-        TH::solve_mixing(state);
+        TH::solve_evaporation_term<ExecutionSpace>(state);
+        TH::solve_mixing<ExecutionSpace>(state);
 
         // closure relations use lagging edge values, so update after solving them
         state.surface_plane = k;
 
-        TH::solve_surface_mass_flux(state);
+        TH::solve_surface_mass_flux<ExecutionSpace>(state);
 
         if (debug) {
             print_state_at_plane(k);
@@ -125,7 +128,8 @@ void Solver::solve(size_t max_outer_iter, size_t max_inner_iter, bool debug) {
     }
 }
 
-void Solver::print_state_at_plane(size_t k) {
+template <typename ExecutionSpace>
+void Solver<ExecutionSpace>::print_state_at_plane(size_t k) {
 
     // Create host mirrors to access data
     auto h_P = Kokkos::create_mirror_view(state.P);
@@ -178,3 +182,10 @@ void Solver::print_state_at_plane(size_t k) {
     std::cout << std::endl;
 
 }
+
+// Explicit template instantiations
+template class Solver<Kokkos::DefaultExecutionSpace>;
+template class Solver<Kokkos::Serial>;
+#if defined(KOKKOS_ENABLE_SERIAL) && !defined(KOKKOS_ENABLE_OPENMP)
+template class Solver<Kokkos::Serial>;
+#endif

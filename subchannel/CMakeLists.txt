@@ -16,10 +16,16 @@ target_link_libraries(subchannel_lib
 enable_testing()
 set(TEST_EXECUTABLES
     test_geometry
-    test_single_channel
-    test_3x3_channels
+    test_ants_1x1_serial
+    test_ants_3x3_omp
+    test_ants_3x3_serial
+    test_ants_7x7_omp
+    test_ants_7x7_serial
 )
 set(TEST_LABELS
+    "BASIC\;CONTINUOUS\;HEAVY"
+    "BASIC\;CONTINUOUS\;HEAVY"
+    "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"

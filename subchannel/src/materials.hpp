@@ -4,9 +4,10 @@
 #include <stdexcept>
 #include <Kokkos_Core.hpp>
 
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
 class Water {
 public:
-    using DoubleView2D = Kokkos::View<double**>;
+    using DoubleView2D = Kokkos::View<double**, ExecutionSpace>;
 
     Water() = default;
     ~Water() = default;

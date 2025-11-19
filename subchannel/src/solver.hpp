@@ -11,14 +11,15 @@
 #include "th.hpp"
 
 
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
 class Solver {
 public:
-    using DoubleView1D = Kokkos::View<double*>;
-    using DoubleView2D = Kokkos::View<double**>;
+    using DoubleView1D = Kokkos::View<double*, ExecutionSpace>;
+    using DoubleView2D = Kokkos::View<double**, ExecutionSpace>;
 
     Solver(
         std::shared_ptr<Geometry> geometry,
-        std::shared_ptr<Water> fluid,
+        std::shared_ptr<Water<ExecutionSpace>> fluid,
         DoubleView1D inlet_temperature,
         DoubleView1D inlet_pressure,
         DoubleView1D linear_heat_rate,
@@ -26,7 +27,7 @@ public:
     );
     ~Solver() = default;
 
-    State state;
+    State<ExecutionSpace> state;
 
     void solve(size_t max_outer_iter = 10, size_t max_inner_iter = 10, bool debug = false);
     void print_state_at_plane(size_t k);

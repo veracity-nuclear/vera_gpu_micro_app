@@ -6,8 +6,9 @@
 
 #include "vectors.hpp"
 
-// Overload for Kokkos Views
-inline static int solve_linear_system(int n, Kokkos::View<double**>& A, Kokkos::View<double*>& b) {
+// Templated overload for Kokkos Views with execution space
+template<typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+inline static int solve_linear_system(int n, Kokkos::View<double**, ExecutionSpace>& A, Kokkos::View<double*, ExecutionSpace>& b) {
     // Forward elimination with partial pivoting
     for (int k = 0; k < n - 1; ++k) {
         // Find pivot
