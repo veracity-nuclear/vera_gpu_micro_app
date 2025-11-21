@@ -1,10 +1,13 @@
 #pragma once
 
 #include <iostream>
+#include <iomanip>
 #include <memory>
 #include <vector>
+#include <string>
 #include <Kokkos_Core.hpp>
 
+#include "argument_parser.hpp"
 #include "geometry.hpp"
 #include "materials.hpp"
 #include "state.hpp"
@@ -17,6 +20,7 @@ public:
     using DoubleView1D = Kokkos::View<double*, ExecutionSpace>;
     using DoubleView2D = Kokkos::View<double**, ExecutionSpace>;
 
+    Solver(const ArgumentParser& args);
     Solver(
         std::shared_ptr<Geometry> geometry,
         std::shared_ptr<Water<ExecutionSpace>> fluid,

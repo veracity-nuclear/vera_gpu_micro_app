@@ -1,5 +1,14 @@
 #include "solver.hpp"
-#include <iomanip>
+
+template <typename ExecutionSpace>
+Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
+    // Extract parameters from ArgumentParser and initialize Solver
+    std::string filename = args.get_positional(0);
+    std::cout << filename << std::endl;
+
+    args.print_help();
+
+}
 
 template <typename ExecutionSpace>
 Solver<ExecutionSpace>::Solver(

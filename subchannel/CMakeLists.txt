@@ -21,14 +21,16 @@ set(TEST_EXECUTABLES
     test_ants_3x3_serial
     test_ants_7x7_omp
     test_ants_7x7_serial
+    test_ants_smr_serial
 )
 set(TEST_LABELS
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
-    "BASIC\;CONTINUOUS\;HEAVY"
-    "BASIC\;CONTINUOUS\;HEAVY"
+    "CONTINUOUS\;HEAVY"
+    "CONTINUOUS\;HEAVY"
+    "HEAVY"
 )
 list(LENGTH TEST_EXECUTABLES list_length)
 math(EXPR last_index "${list_length} - 1")
