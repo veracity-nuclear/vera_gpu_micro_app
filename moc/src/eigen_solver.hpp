@@ -11,6 +11,7 @@ class EigenSolver {
         EigenSolver(const ArgumentParser& args, std::shared_ptr<BaseMOC> sweeper);
         // Run the eigenvalue iteration
         void solve();
+        double time_solve();
         // Get the keff
         double keff();
     private:
