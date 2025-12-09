@@ -103,7 +103,7 @@ int main(int argc, char* argv[]) {
       std::cout << "  - SYCL\n";
       if (verbose) {
         Kokkos::parallel_for("sycl_hello", Kokkos::RangePolicy<Kokkos::SYCL>(0, 10), KOKKOS_LAMBDA(int i) {
-          printf("Hello from parallel_for test loop index i = %d/10\n", i);
+          // printf("Hello from parallel_for test loop index i = %d/10\n", i);
         });
       }
 #endif

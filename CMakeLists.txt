@@ -40,7 +40,7 @@ enable_testing()
 add_subdirectory(utils)
 
 # Add micro-apps
-#add_subdirectory(cmfd)
+add_subdirectory(cmfd)
 add_subdirectory(moc)
-#add_subdirectory(conduction)
-#add_subdirectory(subchannel)
+add_subdirectory(conduction)
+add_subdirectory(subchannel)
