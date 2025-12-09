@@ -18,11 +18,6 @@ add_executable(micro_moc
 )
 target_link_libraries(micro_moc moc_lib)
 
-add_executable(moc_mean_time
-    src/moc_mean_time.cpp
-)
-target_link_libraries(moc_mean_time moc_lib)
-
 # Copy the data directory to the build location
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/data DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
