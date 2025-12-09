@@ -549,7 +549,7 @@ struct RayIndexCalculator {
             iray = league_rank;
             ipol = team_rank;
         } else
-        #elif defined KOKKOS_ENABLE_SYCL
+#elif defined KOKKOS_ENABLE_SYCL
         if constexpr(std::is_same_v<ExecutionSpace, Kokkos::SYCL>) {
             iray = league_rank;
             ipol = team_rank;
