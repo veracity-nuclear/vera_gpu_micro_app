@@ -55,12 +55,14 @@ public:
 
     const size_t boundary = std::numeric_limits<size_t>::max(); // for a neighbor that is a boundary
     double height() const { return H; }
-    double flow_area() const { return Af; }
+    double flow_area(size_t aij, size_t k) const; // variable flow area
+    double flow_area() const { return Af; } // average flow area for single assembly constructor
     double hydraulic_diameter() const { return Dh; }
     double gap_width() const { return gap_W; }
     double heated_perimeter() const { return 4.0 * Af / Dh; }
     double aspect_ratio() const { return gap_W / l; }
-    double dz() const { return H / _nz; }
+    double dz(size_t k) const; // variable axial spacing
+    double dz() const { return H / _nz; } // average dz for single assembly constructor
     size_t nchan() const { return _nchan; }
     size_t core_size() const { return _core_map.extent(0); }
     size_t core_map(size_t aj, size_t ai) const { return _core_map(aj, ai); }
@@ -82,5 +84,7 @@ private:
     View2D _core_map;       // core map of assembly indices
     View4D _ij_global;      // mapping from (aj, ai, j, i) to global channel index
     ViewSizeT2D _ns_global;      // mapping from (aij, ns) to global surface index
+    View1D _axial_mesh;     // axial mesh positions [m] (size: _nz+1)
+    View2D _channel_area;   // channel flow areas [m^2] (size: nchannels x _nz)
 };
 

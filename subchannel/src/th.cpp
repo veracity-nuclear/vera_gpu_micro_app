@@ -23,7 +23,7 @@ template <typename ExecutionSpace>
 void TH::solve_evaporation_term(State<ExecutionSpace>& state) {
     double D_h = state.geom->hydraulic_diameter(); // hydraulic diameter [m]
     double P_H = state.geom->heated_perimeter(); // heated perimeter [m]
-    double A_f = state.geom->flow_area(); // flow area [m^2]
+    double A_f = state.geom->flow_area(); // average flow area [m^2] for single assembly
 
     typename State<ExecutionSpace>::View2D mu = state.fluid->mu(state.h_l); // dynamic viscosity [Pa-s]
     typename State<ExecutionSpace>::View2D rho = state.fluid->rho(state.h_l); // liquid density [kg/m^3]
@@ -135,7 +135,7 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
     double rhof = state.fluid->rho_f();
     double rho_g = state.fluid->rho_g();
 
-    double A_f = state.geom->flow_area(); // flow area [m^2]
+    double A_f = state.geom->flow_area(); // average flow area [m^2] for single assembly
     double D_rod = state.geom->heated_perimeter() / M_PI; // rod diameter [m], assuming square array
     double D_h = state.geom->hydraulic_diameter(); // hydraulic diameter [m]
     double S_ij = state.geom->gap_width(); // gap width between subchannels [m]
@@ -145,8 +145,10 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
     std::vector<double> reyn0(state.geom->nchannels(), 0.0);
     std::vector<double> Theta(state.geom->nchannels(), 0.0);
     for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
+        double A_f_ijk = state.geom->flow_area(ij, k_node); // flow area for channel ij at axial node k_node
+        if (A_f_ijk < 1e-12) continue; // skip channels with no flow area
         double viscmi = h_X(ij, k) / state.fluid->mu_g() + (1.0 - h_X(ij, k)) / state.fluid->mu_f();
-        gbar0[ij] = (h_W_l(ij, k) + h_W_v(ij, k)) / A_f;
+        gbar0[ij] = (h_W_l(ij, k) + h_W_v(ij, k)) / A_f_ijk;
         reyn0[ij] = gbar0[ij] * D_h / viscmi;
 
         double Xmm = (0.4 * std::sqrt(rhof * (rhof - rho_g) * g * D_h) / gbar0[ij] + 0.6) / (std::sqrt(rhof / rho_g) + 0.6);
@@ -253,7 +255,7 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     const double K_ns = 0.5; // gap loss coefficient
     const double gtol = 1e-3; // mass flux perturbation amount
     const double tol = 1e-8; // convergence tolerance
-    const double dz = state.geom->dz();
+    const double dz = state.geom->dz(k_node); // variable axial spacing
     const double S_ij = state.geom->gap_width();
     const double aspect = state.geom->aspect_ratio();
 
@@ -406,9 +408,12 @@ void TH::solve_flow_rates(State<ExecutionSpace>& state) {
         SS_v[j] -= state.geom->gap_width() * sv;
     }
 
+    const double dz = state.geom->dz(k_node); // variable axial spacing
     for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
+        double A_f_ijk = state.geom->flow_area(ij, k_node);
+        if (A_f_ijk < 1e-12) continue; // skip channels with no flow area
 
-        h_W_l(ij, k) = h_W_l(ij, k-1) - state.geom->dz() * (h_evap(ij, k_node) + SS_l[ij]); // Eq. 61 from ANTS Theory
+        h_W_l(ij, k) = h_W_l(ij, k-1) - dz * (h_evap(ij, k_node) + SS_l[ij]); // Eq. 61 from ANTS Theory
         h_W_l(ij, k) = std::max(h_W_l(ij, k), 0.0); // prevent negative liquid flow rate
 
         // throw error if liquid flow rate becomes negative and add debug info
@@ -420,7 +425,7 @@ void TH::solve_flow_rates(State<ExecutionSpace>& state) {
                 "SS_l: " + std::to_string(SS_l[ij]) + "\n");
         }
 
-        h_W_v(ij, k) = h_W_v(ij, k-1) + state.geom->dz() * (h_evap(ij, k_node) - SS_v[ij]); // Eq. 62 from ANTS Theory
+        h_W_v(ij, k) = h_W_v(ij, k-1) + dz * (h_evap(ij, k_node) - SS_v[ij]); // Eq. 62 from ANTS Theory
         h_W_v(ij, k) = std::max(h_W_v(ij, k), 0.0); // prevent negative vapor flow rate
 
         // throw error if vapor flow rate becomes negative and add debug info
@@ -474,12 +479,15 @@ void TH::solve_enthalpy(State<ExecutionSpace>& state) {
         SS_m[j] -= state.geom->gap_width() * (h_gk(ns, k_node) * h_l_donor + h_Q_m_tm(ns) + h_Q_m_vd(ns));
     }
 
+    const double dz = state.geom->dz(k_node); // variable axial spacing
     for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
+        double A_f_ijk = state.geom->flow_area(ij, k_node);
+        if (A_f_ijk < 1e-12) continue; // skip channels with no flow area
 
         h_h_l(ij, k) = (
             (h_W_v(ij, k-1) - h_W_v(ij, k)) * state.fluid->h_g()
-            + h_W_l(ij, k-1) * h_h_l(ij, k-1) + state.geom->dz() * h_lhr(ij, k_node)
-            - state.geom->dz() * SS_m[ij]
+            + h_W_l(ij, k-1) * h_h_l(ij, k-1) + dz * h_lhr(ij, k_node)
+            - dz * SS_m[ij]
         ) / h_W_l(ij, k); // Eq. 63 from ANTS Theory
     }
 
@@ -493,7 +501,7 @@ void TH::solve_void_fraction(State<ExecutionSpace>& state) {
 
     // based on the Chexal-Lellouche drift flux model
     double P = state.P(0, 0); // assuming constant pressure for simplicity
-    double A = state.geom->flow_area();
+    double A = state.geom->flow_area(); // average flow area for single assembly
     double D_h = state.geom->hydraulic_diameter();
 
     auto h_alpha = Kokkos::create_mirror_view(state.alpha);
@@ -508,9 +516,12 @@ void TH::solve_void_fraction(State<ExecutionSpace>& state) {
     Kokkos::deep_copy(h_X, state.X);
 
     size_t k = state.surface_plane;
+    size_t k_node = state.node_plane;
     for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
-        double Gv = h_W_v(ij, k) / A; // vapor mass flux
-        double Gl = h_W_l(ij, k) / A; // liquid mass flux
+        double A_ijk = state.geom->flow_area(ij, k_node);
+        if (A_ijk < 1e-12) continue; // skip channels with no flow area
+        double Gv = h_W_v(ij, k) / A_ijk; // vapor mass flux
+        double Gl = h_W_l(ij, k) / A_ijk; // liquid mass flux
 
         if (Gv < eps) {
             h_alpha(ij, k) = 0.0;
@@ -526,8 +537,8 @@ void TH::solve_void_fraction(State<ExecutionSpace>& state) {
         double mu_l = state.fluid->mu(h_l);
         double sigma = state.fluid->sigma();
 
-        double Re_g = __Reynolds(h_W_v(ij, k) / A, D_h, mu_v); // local vapor Reynolds number
-        double Re_f = __Reynolds(h_W_l(ij, k) / A, D_h, mu_l); // local liquid Reynolds number
+        double Re_g = __Reynolds(h_W_v(ij, k) / A_ijk, D_h, mu_v); // local vapor Reynolds number
+        double Re_f = __Reynolds(h_W_l(ij, k) / A_ijk, D_h, mu_l); // local liquid Reynolds number
         double Re;
         if (Re_g > Re_f) {
             Re = Re_g;
@@ -586,6 +597,7 @@ void TH::solve_void_fraction(State<ExecutionSpace>& state) {
 template <typename ExecutionSpace>
 void TH::solve_quality(State<ExecutionSpace>& state) {
     size_t k = state.surface_plane;
+    size_t k_node = state.node_plane;
 
     auto h_X = Kokkos::create_mirror_view(state.X);
     auto h_W_v = Kokkos::create_mirror_view(state.W_v);
@@ -595,8 +607,10 @@ void TH::solve_quality(State<ExecutionSpace>& state) {
     Kokkos::deep_copy(h_W_l, state.W_l);
 
     for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
-        double G_v = h_W_v(ij, k) / state.geom->flow_area(); // vapor mass flux, Eq. 8 from ANTS Theory
-        double G_l = h_W_l(ij, k) / state.geom->flow_area(); // liquid mass flux, Eq. 9 from ANTS Theory
+        double A_f_ijk = state.geom->flow_area(ij, k_node); // flow area for channel ij at axial node k_node
+        if (A_f_ijk < 1e-12) continue; // skip channels with no flow area
+        double G_v = h_W_v(ij, k) / A_f_ijk; // vapor mass flux, Eq. 8 from ANTS Theory
+        double G_l = h_W_l(ij, k) / A_f_ijk; // liquid mass flux, Eq. 9 from ANTS Theory
         h_X(ij, k) = G_v / (G_v + G_l); // Eq. 17 from ANTS Theory
 
         // throw error if quality becomes negative and add debug info
@@ -618,9 +632,8 @@ void TH::solve_pressure(State<ExecutionSpace>& state) {
     const double a_1 = 0.1892;
     const double n = -0.2;
 
-    double dz = state.geom->dz();
     double D_h = state.geom->hydraulic_diameter();
-    double A_f = state.geom->flow_area();
+    double A_f = state.geom->flow_area(); // average flow area for single assembly
 
     typename State<ExecutionSpace>::View2D rho = state.fluid->rho(state.h_l);
     typename State<ExecutionSpace>::View2D mu = state.fluid->mu(state.h_l);
@@ -648,6 +661,7 @@ void TH::solve_pressure(State<ExecutionSpace>& state) {
 
     size_t k = state.surface_plane;
     size_t k_node = state.node_plane;
+    double dz = state.geom->dz(k_node); // variable axial spacing
 
     // loop over transverse surfaces to add source terms to pressure drops
     std::vector<double> CF_SS(state.geom->nchannels()); // sum of cross-flow momentum exchange terms [Pa]
@@ -672,6 +686,8 @@ void TH::solve_pressure(State<ExecutionSpace>& state) {
     }
 
     for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
+        double A_f_ijk = state.geom->flow_area(ij, k_node);
+        if (A_f_ijk < 1e-12) continue; // skip channels with no flow area
 
         // ----- two-phase acceleration pressure drop -----
         double dP_accel = (state.W_m(ij, k) * state.V_m(ij, k) - state.W_m(ij, k-1) * state.V_m(ij, k-1)) / A_f;

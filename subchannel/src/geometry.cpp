@@ -9,6 +9,21 @@ Geometry<ExecutionSpace>::Geometry(double height, double flow_area, double hydra
     _core_map = View2D("core_map", 1, 1);
     _core_map(0, 0) = 1;  // Single assembly
 
+    // Initialize uniform axial mesh
+    _axial_mesh = View1D("axial_mesh", _nz + 1);
+    for (size_t k = 0; k <= _nz; ++k) {
+        _axial_mesh(k) = k * (H / _nz);
+    }
+
+    // Initialize constant flow area for all channels
+    size_t total_channels = _nchan * _nchan;
+    _channel_area = View2D("channel_area", total_channels, _nz);
+    for (size_t aij = 0; aij < total_channels; ++aij) {
+        for (size_t k = 0; k < _nz; ++k) {
+            _channel_area(aij, k) = Af;
+        }
+    }
+
     // Initialize global channel index mapping for single assembly
     _ij_global = View4D("ij_global", 1, 1, _nchan, _nchan);
     size_t global_idx = 0;
@@ -85,6 +100,9 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
     _nz = axial_mesh.extent(0) - 1;
     _nchan = channel_area.extent(0);
 
+    // Store axial mesh for variable spacing
+    _axial_mesh = axial_mesh;
+
     double lhr = core.getDataSet("nominal_linear_heat_rate").read<double>(); // will improve with Issue #95
     double height = axial_mesh(axial_mesh.extent(0) - 1) - axial_mesh(0);
     double flow_area = channel_area(_nchan / 2, _nchan / 2, _nz / 2, 0); // pick center assembly at midplane (will improve with Issue #94)
@@ -116,6 +134,24 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
                 for (size_t i = 0; i < _nchan; ++i) {
                     _ij_global(aj, ai, j, i) = global_idx;
                     global_idx++;
+                }
+            }
+        }
+    }
+
+    // Flatten channel_area from 4D (nchan, nchan, nz, nassembly) to 2D (nchannels, nz)
+    _channel_area = View2D("channel_area", nchannels(), _nz);
+
+    for (size_t aj = 0; aj < core_size; ++aj) {
+        for (size_t ai = 0; ai < core_size; ++ai) {
+            if (_core_map(aj, ai) == 0) continue;
+            size_t assem_idx = _core_map(aj, ai) - 1; // Convert to 0-based index
+            for (size_t j = 0; j < _nchan; ++j) {
+                for (size_t i = 0; i < _nchan; ++i) {
+                    size_t aij = _ij_global(aj, ai, j, i);
+                    for (size_t k = 0; k < _nz; ++k) {
+                        _channel_area(aij, k) = channel_area(i, j, k, assem_idx);
+                    }
                 }
             }
         }
@@ -203,21 +239,16 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
     std::cout << "Naxial: " << _nz << std::endl;
     std::cout << "LHR: " << lhr << " W/m" << std::endl;
     std::cout << "Height: " << height << " cm" << std::endl;
-    std::cout << "Flow area: " << flow_area << " cm^2" << std::endl;
-    std::cout << "Hydraulic diameter: " << hydraulic_diameter << " cm" << std::endl;
-    std::cout << "Gap width: " << gap_width << " cm" << std::endl;
-    std::cout << "Length: " << length << " cm" << std::endl;
-    std::cout << "Assembly pitch: " << apitch << " cm" << std::endl;
+}
 
-    std::cout << "Core Map:" << std::endl;
-    for (size_t i = 0; i < _core_map.extent(0); ++i) {
-        for (size_t j = 0; j < _core_map.extent(1); ++j) {
-            if (_core_map(i, j) == 0) std::cout << std::setw(5) << ' ';
-            else std::cout << std::setw(5) << _core_map(i, j);
-        }
-        std::cout << '\n' << std::endl;
-    }
+template <typename ExecutionSpace>
+double Geometry<ExecutionSpace>::dz(size_t k) const {
+    return _axial_mesh(k + 1) - _axial_mesh(k);
+}
 
+template <typename ExecutionSpace>
+double Geometry<ExecutionSpace>::flow_area(size_t aij, size_t k) const {
+    return _channel_area(aij, k);
 }
 
 template <typename ExecutionSpace>

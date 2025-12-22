@@ -220,7 +220,7 @@ typename Solver<ExecutionSpace>::View2D Solver<ExecutionSpace>::get_evaporation_
 
     for (size_t k = 0; k < state.geom->naxial(); ++k) {
         for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-            h_evap_rates(i, k) = h_evap(i, k) * state.geom->dz();
+            h_evap_rates(i, k) = h_evap(i, k) * state.geom->dz(k); // variable axial spacing
         }
     }
 
