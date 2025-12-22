@@ -4,36 +4,36 @@
 
 template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
 struct State {
-    using DoubleView1D = Kokkos::View<double*, ExecutionSpace>;
-    using DoubleView2D = Kokkos::View<double**, ExecutionSpace>;
+    using View1D = Kokkos::View<double*, ExecutionSpace>;
+    using View2D = Kokkos::View<double**, ExecutionSpace>;
 
     size_t surface_plane = 0;       // current surface axial plane being solved
     size_t node_plane = 0;          // current node axial plane being solved
     size_t max_outer_iter;          // maximum outer iterations
     size_t max_inner_iter;          // maximum inner iterations
     std::shared_ptr<Water<ExecutionSpace>> fluid;   // reference to fluid properties
-    std::shared_ptr<Geometry> geom; // reference to geometry
+    std::shared_ptr<Geometry<ExecutionSpace>> geom; // reference to geometry
 
-    DoubleView2D h_l;       // liquid enthalpy
-    DoubleView2D W_l;       // liquid mass flow rate
-    DoubleView2D W_v;       // vapor mass flow rate
-    DoubleView2D P;         // pressure
-    DoubleView2D alpha;     // void fraction
-    DoubleView2D X;         // quality
-    DoubleView2D lhr;       // linear heat rate
-    DoubleView2D evap;      // evaporation term [kg/m/s]
+    View2D h_l;       // liquid enthalpy
+    View2D W_l;       // liquid mass flow rate
+    View2D W_v;       // vapor mass flow rate
+    View2D P;         // pressure
+    View2D alpha;     // void fraction
+    View2D X;         // quality
+    View2D lhr;       // linear heat rate
+    View2D evap;      // evaporation term [kg/m/s]
 
-    DoubleView1D G_l_tm;    // turbulent mixing liquid mass transfer [kg/m^2/s]
-    DoubleView1D G_v_tm;    // turbulent mixing vapor mass transfer [kg/m^2/s]
-    DoubleView1D Q_m_tm;    // turbulent mixing energy transfer [W/m^2]
-    DoubleView1D M_m_tm;    // turbulent mixing momentum transfer [Pa]
+    View1D G_l_tm;    // turbulent mixing liquid mass transfer [kg/m^2/s]
+    View1D G_v_tm;    // turbulent mixing vapor mass transfer [kg/m^2/s]
+    View1D Q_m_tm;    // turbulent mixing energy transfer [W/m^2]
+    View1D M_m_tm;    // turbulent mixing momentum transfer [Pa]
 
-    DoubleView1D G_l_vd;    // void drift liquid mass transfer [kg/m^2/s]
-    DoubleView1D G_v_vd;    // void drift vapor mass transfer [kg/m^2/s]
-    DoubleView1D Q_m_vd;    // void drift energy transfer [W/m^2]
-    DoubleView1D M_m_vd;    // void drift momentum transfer [Pa]
+    View1D G_l_vd;    // void drift liquid mass transfer [kg/m^2/s]
+    View1D G_v_vd;    // void drift vapor mass transfer [kg/m^2/s]
+    View1D Q_m_vd;    // void drift energy transfer [W/m^2]
+    View1D M_m_vd;    // void drift momentum transfer [Pa]
 
-    DoubleView2D gk;        // surface mass fluxes [kg/m/s]
+    View2D gk;        // surface mass fluxes [kg/m/s]
 
     // -------------------------
     // Constructors
@@ -139,11 +139,11 @@ struct State {
     State& operator=(State&&) noexcept = default;
 
     // mixture enthalpy
-    DoubleView2D h_m() const {
+    View2D h_m() const {
         if (W_l.extent(0) != W_v.extent(0) || h_l.extent(0) != W_l.extent(0)) {
             throw std::length_error("State::h_m(): h_l, W_l, and W_v have different sizes");
         }
-        DoubleView2D out("h_m", h_l.extent(0), h_l.extent(1));
+        View2D out("h_m", h_l.extent(0), h_l.extent(1));
         auto h_l_copy = h_l;
         auto X_copy = X;
         auto fluid_ptr = fluid;
@@ -159,11 +159,11 @@ struct State {
     }
 
     // mixture mass flow rate
-    DoubleView2D W_m() const {
+    View2D W_m() const {
         if (W_l.extent(0) != W_v.extent(0)) {
             throw std::length_error("State::W_m(): W_l and W_v have different sizes");
         }
-        DoubleView2D out("W_m", W_l.extent(0), W_l.extent(1));
+        View2D out("W_m", W_l.extent(0), W_l.extent(1));
         auto W_l_copy = W_l;
         auto W_v_copy = W_v;
         Kokkos::parallel_for("W_m", Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {W_l.extent(0), W_l.extent(1)}),
@@ -178,8 +178,8 @@ struct State {
     }
 
     // mixture velocity
-    DoubleView2D V_m() const {
-        DoubleView2D out("V_m", W_l.extent(0), W_l.extent(1));
+    View2D V_m() const {
+        View2D out("V_m", W_l.extent(0), W_l.extent(1));
         for (size_t ij = 0; ij < out.extent(0); ++ij) {
             for (size_t k = 0; k < out.extent(1); ++k) {
                 out(ij, k) = V_m(ij, k);
@@ -189,7 +189,7 @@ struct State {
     }
 
     double V_m(size_t ij, size_t k) const {
-        DoubleView2D rho = fluid->rho(h_l);
+        View2D rho = fluid->rho(h_l);
         double A_f = geom->flow_area();
         double v_m;
         if (alpha(ij, k) < 1e-6) {
@@ -203,8 +203,8 @@ struct State {
     }
 
     // mixture specific volume
-    DoubleView2D nu_m() const {
-        DoubleView2D out("nu_m", W_l.extent(0), W_l.extent(1));
+    View2D nu_m() const {
+        View2D out("nu_m", W_l.extent(0), W_l.extent(1));
         for (size_t ij = 0; ij < out.extent(0); ++ij) {
             for (size_t k = 0; k < out.extent(1); ++k) {
                 out(ij, k) = nu_m(ij, k);
@@ -214,7 +214,7 @@ struct State {
     }
 
     double nu_m(size_t ij, size_t k) const {
-        DoubleView2D rho = fluid->rho(h_l);
+        View2D rho = fluid->rho(h_l);
         double v_m;
         if (alpha(ij, k) < 1e-6) {
             v_m = 1.0 / fluid->rho_f(); // Eq. 16 from ANTS Theory (Simplified with X=0, alpha=0)

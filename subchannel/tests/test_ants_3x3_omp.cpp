@@ -17,62 +17,59 @@ TEST(SubchannelTest, OpenMPExecution) {
     double gap_width = 0.39e-2; // m
     double length = 1.3e-2; // m
     size_t naxial = 50;
-    Geometry geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, N, naxial);
+    Geometry<Kokkos::OpenMP> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial);
 
     // Explicitly use OpenMP execution space
     Water<Kokkos::OpenMP> fluid;
 
-    Kokkos::initialize();
-    {
+    // Create views with OpenMP execution space
+    Kokkos::View<double*, Kokkos::OpenMP> inlet_mass_flow("inlet_mass_flow", N*N);
+    Kokkos::View<double*, Kokkos::OpenMP> inlet_temperature("inlet_temperature", N*N);
+    Kokkos::View<double*, Kokkos::OpenMP> inlet_pressure("inlet_pressure", N*N);
+    Kokkos::View<double*, Kokkos::OpenMP> linear_heat_rate("linear_heat_rate", N*N);
 
-        // Create views with OpenMP execution space
-        Kokkos::View<double*, Kokkos::OpenMP> inlet_mass_flow("inlet_mass_flow", N*N);
-        Kokkos::View<double*, Kokkos::OpenMP> inlet_temperature("inlet_temperature", N*N);
-        Kokkos::View<double*, Kokkos::OpenMP> inlet_pressure("inlet_pressure", N*N);
-        Kokkos::View<double*, Kokkos::OpenMP> linear_heat_rate("linear_heat_rate", N*N);
+    auto h_inlet_mass_flow = Kokkos::create_mirror_view(inlet_mass_flow);
+    auto h_inlet_temperature = Kokkos::create_mirror_view(inlet_temperature);
+    auto h_inlet_pressure = Kokkos::create_mirror_view(inlet_pressure);
+    auto h_linear_heat_rate = Kokkos::create_mirror_view(linear_heat_rate);
 
-        auto h_inlet_mass_flow = Kokkos::create_mirror_view(inlet_mass_flow);
-        auto h_inlet_temperature = Kokkos::create_mirror_view(inlet_temperature);
-        auto h_inlet_pressure = Kokkos::create_mirror_view(inlet_pressure);
-        auto h_linear_heat_rate = Kokkos::create_mirror_view(linear_heat_rate);
-
-        for (size_t i = 0; i < N*N; ++i) {
-            h_inlet_mass_flow(i) = 2.25 / (N * N); // kg/s
-            h_inlet_temperature(i) = 278.0 + 273.15; // K
-            h_inlet_pressure(i) = 7.255e6; // Pa
-            h_linear_heat_rate(i) = 29.1e3; // W/m
-        }
-
-        h_linear_heat_rate(4) = 0.0; // no power in center subchannel
-
-        Kokkos::deep_copy(inlet_mass_flow, h_inlet_mass_flow);
-        Kokkos::deep_copy(inlet_temperature, h_inlet_temperature);
-        Kokkos::deep_copy(inlet_pressure, h_inlet_pressure);
-        Kokkos::deep_copy(linear_heat_rate, h_linear_heat_rate);
-
-        std::cout << "Testing OpenMP execution space..." << std::endl;
-
-        // Explicitly instantiate Solver with OpenMP
-        Solver<Kokkos::OpenMP> solver(
-            std::make_shared<Geometry>(geometry),
-            std::make_shared<Water<Kokkos::OpenMP>>(fluid),
-            inlet_temperature,
-            inlet_pressure,
-            linear_heat_rate,
-            inlet_mass_flow
-        );
-
-        solver.solve();
-
-        auto P = solver.get_surface_pressures();
-        auto h_P = Kokkos::create_mirror_view(P);
-        Kokkos::deep_copy(h_P, P);
-
+    for (size_t i = 0; i < N*N; ++i) {
+        h_inlet_mass_flow(i) = 2.25 / (N * N); // kg/s
+        h_inlet_temperature(i) = 278.0 + 273.15; // K
+        h_inlet_pressure(i) = 7.255e6; // Pa
+        h_linear_heat_rate(i) = 29.1e3; // W/m
     }
-    Kokkos::finalize();
+
+    h_linear_heat_rate(4) = 0.0; // no power in center subchannel
+
+    Kokkos::deep_copy(inlet_mass_flow, h_inlet_mass_flow);
+    Kokkos::deep_copy(inlet_temperature, h_inlet_temperature);
+    Kokkos::deep_copy(inlet_pressure, h_inlet_pressure);
+    Kokkos::deep_copy(linear_heat_rate, h_linear_heat_rate);
+
+    std::cout << "Testing OpenMP execution space..." << std::endl;
+
+    // Explicitly instantiate Solver with OpenMP
+    Solver<Kokkos::OpenMP> solver(
+        std::make_shared<Geometry<Kokkos::OpenMP>>(geometry),
+        std::make_shared<Water<Kokkos::OpenMP>>(fluid),
+        inlet_temperature,
+        inlet_pressure,
+        linear_heat_rate,
+        inlet_mass_flow
+    );
+
+    solver.solve();
+
+    auto P = solver.get_surface_pressures();
+    auto h_P = Kokkos::create_mirror_view(P);
+    Kokkos::deep_copy(h_P, P);
 }
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+    Kokkos::initialize(argc, argv);
+    int result = RUN_ALL_TESTS();
+    Kokkos::finalize();
+    return result;
 }

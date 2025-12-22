@@ -41,9 +41,14 @@ ViewType HDF5ToKokkosView(const HighFive::DataSet &dataset, const std::string &l
         h5View = H5View(h5_alloc, hdf5Extents[0], hdf5Extents[1], hdf5Extents[2]);
         d_view = ViewType(d_alloc, hdf5Extents[0], hdf5Extents[1], hdf5Extents[2]);
     }
+    else if constexpr (ViewType::rank == 4)
+    {
+        h5View = H5View(h5_alloc, hdf5Extents[0], hdf5Extents[1], hdf5Extents[2], hdf5Extents[3]);
+        d_view = ViewType(d_alloc, hdf5Extents[0], hdf5Extents[1], hdf5Extents[2], hdf5Extents[3]);
+    }
     else
     {
-        static_assert(ViewType::rank <= 3, "Only up to 3D Kokkos::View is supported");
+        static_assert(ViewType::rank <= 4, "Only up to 4D Kokkos::View is supported");
     }
 
     dataset.read(h5View.data());

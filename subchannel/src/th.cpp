@@ -25,11 +25,11 @@ void TH::solve_evaporation_term(State<ExecutionSpace>& state) {
     double P_H = state.geom->heated_perimeter(); // heated perimeter [m]
     double A_f = state.geom->flow_area(); // flow area [m^2]
 
-    typename State<ExecutionSpace>::DoubleView2D mu = state.fluid->mu(state.h_l); // dynamic viscosity [Pa-s]
-    typename State<ExecutionSpace>::DoubleView2D rho = state.fluid->rho(state.h_l); // liquid density [kg/m^3]
-    typename State<ExecutionSpace>::DoubleView2D cond = state.fluid->k(state.h_l); // thermal conductivity [W/m-K]
-    typename State<ExecutionSpace>::DoubleView2D Cp = state.fluid->Cp(state.h_l); // specific heat [J/kg-K]
-    typename State<ExecutionSpace>::DoubleView2D T = state.fluid->T(state.h_l); // temperature [K]
+    typename State<ExecutionSpace>::View2D mu = state.fluid->mu(state.h_l); // dynamic viscosity [Pa-s]
+    typename State<ExecutionSpace>::View2D rho = state.fluid->rho(state.h_l); // liquid density [kg/m^3]
+    typename State<ExecutionSpace>::View2D cond = state.fluid->k(state.h_l); // thermal conductivity [W/m-K]
+    typename State<ExecutionSpace>::View2D Cp = state.fluid->Cp(state.h_l); // specific heat [J/kg-K]
+    typename State<ExecutionSpace>::View2D T = state.fluid->T(state.h_l); // temperature [K]
 
     // Create host mirrors for computation
     auto h_mu = Kokkos::create_mirror_view(mu);
@@ -103,8 +103,8 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
     size_t k = state.surface_plane;  // closure relations use lagging edge values
     size_t k_node = state.node_plane;
 
-    typename State<ExecutionSpace>::DoubleView2D rho_l = state.fluid->rho(state.h_l);
-    typename State<ExecutionSpace>::DoubleView2D spv = state.fluid->mu(state.h_l);
+    typename State<ExecutionSpace>::View2D rho_l = state.fluid->rho(state.h_l);
+    typename State<ExecutionSpace>::View2D spv = state.fluid->mu(state.h_l);
 
     // Create host mirrors
     auto h_rho_l = Kokkos::create_mirror_view(rho_l);
@@ -130,6 +130,7 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
     Kokkos::deep_copy(h_h_l, state.h_l);
     Kokkos::deep_copy(h_alpha, state.alpha);
     Kokkos::deep_copy(h_X, state.X);
+    Kokkos::deep_copy(state.geom->surfaces, state.geom->surfaces);
 
     double rhof = state.fluid->rho_f();
     double rho_g = state.fluid->rho_g();
@@ -159,7 +160,8 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
     }
 
     // loop over surfaces
-    for (auto& surf : state.geom->surfaces) {
+    for (size_t s = 0; s < state.geom->nsurfaces(); ++s) {
+        Surface surf = state.geom->surfaces(s);
         size_t ns = surf.idx;
         size_t i = surf.from_node;
         size_t j = surf.to_node;
@@ -244,7 +246,7 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
 template <typename ExecutionSpace>
 void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
 
-    const size_t nchan = state.geom->nx() * state.geom->ny();
+    const size_t nchan = state.geom->nchan() * state.geom->nchan();
     const size_t nsurf = state.geom->nsurfaces();
     const size_t k = state.surface_plane;
     const size_t k_node = state.node_plane;
@@ -388,7 +390,8 @@ void TH::solve_flow_rates(State<ExecutionSpace>& state) {
     // loop over transverse surfaces to add source terms to flow rates
     std::vector<double> SS_l(state.geom->nchannels());
     std::vector<double> SS_v(state.geom->nchannels());
-    for (auto& surf : state.geom->surfaces) {
+    for (size_t s = 0; s < state.geom->nsurfaces(); ++s) {
+        Surface surf = state.geom->surfaces(s);
         size_t ns = surf.idx;
         size_t i = surf.from_node;
         size_t j = surf.to_node;
@@ -458,7 +461,8 @@ void TH::solve_enthalpy(State<ExecutionSpace>& state) {
 
     // loop over transverse surfaces to add source terms to mixture enthalpy
     std::vector<double> SS_m(state.geom->nchannels());
-    for (auto& surf : state.geom->surfaces) {
+    for (size_t s = 0; s < state.geom->nsurfaces(); ++s) {
+        Surface surf = state.geom->surfaces(s);
         size_t ns = surf.idx;
         size_t i = surf.from_node;
         size_t j = surf.to_node;
@@ -618,8 +622,8 @@ void TH::solve_pressure(State<ExecutionSpace>& state) {
     double D_h = state.geom->hydraulic_diameter();
     double A_f = state.geom->flow_area();
 
-    typename State<ExecutionSpace>::DoubleView2D rho = state.fluid->rho(state.h_l);
-    typename State<ExecutionSpace>::DoubleView2D mu = state.fluid->mu(state.h_l);
+    typename State<ExecutionSpace>::View2D rho = state.fluid->rho(state.h_l);
+    typename State<ExecutionSpace>::View2D mu = state.fluid->mu(state.h_l);
 
     // Create host mirrors
     auto h_rho = Kokkos::create_mirror_view(rho);
@@ -649,7 +653,9 @@ void TH::solve_pressure(State<ExecutionSpace>& state) {
     std::vector<double> CF_SS(state.geom->nchannels()); // sum of cross-flow momentum exchange terms [Pa]
     std::vector<double> TM_SS(state.geom->nchannels()); // sum of turbulent mixing liquid momentum exchange terms [Pa]
     std::vector<double> VD_SS(state.geom->nchannels()); // sum of void drift liquid momentum exchange terms [Pa]
-    for (auto& surf : state.geom->surfaces) {
+
+    for (size_t s = 0; s < state.geom->nsurfaces(); ++s) {
+        Surface surf = state.geom->surfaces(s);
         size_t ns = surf.idx;
         size_t i = surf.from_node;
         size_t j = surf.to_node;
