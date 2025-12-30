@@ -38,7 +38,7 @@ public:
 
     State<ExecutionSpace> state;
 
-    void solve(size_t max_outer_iter = 10, size_t max_inner_iter = 10, bool debug = false);
+    void solve(size_t max_outer_iter = 10, size_t max_inner_iter = 10);
     void print_state_at_plane(size_t k);
 
     View2D get_surface_liquid_enthalpies() const { return state.h_l; }
@@ -51,5 +51,6 @@ public:
     View2D get_surface_vapor_flow_rates() const { return state.W_v; }
 
 private:
-    bool _cf_flag = true;    // flag to turn on/off crossflow solver
+    bool _cf_flag = true;       // flag to turn on/off crossflow solver
+    bool _verbose = false;      // flag for verbose output
 };

@@ -15,12 +15,13 @@ TEST(SubchannelTest, SMR_Serial) {
 
     const char* raw_args[] = {
         "exe",
-        "../subchannel/data/smr.h5",
+        "../subchannel/data/HT1C1_dep.h5",
         "--device", "serial",
-        "--no-crossflow"
+        "--no-crossflow",
+        "--verbose"
     };
     char** args = const_cast<char**>(raw_args);
-    int argc = 5;
+    int argc = 6;
 
     // Initialize Kokkos
     Kokkos::initialize(argc, args);
@@ -49,6 +50,7 @@ TEST(SubchannelTest, SMR_Serial) {
         auto h_evap = Kokkos::create_mirror_view(evap);
         auto h_W_l = Kokkos::create_mirror_view(W_l);
         auto h_W_v = Kokkos::create_mirror_view(W_v);
+        auto h_lhr = Kokkos::create_mirror_view(solver.state.lhr);
 
         Kokkos::deep_copy(h_h, h);
         Kokkos::deep_copy(h_T, T);
@@ -58,12 +60,13 @@ TEST(SubchannelTest, SMR_Serial) {
         Kokkos::deep_copy(h_evap, evap);
         Kokkos::deep_copy(h_W_l, W_l);
         Kokkos::deep_copy(h_W_v, W_v);
+        Kokkos::deep_copy(h_lhr, solver.state.lhr);
 
-        // middle assembly results
-        size_t ai = 3;
-        size_t aj = 3;
+        size_t ai = 5;
+        size_t aj = 5;
 
-        size_t k = solver.state.geom->naxial() - 1;
+        size_t k = solver.state.surface_plane;
+        // size_t k = solver.state.geom->naxial() - 1;
 
         std::cout << "Exit Void Distribution" << std::endl;
         for (size_t j = 0; j < solver.state.geom->nchan(); ++j) {
@@ -80,6 +83,18 @@ TEST(SubchannelTest, SMR_Serial) {
             for (size_t i = 0; i < solver.state.geom->nchan(); ++i) {
                 size_t aij = solver.state.geom->global_chan_index(aj, ai, j, i);
                 std::cout << std::setw(12) << std::setprecision(3) << h_P(aij, k) << " ";
+            }
+            std::cout << std::endl;
+        }
+        std::cout << std::endl;
+
+        // Midplane linear heat rate distribution
+        size_t k_mid = solver.state.geom->naxial() / 2;
+        std::cout << "Midplane (k=" << k_mid << ") Linear Heat Rate Distribution [W/m]" << std::endl;
+        for (size_t j = 0; j < solver.state.geom->nchan(); ++j) {
+            for (size_t i = 0; i < solver.state.geom->nchan(); ++i) {
+                size_t aij = solver.state.geom->global_chan_index(aj, ai, j, i);
+                std::cout << std::setw(12) << std::setprecision(3) << h_lhr(aij, k_mid) << " ";
             }
             std::cout << std::endl;
         }

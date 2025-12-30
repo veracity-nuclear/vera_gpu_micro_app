@@ -2,7 +2,7 @@
 
 template <typename ExecutionSpace>
 Geometry<ExecutionSpace>::Geometry(double height, double flow_area, double hydraulic_diameter, double gap_width, double length, size_t nchan, size_t naxial)
-    : H(height), Af(flow_area), Dh(hydraulic_diameter), gap_W(gap_width), l(length), _nchan(nchan), _nz(naxial) {
+    : gap_W(gap_width), l(length), _nchan(nchan), _nz(naxial) {
 
     // Initialize core_map for single assembly (1x1 core)
     size_t core_size = 1;
@@ -12,7 +12,7 @@ Geometry<ExecutionSpace>::Geometry(double height, double flow_area, double hydra
     // Initialize uniform axial mesh
     _axial_mesh = View1D("axial_mesh", _nz + 1);
     for (size_t k = 0; k <= _nz; ++k) {
-        _axial_mesh(k) = k * (H / _nz);
+        _axial_mesh(k) = k * (height / _nz);
     }
 
     // Initialize constant flow area for all channels
@@ -20,7 +20,7 @@ Geometry<ExecutionSpace>::Geometry(double height, double flow_area, double hydra
     _channel_area = View2D("channel_area", total_channels, _nz);
     for (size_t aij = 0; aij < total_channels; ++aij) {
         for (size_t k = 0; k < _nz; ++k) {
-            _channel_area(aij, k) = Af;
+            _channel_area(aij, k) = flow_area;
         }
     }
 
@@ -101,23 +101,20 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
     _nchan = channel_area.extent(0);
 
     // Store axial mesh for variable spacing
+    // convert axial mesh from cm to m
+    for (size_t k = 0; k < axial_mesh.extent(0); ++k) {
+        axial_mesh(k) *= 1e-2;
+    }
+    for (size_t k = 0; k < cell_height.extent(0); ++k) {
+        cell_height(k) *= 1e-2;
+    }
     _axial_mesh = axial_mesh;
 
-    double lhr = core.getDataSet("nominal_linear_heat_rate").read<double>(); // will improve with Issue #95
-    double height = axial_mesh(axial_mesh.extent(0) - 1) - axial_mesh(0);
-    double flow_area = channel_area(_nchan / 2, _nchan / 2, _nz / 2, 0); // pick center assembly at midplane (will improve with Issue #94)
-    double pin_area_avg = pin_area(_nchan / 2, _nchan / 2, _nz / 2, 0); // pick center assembly at midplane
-    double pin_diameter_avg = pin_area_avg / (M_PI * cell_height(_nz / 2));
-    double pin_circumference_avg = M_PI * pin_diameter_avg;
-    double hydraulic_diameter = 4.0 * flow_area / pin_circumference_avg; // approximation with the avg pin circumference
-    double apitch = core.getDataSet("apitch").read<double>();
+    double apitch = core.getDataSet("apitch").read<double>() * 1e-2; // convert from cm to m
     double ppitch = apitch / _nchan; // approximation, pin pitch is not in VERAout CORE group
     double length = ppitch; // approximation for channel cells inbetween assemblies
-    double gap_width = ppitch - pin_diameter_avg;
+    double gap_width = ppitch * 0.5; // approximation, gap width is not in VERAout CORE group
 
-    H = height;
-    Af = flow_area;
-    Dh = hydraulic_diameter;
     gap_W = gap_width;
     l = length;
 
@@ -141,6 +138,7 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
 
     // Flatten channel_area from 4D (nchan, nchan, nz, nassembly) to 2D (nchannels, nz)
     _channel_area = View2D("channel_area", nchannels(), _nz);
+    _hydraulic_diameter = View2D("hydraulic_diameter", nchannels(), _nz);
 
     for (size_t aj = 0; aj < core_size; ++aj) {
         for (size_t ai = 0; ai < core_size; ++ai) {
@@ -150,12 +148,35 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
                 for (size_t i = 0; i < _nchan; ++i) {
                     size_t aij = _ij_global(aj, ai, j, i);
                     for (size_t k = 0; k < _nz; ++k) {
-                        _channel_area(aij, k) = channel_area(i, j, k, assem_idx);
+
+                        _channel_area(aij, k) = channel_area(i, j, k, assem_idx) * 1e-4; // convert from cm^2 to m^2
+
+                        // Check 4 neighboring pins (SW, SE, NW, NE) to calculate the wetted perimeter
+                        // Subchannel (j,i) is bounded by pins:
+                        // SW: (j, i-1), SE: (j, i), NW: (j-1, i-1), NE: (j-1, i)
+
+                        double A_wetted = 0.0; // convert from cm^2 to m^2
+                        if (j > 0 && i > 0) { // NW pin exists
+                            A_wetted += 0.25 * pin_area(i - 1, j - 1, k, assem_idx) * 1e-4;
+                        }
+                        if (j > 0 && i < npin()) { // NE pin exists
+                            A_wetted += 0.25 * pin_area(i, j - 1, k, assem_idx) * 1e-4;
+                        }
+                        if (j < npin() && i > 0) { // SW pin exists
+                            A_wetted += 0.25 * pin_area(i - 1, j, k, assem_idx) * 1e-4;
+                        }
+                        if (j < npin() && i < npin()) { // SE pin exists
+                            A_wetted += 0.25 * pin_area(i, j, k, assem_idx) * 1e-4;
+                        }
+                        double P_wetted = A_wetted / cell_height(k);
+                        _hydraulic_diameter(aij, k) = 4.0 * _channel_area(aij, k) / P_wetted;
                     }
                 }
             }
         }
     }
+
+
 
     // allocate memory for surfaces and channels Views
     surfaces = SurfacesView("surfaces", nsurfaces());
@@ -231,24 +252,72 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
         }
     }
 
+    std::cout << "\n=== GEOMETRY SUMMARY ===" << std::endl;
     std::cout << "Assembly size: (" << _nchan << ", " << _nchan << ")" << std::endl;
     std::cout << "Core size: (" << _core_map.extent(0) << ", " << _core_map.extent(1) << ")" << std::endl;
     std::cout << "Nsurfaces: " << nsurfaces() << std::endl;
     std::cout << "Nchannels: " << nchannels() << std::endl;
     std::cout << "Nassemblies: " << nassemblies() << std::endl;
     std::cout << "Naxial: " << _nz << std::endl;
-    std::cout << "LHR: " << lhr << " W/m" << std::endl;
-    std::cout << "Height: " << height << " cm" << std::endl;
-}
+    std::cout << "Height: " << core_height() << " m" << std::endl;
 
-template <typename ExecutionSpace>
-double Geometry<ExecutionSpace>::dz(size_t k) const {
-    return _axial_mesh(k + 1) - _axial_mesh(k);
-}
+    // Compute and print axial mesh statistics
+    double dz_min = std::numeric_limits<double>::max();
+    double dz_max = std::numeric_limits<double>::lowest();
+    double dz_sum = 0.0;
+    for (size_t k = 0; k < _nz; ++k) {
+        double dz_k = _axial_mesh(k + 1) - _axial_mesh(k);
+        dz_min = std::min(dz_min, dz_k);
+        dz_max = std::max(dz_max, dz_k);
+        dz_sum += dz_k;
+    }
+    double dz_avg = dz_sum / _nz;
+    std::cout << "\nAxial Mesh Spacing [m]:" << std::endl;
+    std::cout << "  Min: " << dz_min << ", Max: " << dz_max << ", Avg: " << dz_avg << std::endl;
 
-template <typename ExecutionSpace>
-double Geometry<ExecutionSpace>::flow_area(size_t aij, size_t k) const {
-    return _channel_area(aij, k);
+    // Compute and print channel area statistics
+    double area_min = std::numeric_limits<double>::max();
+    double area_max = std::numeric_limits<double>::lowest();
+    double area_sum = 0.0;
+    size_t area_count = 0;
+    for (size_t aij = 0; aij < nchannels(); ++aij) {
+        for (size_t k = 0; k < _nz; ++k) {
+            double val = _channel_area(aij, k);
+            if (val > 1e-12) { // Skip zero-area channels
+                area_min = std::min(area_min, val);
+                area_max = std::max(area_max, val);
+                area_sum += val;
+                area_count++;
+            }
+        }
+    }
+    double area_avg = area_sum / area_count;
+    std::cout << "\nChannel Flow Area [m²]:" << std::endl;
+    std::cout << "  Min: " << area_min << ", Max: " << area_max << ", Avg: " << area_avg << std::endl;
+
+    // Compute and print hydraulic diameter statistics
+    double Dh_min = std::numeric_limits<double>::max();
+    double Dh_max = std::numeric_limits<double>::lowest();
+    double Dh_sum = 0.0;
+    size_t Dh_count = 0;
+    for (size_t aij = 0; aij < nchannels(); ++aij) {
+        for (size_t k = 0; k < _nz; ++k) {
+            double val = _hydraulic_diameter(aij, k);
+            if (val > 1e-12) { // Skip zero-area channels
+                Dh_min = std::min(Dh_min, val);
+                Dh_max = std::max(Dh_max, val);
+                Dh_sum += val;
+                Dh_count++;
+            }
+        }
+    }
+    double Dh_avg = Dh_sum / Dh_count;
+    std::cout << "\nHydraulic Diameter [m]:" << std::endl;
+    std::cout << "  Min: " << Dh_min << ", Max: " << Dh_max << ", Avg: " << Dh_avg << std::endl;
+
+    std::cout << "\nGap Width: " << gap_W << " m" << std::endl;
+    std::cout << "Length: " << l << " m" << std::endl;
+    std::cout << "========================\n" << std::endl;
 }
 
 template <typename ExecutionSpace>
@@ -277,13 +346,6 @@ size_t Geometry<ExecutionSpace>::nassemblies() const {
         }
     }
     return nassy;
-}
-
-template <typename ExecutionSpace>
-size_t Geometry<ExecutionSpace>::global_surf_index(size_t aij, size_t ns) const {
-    // Calculate global surface index based on subchannel index (aij) and surface number (ns)
-    // Surface numbering: 0 = west, 1 = east, 2 = north, 3 = south
-    return _ns_global(aij, ns);
 }
 
 // Explicit template instantiations

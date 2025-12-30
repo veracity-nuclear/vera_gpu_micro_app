@@ -190,7 +190,7 @@ struct State {
 
     double V_m(size_t ij, size_t k) const {
         View2D rho = fluid->rho(h_l);
-        double A_f = geom->flow_area();
+        double A_f = geom->flow_area(ij, k);
         double v_m;
         if (alpha(ij, k) < 1e-6) {
             v_m = 1.0 / fluid->rho_f(); // Eq. 16 from ANTS Theory (Simplified with X=0, alpha=0)
