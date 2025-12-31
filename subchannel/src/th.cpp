@@ -666,9 +666,9 @@ void TH::solve_pressure(State<ExecutionSpace>& state) {
     double dz = state.geom->dz(k_node); // variable axial spacing
 
     // loop over transverse surfaces to add source terms to pressure drops
-    std::vector<double> CF_SS(state.geom->nchannels()); // sum of cross-flow momentum exchange terms [Pa]
-    std::vector<double> TM_SS(state.geom->nchannels()); // sum of turbulent mixing liquid momentum exchange terms [Pa]
-    std::vector<double> VD_SS(state.geom->nchannels()); // sum of void drift liquid momentum exchange terms [Pa]
+    std::vector<double> CF_SS(state.geom->nchannels()); // sum of cross-flow momentum exchange terms [kg/(m*s^2)]
+    std::vector<double> TM_SS(state.geom->nchannels()); // sum of turbulent mixing liquid momentum exchange terms [kg/(m*s^2)]
+    std::vector<double> VD_SS(state.geom->nchannels()); // sum of void drift liquid momentum exchange terms [kg/(m*s^2)]
 
     for (size_t s = 0; s < state.geom->nsurfaces(); ++s) {
         Surface surf = state.geom->surfaces(s);
@@ -677,14 +677,16 @@ void TH::solve_pressure(State<ExecutionSpace>& state) {
         size_t j = surf.to_node;
         size_t i_donor = (h_gk(ns, k_node) >= 0) ? i : j;
 
-        CF_SS[i] += state.geom->gap_width() * h_gk(ns, k_node) * state.V_m(i_donor, k-1);
-        CF_SS[j] -= state.geom->gap_width() * h_gk(ns, k_node) * state.V_m(i_donor, k-1);
+        double A_f_donor = state.geom->flow_area(i_donor, k-1);
 
-        TM_SS[i] += state.geom->gap_width() * h_M_m_tm(ns);
-        TM_SS[j] -= state.geom->gap_width() * h_M_m_tm(ns);
+        CF_SS[i] += state.geom->gap_width() * h_gk(ns, k_node) * state.V_m(i_donor, k-1) / A_f_donor;
+        CF_SS[j] -= state.geom->gap_width() * h_gk(ns, k_node) * state.V_m(i_donor, k-1) / A_f_donor;
 
-        VD_SS[i] += state.geom->gap_width() * h_M_m_vd(ns);
-        VD_SS[j] -= state.geom->gap_width() * h_M_m_vd(ns);
+        TM_SS[i] += state.geom->gap_width() * h_M_m_tm(ns) / state.geom->flow_area(i, k);
+        TM_SS[j] -= state.geom->gap_width() * h_M_m_tm(ns) / state.geom->flow_area(j, k);
+
+        VD_SS[i] += state.geom->gap_width() * h_M_m_vd(ns) / state.geom->flow_area(i, k);
+        VD_SS[j] -= state.geom->gap_width() * h_M_m_vd(ns) / state.geom->flow_area(j, k);
     }
 
     for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
@@ -771,9 +773,9 @@ void TH::solve_pressure(State<ExecutionSpace>& state) {
         double dP_grav = h_rho(ij, k) * g * dz;
 
         // ----- momentum exchange due to pressure-directed crossflow, turbulent mixing, and void drift -----
-        double dP_CF = dz / A_f * CF_SS[ij];
-        double dP_TM = dz / A_f * TM_SS[ij];
-        double dP_VD = dz / A_f * VD_SS[ij];
+        double dP_CF = dz * CF_SS[ij];
+        double dP_TM = dz * TM_SS[ij];
+        double dP_VD = dz * VD_SS[ij];
         double dP_momexch = dP_CF + dP_TM + dP_VD;
 
         // ----- total pressure drop over this axial plane -----

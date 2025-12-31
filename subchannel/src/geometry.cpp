@@ -91,10 +91,10 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
     HighFive::File file(filename, HighFive::File::ReadOnly);
     HighFive::Group core = file.getGroup("CORE");
 
-    auto axial_mesh = HDF5ToKokkosView<View1D>(core.getDataSet("axial_mesh"), "axial_mesh");
-    auto cell_height = HDF5ToKokkosView<View1D>(core.getDataSet("channel_cell_height"), "cell_height");
-    auto pin_area = HDF5ToKokkosView<View4D>(core.getDataSet("pin_surface_area"), "pin_surface_area");
-    auto channel_area = HDF5ToKokkosView<View4D>(core.getDataSet("channel_area"), "channel_area");
+    auto axial_mesh = HDF5ToKokkosView<View1D>(core.getDataSet("axial_mesh"), "axial_mesh"); // cm
+    auto cell_height = HDF5ToKokkosView<View1D>(core.getDataSet("channel_cell_height"), "cell_height"); // cm
+    auto pin_area = HDF5ToKokkosView<View4D>(core.getDataSet("pin_surface_area"), "pin_surface_area"); // cm^2
+    auto channel_area = HDF5ToKokkosView<View4D>(core.getDataSet("channel_area"), "channel_area"); // cm^2
 
     _core_map = HDF5ToKokkosView<View2D>(core.getDataSet("core_map"), "core_map");
     _nz = axial_mesh.extent(0) - 1;

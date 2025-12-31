@@ -24,8 +24,8 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
     HighFive::Group state_pt = file.getGroup("STATE_0001");
 
     // Load pin powers and compute linear heat rate for each subchannel
-    auto pin_powers = HDF5ToKokkosView<View4D>(state_pt.getDataSet("pin_powers"), "pin_powers");
     // pin_powers shape: (npin, npin, nz, nassemblies)
+    auto pin_powers = HDF5ToKokkosView<View4D>(state_pt.getDataSet("pin_powers"), "pin_powers"); // unitless, normalized pin powers
 
     // pin_powers are normalized, so multiply by nominal_lhr to get local linear power [W/m]
     auto nominal_lhr = core.getDataSet("nominal_linear_heat_rate").read<double>() * 100.0; // convert from W/cm to W/m
@@ -57,7 +57,6 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
 
                     for (size_t k = 0; k < state.geom->naxial(); ++k) {
                         double pin_power_sum = 0.0;
-                        double dz_k = state.geom->dz(k);
 
                         // Check 4 neighboring pins (SW, SE, NW, NE)
                         // Subchannel (j,i) is bounded by pins:
@@ -76,8 +75,8 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
                             pin_power_sum += 0.25 * pin_powers(i, j, k, assem_idx);
                         }
 
-                        // Convert from total power [W] to linear heat rate [W/m]
-                        state.lhr(aij, k) = pin_power_sum / dz_k;
+                        // pin_power_sum is already in [W/m] after denormalization above
+                        state.lhr(aij, k) = pin_power_sum;
                     }
                 }
             }
@@ -97,24 +96,22 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
     View1D inlet_pressure("inlet_pressure", state.geom->nchannels());
 
     // /STATE_0001/pressure [MPa]
-
-    auto Af = HDF5ToKokkosView<View4D>(core.getDataSet("channel_area"), "channel_area"); // cm2
-    auto Af_inlet = Kokkos::subview(Af, Kokkos::ALL(), Kokkos::ALL(), 0, Kokkos::ALL());
-    auto Gm = HDF5ToKokkosView<View4D>(state_pt.getDataSet("channel_mixture_mass_flux"), "Gm"); // kg/m2/s
-    auto Gm_inlet = Kokkos::subview(Gm, Kokkos::ALL(), Kokkos::ALL(), 0, Kokkos::ALL());
-    View1D mass_flow_rate("mass_flow_rate", state.geom->nchannels());
+    double pressure = state_pt.getDataSet("pressure").read<double>() * 1e6; // convert to Pa
 
     // REFACTOR for mass flow rate: assembly-wise mass flow rates exist in VERAout
+    View1D mass_flow_rate("mass_flow_rate", state.geom->nchannels());
     // /STATE_0001/flow_dist {560}
+    View1D flow_dist = HDF5ToKokkosView<View1D>(state_pt.getDataSet("flow_dist"), "flow_dist");
     // /STATE_0001/flow {SCALAR} [%] % of rated flow = 64.71
-    // /CORE/rated_flow {SCALAR} [Mlbs/hr] Rated vessel flow at 100% flow = 9890.8273 ~= 1,246,118 kg/s
-    // Mlbs/hr -> kg/s *= 125.9977777778
-    double rated_flow = core.getDataSet("rated_flow").read<double>(); // Mlbs/hr
     double flow_percent = state_pt.getDataSet("flow").read<double>() * 0.01;
-    double total_mass_flow = rated_flow * flow_percent * 125.9977777778; // convert to kg/s
+    // /CORE/rated_flow {SCALAR} [kg/s] Rated vessel flow at 100% flow = 2472.706825 kg/s
+    double rated_flow = state_pt.getDataSet("rated_flow").read<double>(); // kg/s
+    // /CORE/rated_flow {SCALAR} [Mlbs/hr] Rated vessel flow at 100% flow = 9890.8273 ~= 1,246,118 kg/s
+    // double rated_flow = core.getDataSet("rated_flow").read<double>() * 125.9977777778; // convert Mlbs/hr to kg/s
+    // Mlbs/hr -> kg/s *= 125.9977777778
+    double total_mass_flow = rated_flow * flow_percent;
     double avg_assy_mass_flow = total_mass_flow / state.geom->nassemblies();
 
-    View1D flow_dist = HDF5ToKokkosView<View1D>(state_pt.getDataSet("flow_dist"), "flow_dist");
 
     std::cout << "Total mass flow = " << total_mass_flow << " kg/s" << std::endl;
     std::cout << "Avg assembly mass flow = " << avg_assy_mass_flow << " kg/s" << std::endl;
@@ -132,7 +129,7 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
             for (size_t j = 0; j < state.geom->nchan(); ++j) {
                 for (size_t i = 0; i < state.geom->nchan(); ++i) {
                     size_t aij = state.geom->global_chan_index(aj, ai, j, i);
-                    inlet_pressure(aij) = 6.6e6;
+                    inlet_pressure(aij) = pressure; // Pa
                     mass_flow_rate(aij) = mdot; // kg/s
                 }
             }
@@ -151,7 +148,7 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
     avg_inlet_pressure /= inlet_pressure.extent(0);
 
     std::cout << "Inlet Temperature: " << inlet_temp << " K" << std::endl;
-    std::cout << "Inlet Pressure (avg): " << avg_inlet_pressure << " Pa" << std::endl;
+    std::cout << "Inlet Pressure (avg): " << avg_inlet_pressure / 1e3 << " kPa" << std::endl;
     std::cout << "Mass Flow Rate (total): " << total_mass_flow_rate << " kg/s" << std::endl;
 
     // Create host mirror to read LHR for printing
@@ -219,8 +216,6 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
     double h_in = state.fluid->h(inlet_temp);
     std::cout << "\nInlet Conditions:" << std::endl;
     std::cout << "  Temperature: " << inlet_temp - 273.15 << " °C (" << inlet_temp << " K)" << std::endl;
-    std::cout << "  Pressure: " << inlet_pressure(0) / 1e6 << " MPa" << std::endl;
-    std::cout << "  Mass flux: " << mass_flow_rate(0) << " kg/s" << std::endl;
     std::cout << "  Enthalpy: " << h_in / 1e3 << " kJ/kg" << std::endl;
 
     // LHR statistics
@@ -244,7 +239,7 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
     double lhr_avg = lhr_sum / lhr_count;
     std::cout << "\nLinear Heat Rate [W/cm]:" << std::endl;
     std::cout << "  Min: " << lhr_min / 1e2 << ", Max: " << lhr_max / 1e2 << ", Avg: " << lhr_avg / 1e2 << std::endl;
-    std::cout << "  Total power: " << total_heat_generated / 1e6 << " MW" << std::endl;
+    std::cout << "Total power: " << total_heat_generated / 1e6 << " MW" << std::endl;
     std::cout << "=====================================\n" << std::endl;
 
 }
@@ -436,6 +431,8 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
     state.max_outer_iter = max_outer_iter;
     state.max_inner_iter = max_inner_iter;
 
+    print_state_at_plane(0);
+
     // loop over axial planes
     for (size_t k = 1; k < state.geom->naxial() + 1; ++k) {
 
@@ -446,7 +443,7 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
 
         // closure relations
         TH::solve_evaporation_term<ExecutionSpace>(state);
-        TH::solve_mixing<ExecutionSpace>(state);
+        // TH::solve_mixing<ExecutionSpace>(state);
 
         // closure relations use lagging edge values, so update after solving them
         state.surface_plane = k;
@@ -467,7 +464,7 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
         std::cout << "Completed axial plane " << std::setw(3) << k << "  / " <<  std::setw(3) << state.geom->naxial()
                   << std::setw(8) << duration.count() * 1e-3 << " s" << std::endl;
 
-        if (k >= 2) return;
+        if (k >= 1) return;
 
     }
 }
@@ -567,6 +564,23 @@ void Solver<ExecutionSpace>::print_state_at_plane(size_t k) {
     double W_v_avg = W_v_sum / state.geom->nchannels();
     std::cout << std::setw(25) << "W_v [kg/s]" << std::setw(15) << W_v_min
               << std::setw(15) << W_v_max << std::setw(15) << W_v_avg << std::endl;
+
+    // Compute statistics for Mass Flux (liquid + vapor)
+    double G_min = std::numeric_limits<double>::max();
+    double G_max = std::numeric_limits<double>::lowest();
+    double G_sum = 0.0;
+    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
+        double A_f = state.geom->flow_area(i, k);
+        if (A_f > 1e-12) {
+            double val = (h_W_l(i, k) + h_W_v(i, k)) / A_f;
+            G_min = std::min(G_min, val);
+            G_max = std::max(G_max, val);
+            G_sum += val;
+        }
+    }
+    double G_avg = G_sum / state.geom->nchannels();
+    std::cout << std::setw(26) << "Mass Flux [kg/m²/s]" << std::setw(15) << G_min
+              << std::setw(15) << G_max << std::setw(15) << G_avg << std::endl;
 
     // Compute statistics for Void Fraction
     double alpha_min = std::numeric_limits<double>::max();
