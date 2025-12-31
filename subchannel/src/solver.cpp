@@ -104,6 +104,7 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
     View1D flow_dist = HDF5ToKokkosView<View1D>(state_pt.getDataSet("flow_dist"), "flow_dist");
     // /STATE_0001/flow {SCALAR} [%] % of rated flow = 64.71
     double flow_percent = state_pt.getDataSet("flow").read<double>() * 0.01;
+    flow_percent = 1.0; // override for testing
     // /CORE/rated_flow {SCALAR} [kg/s] Rated vessel flow at 100% flow = 2472.706825 kg/s
     double rated_flow = state_pt.getDataSet("rated_flow").read<double>(); // kg/s
     // /CORE/rated_flow {SCALAR} [Mlbs/hr] Rated vessel flow at 100% flow = 9890.8273 ~= 1,246,118 kg/s
@@ -464,7 +465,7 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
         std::cout << "Completed axial plane " << std::setw(3) << k << "  / " <<  std::setw(3) << state.geom->naxial()
                   << std::setw(8) << duration.count() * 1e-3 << " s" << std::endl;
 
-        if (k >= 1) return;
+        // if (k >= 1) return;
 
     }
 }

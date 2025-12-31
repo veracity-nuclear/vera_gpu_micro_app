@@ -72,16 +72,21 @@ public:
     size_t global_chan_index(size_t aj, size_t ai, size_t j, size_t i) const { return _ij_global(aj, ai, j, i); }
     size_t global_surf_index(size_t aij, size_t ns) const { return _ns_global(aij, ns); }
 
+    // Device-accessible view accessors
+    View2D channel_area_view() const { return _channel_area; }
+    View2D hydraulic_diameter_view() const { return _hydraulic_diameter; }
+    SurfacesView surface_view() const { return surfaces; }
+
 private:
     double gap_W;                   // gap width between subchannels
     double l;                       // length of axial momentum cell
     size_t _nz;                     // number of subchannels in x, y directions, and number of axial cells
     size_t _nchan;                  // number of channels in x, y directions of an assembly (nchan x nchan)
-    View2D _core_map;               // core map of assembly indices
+    ViewSizeT2D _core_map;          // core map of assembly indices
+    ViewSizeT2D _ns_global;         // mapping from (aij, ns) to global surface index
+    ViewSizeT4D _ij_global;              // mapping from (aj, ai, j, i) to global channel index
     View1D _axial_mesh;             // axial mesh positions [m] (size: _nz+1)
     View2D _channel_area;           // channel flow areas [m^2] (size: nchannels x _nz)
     View2D _hydraulic_diameter;     // hydraulic diameters [m] (size: nchannels x _nz)
-    View4D _ij_global;              // mapping from (aj, ai, j, i) to global channel index
-    ViewSizeT2D _ns_global;         // mapping from (aij, ns) to global surface index
 };
 

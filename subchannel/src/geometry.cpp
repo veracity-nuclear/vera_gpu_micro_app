@@ -6,7 +6,7 @@ Geometry<ExecutionSpace>::Geometry(double height, double flow_area, double hydra
 
     // Initialize core_map for single assembly (1x1 core)
     size_t core_size = 1;
-    _core_map = View2D("core_map", 1, 1);
+    _core_map = ViewSizeT2D("core_map", 1, 1);
     _core_map(0, 0) = 1;  // Single assembly
 
     // Initialize uniform axial mesh
@@ -25,7 +25,7 @@ Geometry<ExecutionSpace>::Geometry(double height, double flow_area, double hydra
     }
 
     // Initialize global channel index mapping for single assembly
-    _ij_global = View4D("ij_global", 1, 1, _nchan, _nchan);
+    _ij_global = ViewSizeT4D("ij_global", 1, 1, _nchan, _nchan);
     size_t global_idx = 0;
     for (size_t j = 0; j < _nchan; ++j) {
         for (size_t i = 0; i < _nchan; ++i) {
@@ -96,7 +96,7 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
     auto pin_area = HDF5ToKokkosView<View4D>(core.getDataSet("pin_surface_area"), "pin_surface_area"); // cm^2
     auto channel_area = HDF5ToKokkosView<View4D>(core.getDataSet("channel_area"), "channel_area"); // cm^2
 
-    _core_map = HDF5ToKokkosView<View2D>(core.getDataSet("core_map"), "core_map");
+    _core_map = HDF5ToKokkosView<ViewSizeT2D>(core.getDataSet("core_map"), "core_map");
     _nz = axial_mesh.extent(0) - 1;
     _nchan = channel_area.extent(0);
 
@@ -120,7 +120,7 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
 
     // allocate global channel index mapping View4D with shape (core_size, core_size, nchan, nchan)
     size_t core_size = _core_map.extent(0);
-    _ij_global = View4D("ij_global", core_size, core_size, _nchan, _nchan);
+    _ij_global = ViewSizeT4D("ij_global", core_size, core_size, _nchan, _nchan);
 
     // fill global channel index mapping
     size_t global_idx = 0;
@@ -317,6 +317,15 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
 
     std::cout << "\nGap Width: " << gap_W << " m" << std::endl;
     std::cout << "Length: " << l << " m" << std::endl;
+
+    std::cout << "\nCore Map" << std::endl;
+    for (size_t aj = 0; aj < _core_map.extent(0); ++aj) {
+        for (size_t ai = 0; ai < _core_map.extent(1); ++ai) {
+            std::cout << std::setw(4) << (_core_map(aj, ai) == 0 ? "" : std::to_string(_core_map(aj, ai)));
+        }
+        std::cout << std::endl;
+    }
+
     std::cout << "========================\n" << std::endl;
 }
 
