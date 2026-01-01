@@ -18,10 +18,12 @@ Geometry<ExecutionSpace>::Geometry(double height, double flow_area, double hydra
 
     // Initialize constant flow area for all channels
     size_t total_channels = _nchan * _nchan;
-    _channel_area = View2D("channel_area", total_channels, _nz);
+    _channel_area = View2D("channel_area", total_channels, _nz + 1);
+    _hydraulic_diameter = View2D("hydraulic_diameter", total_channels, _nz + 1);
     for (size_t aij = 0; aij < total_channels; ++aij) {
-        for (size_t k = 0; k < _nz; ++k) {
+        for (size_t k = 0; k < _nz + 1; ++k) {
             _channel_area(aij, k) = flow_area;
+            _hydraulic_diameter(aij, k) = hydraulic_diameter;
         }
     }
 
@@ -81,6 +83,14 @@ Geometry<ExecutionSpace>::Geometry(double height, double flow_area, double hydra
             }
         }
     }
+
+    // output geometry info
+    std::cout << "Single Assembly Geometry Initialized:" << std::endl;
+    std::cout << "  Number of Channels (nchan x nchan): " << _nchan << " x " << _nchan << std::endl;
+    std::cout << "  Number of Axial Cells (naxial): " << _nz << std::endl;
+    std::cout << "  Total Assemblies: " << nassemblies() << std::endl;
+    std::cout << "  Total Channels: " << nchannels() << std::endl;
+    std::cout << "  Total Surfaces: " << nsurfaces() << std::endl;
 }
 
 template <typename ExecutionSpace>
