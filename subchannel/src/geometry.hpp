@@ -63,7 +63,8 @@ public:
     double dz(size_t k) const { return _axial_mesh(k + 1) - _axial_mesh(k); }
     size_t npin() const { return _nchan - 1; }
     size_t nchan() const { return _nchan; }
-    size_t core_size() const { return _core_map.extent(0); }
+    size_t core_size() const { return _core_size; }
+    size_t core_sym() const { return _core_sym; }
     size_t core_map(size_t aj, size_t ai) const { return _core_map(aj, ai); }
     size_t naxial() const { return _nz; }
     size_t nsurfaces() const;
@@ -82,6 +83,8 @@ private:
     double l;                       // length of axial momentum cell
     size_t _nz;                     // number of subchannels in x, y directions, and number of axial cells
     size_t _nchan;                  // number of channels in x, y directions of an assembly (nchan x nchan)
+    size_t _core_sym;               // core symmetry (1=full, 4=quarter)
+    size_t _core_size;              // core size in assemblies (core_size x core_size)
     ViewSizeT2D _core_map;          // core map of assembly indices
     ViewSizeT2D _ns_global;         // mapping from (aij, ns) to global surface index
     ViewSizeT4D _ij_global;              // mapping from (aj, ai, j, i) to global channel index

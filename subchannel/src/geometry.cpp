@@ -5,7 +5,8 @@ Geometry<ExecutionSpace>::Geometry(double height, double flow_area, double hydra
     : gap_W(gap_width), l(length), _nchan(nchan), _nz(naxial) {
 
     // Initialize core_map for single assembly (1x1 core)
-    size_t core_size = 1;
+    _core_size = 1;
+    _core_sym = 1;
     _core_map = ViewSizeT2D("core_map", 1, 1);
     _core_map(0, 0) = 1;  // Single assembly
 
@@ -96,7 +97,33 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
     auto pin_area = HDF5ToKokkosView<View4D>(core.getDataSet("pin_surface_area"), "pin_surface_area"); // cm^2
     auto channel_area = HDF5ToKokkosView<View4D>(core.getDataSet("channel_area"), "channel_area"); // cm^2
 
-    _core_map = HDF5ToKokkosView<ViewSizeT2D>(core.getDataSet("core_map"), "core_map");
+    auto _full_core_map = HDF5ToKokkosView<ViewSizeT2D>(core.getDataSet("core_map"), "core_map");
+    _core_sym = core.getDataSet("core_sym").read<size_t>();
+    _core_size = _full_core_map.extent(0);
+
+    // extract SE quarter of core_map for quarter core symmetry
+    if (_core_sym == 4) {
+        size_t half_core_size = _core_size / 2;
+        _core_map = ViewSizeT2D("core_map", _core_size / 2, _core_size / 2);
+        for (size_t aj = 0; aj < _core_size / 2; ++aj) {
+            for (size_t ai = 0; ai < _core_size / 2; ++ai) {
+                _core_map(aj, ai) = _full_core_map(half_core_size + aj, half_core_size + ai);
+            }
+        }
+    } else {
+        _core_map = _full_core_map;
+    }
+
+    std::cout << "\nCore Map" << std::endl;
+    for (size_t aj = 0; aj < _core_map.extent(0); ++aj) {
+        for (size_t ai = 0; ai < _core_map.extent(1); ++ai) {
+            std::cout << std::setw(4) << (_core_map(aj, ai) == 0 ? "" : std::to_string(_core_map(aj, ai)));
+        }
+        std::cout << std::endl;
+    }
+
+    _core_size = _core_map.extent(0);
+
     _nz = axial_mesh.extent(0) - 1;
     _nchan = channel_area.extent(0);
 
@@ -119,13 +146,12 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
     l = length;
 
     // allocate global channel index mapping View4D with shape (core_size, core_size, nchan, nchan)
-    size_t core_size = _core_map.extent(0);
-    _ij_global = ViewSizeT4D("ij_global", core_size, core_size, _nchan, _nchan);
+    _ij_global = ViewSizeT4D("ij_global", _core_size, _core_size, _nchan, _nchan);
 
     // fill global channel index mapping
     size_t global_idx = 0;
-    for (size_t aj = 0; aj < core_size; ++aj) {
-        for (size_t ai = 0; ai < core_size; ++ai) {
+    for (size_t aj = 0; aj < _core_size; ++aj) {
+        for (size_t ai = 0; ai < _core_size; ++ai) {
             if (_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
             for (size_t j = 0; j < _nchan; ++j) {
                 for (size_t i = 0; i < _nchan; ++i) {
@@ -136,12 +162,15 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
         }
     }
 
+    std::cout << "Total assemblies in core: " << nassemblies() << std::endl;
+    std::cout << "Total channels in core: " << nchannels() << std::endl;
+
     // Flatten channel_area from 4D (nchan, nchan, nz, nassembly) to 2D (nchannels, nz)
     _channel_area = View2D("channel_area", nchannels(), _nz);
     _hydraulic_diameter = View2D("hydraulic_diameter", nchannels(), _nz);
 
-    for (size_t aj = 0; aj < core_size; ++aj) {
-        for (size_t ai = 0; ai < core_size; ++ai) {
+    for (size_t aj = 0; aj < _core_size; ++aj) {
+        for (size_t ai = 0; ai < _core_size; ++ai) {
             if (_core_map(aj, ai) == 0) continue;
             size_t assem_idx = _core_map(aj, ai) - 1; // Convert to 0-based index
             for (size_t j = 0; j < _nchan; ++j) {
@@ -176,8 +205,6 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
         }
     }
 
-
-
     // allocate memory for surfaces and channels Views
     surfaces = SurfacesView("surfaces", nsurfaces());
     _ns_global = ViewSizeT2D("ns_global", nchannels(), 4); // 4 surfaces per channel: W, E, N, S
@@ -191,9 +218,9 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
 
     // create all W -> E surfaces in between subchannels for any axial plane
     size_t ns = 0; // surface index
-    for (size_t aj = 0; aj < core_size; ++aj) {
+    for (size_t aj = 0; aj < _core_size; ++aj) {
         for (size_t j = 0; j < _nchan; ++j) {
-            for (size_t ai = 0; ai < core_size; ++ai) {
+            for (size_t ai = 0; ai < _core_size; ++ai) {
                 if (_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
                 for (size_t i = 0; i < _nchan; ++i) {
 
@@ -209,7 +236,7 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
                     }
 
                     // east assembly neighbor surface
-                    else if (ai + 1 < core_size && _core_map(aj, ai + 1) > 0) {
+                    else if (ai + 1 < _core_size && _core_map(aj, ai + 1) > 0) {
                         size_t aij_neigh = _ij_global(aj, ai + 1, j, 0);
                         surfaces(ns) = Surface(ns, aij, aij_neigh);
                         _ns_global(aij_neigh, 0) = ns;  // ns is the neighbor channel's west surface
@@ -222,9 +249,9 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
     }
 
     // create all N -> S surfaces in between subchannels for any axial plane
-    for (size_t ai = 0; ai < core_size; ++ai) {
+    for (size_t ai = 0; ai < _core_size; ++ai) {
         for (size_t i = 0; i < _nchan; ++i) {
-            for (size_t aj = 0; aj < core_size; ++aj) {
+            for (size_t aj = 0; aj < _core_size; ++aj) {
                 if (_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
                 for (size_t j = 0; j < _nchan; ++j) {
 
@@ -240,7 +267,7 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
                     }
 
                     // south assembly neighbor surface
-                    else if (aj + 1 < core_size && _core_map(aj + 1, ai) > 0) {
+                    else if (aj + 1 < _core_size && _core_map(aj + 1, ai) > 0) {
                         size_t aij_neigh = _ij_global(aj + 1, ai, 0, i);
                         surfaces(ns) = Surface(ns, aij, aij_neigh);
                         _ns_global(aij_neigh, 2) = ns;  // ns is the neighbor channel's north surface

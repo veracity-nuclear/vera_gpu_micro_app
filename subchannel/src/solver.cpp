@@ -102,14 +102,10 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
     View1D mass_flow_rate("mass_flow_rate", state.geom->nchannels());
     // /STATE_0001/flow_dist {560}
     View1D flow_dist = HDF5ToKokkosView<View1D>(state_pt.getDataSet("flow_dist"), "flow_dist");
-    // /STATE_0001/flow {SCALAR} [%] % of rated flow = 64.71
+    // /STATE_0001/flow {SCALAR} [%] % of rated flow
     double flow_percent = state_pt.getDataSet("flow").read<double>() * 0.01;
-    flow_percent = 1.0; // override for testing
-    // /CORE/rated_flow {SCALAR} [kg/s] Rated vessel flow at 100% flow = 2472.706825 kg/s
+    // /CORE/rated_flow {SCALAR} [kg/s] Rated vessel flow at 100% flow
     double rated_flow = state_pt.getDataSet("rated_flow").read<double>(); // kg/s
-    // /CORE/rated_flow {SCALAR} [Mlbs/hr] Rated vessel flow at 100% flow = 9890.8273 ~= 1,246,118 kg/s
-    // double rated_flow = core.getDataSet("rated_flow").read<double>() * 125.9977777778; // convert Mlbs/hr to kg/s
-    // Mlbs/hr -> kg/s *= 125.9977777778
     double total_mass_flow = rated_flow * flow_percent;
     double avg_assy_mass_flow = total_mass_flow / state.geom->nassemblies();
 
