@@ -440,7 +440,7 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
 
         // closure relations
         TH::solve_evaporation_term<ExecutionSpace>(state);
-        // TH::solve_mixing<ExecutionSpace>(state);
+        TH::solve_mixing<ExecutionSpace>(state);
 
         // closure relations use lagging edge values, so update after solving them
         state.surface_plane = k;
