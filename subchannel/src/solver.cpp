@@ -462,9 +462,6 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
 
         std::cout << "Completed axial plane " << std::setw(3) << k << "  / " <<  std::setw(3) << state.geom->naxial()
                   << std::setw(8) << duration.count() * 1e-3 << " s" << std::endl;
-
-        // if (k >= 1) return;
-
     }
 }
 

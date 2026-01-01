@@ -101,18 +101,10 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
     size_t k = state.surface_plane;  // closure relations use lagging edge values
     size_t k_node = state.node_plane;
 
+    typename State<ExecutionSpace>::View2D spv = state.fluid->mu(state.h_l);
     typename State<ExecutionSpace>::View2D rho_l = state.fluid->rho(state.h_l);
-    // Compute specific volume (1/rho) for each channel - NOT viscosity!
-    typename State<ExecutionSpace>::View2D spv("specific_volume", state.h_l.extent(0), state.h_l.extent(1));
-    Kokkos::parallel_for("compute_specific_volume",
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>, ExecutionSpace>({0,0}, {spv.extent(0), spv.extent(1)}),
-        KOKKOS_LAMBDA(const size_t i, const size_t j) {
-            spv(i, j) = 1.0 / rho_l(i, j);  // specific volume = 1/density
-        });
 
-    // All computation done on device - no host mirrors needed
-
-    double rhof = state.fluid->rho_f();
+    double rho_f = state.fluid->rho_f();
     double rho_g = state.fluid->rho_g();
     double S_ij = state.geom->gap_width();
     double mu_g = state.fluid->mu_g();
@@ -157,7 +149,7 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
 
             reyn0(ij) = gbar0(ij) * D_h / viscmi;
 
-            double Xmm = (0.4 * Kokkos::sqrt(rhof * (rhof - rho_g) * g * D_h) / gbar0(ij) + 0.6) / (Kokkos::sqrt(rhof / rho_g) + 0.6);
+            double Xmm = (0.4 * Kokkos::sqrt(rho_f * (rho_f - rho_g) * g * D_h) / gbar0(ij) + 0.6) / (Kokkos::sqrt(rho_f / rho_g) + 0.6);
             double X0m = 0.57 * Kokkos::pow(reyn0(ij), 0.0417);
             double Xfm = X(ij, k) / Xmm;
             if (X(ij, k) < Xmm) {
