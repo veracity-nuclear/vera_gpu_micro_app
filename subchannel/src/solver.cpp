@@ -29,6 +29,8 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
 
     // pin_powers are normalized, so multiply by nominal_lhr to get local linear power [W/m]
     auto nominal_lhr = core.getDataSet("nominal_linear_heat_rate").read<double>() * 100.0; // convert from W/cm to W/m
+    auto percent_power = state_pt.getDataSet("power").read<double>() * 0.01; // convert from % to fraction
+    nominal_lhr *= percent_power; // scale by core power level
     Kokkos::parallel_for("denormalize_pin_powers",
         Kokkos::MDRangePolicy<Kokkos::Rank<4>, ExecutionSpace>({0,0,0,0},
             {pin_powers.extent(0), pin_powers.extent(1), pin_powers.extent(2), pin_powers.extent(3)}),
@@ -440,7 +442,7 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
 
         // closure relations
         TH::solve_evaporation_term<ExecutionSpace>(state);
-        TH::solve_mixing<ExecutionSpace>(state);
+        // TH::solve_mixing<ExecutionSpace>(state);
 
         // closure relations use lagging edge values, so update after solving them
         state.surface_plane = k;
