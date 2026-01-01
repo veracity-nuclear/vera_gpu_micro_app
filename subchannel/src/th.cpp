@@ -681,6 +681,11 @@ void TH::solve_pressure(State<ExecutionSpace>& state) {
     typename State<ExecutionSpace>::View1D TM_SS("TM_SS", state.geom->nchannels());
     typename State<ExecutionSpace>::View1D VD_SS("VD_SS", state.geom->nchannels());
 
+    // Initialize to zero (critical - uninitialized memory causes NaN)
+    Kokkos::deep_copy(CF_SS, 0.0);
+    Kokkos::deep_copy(TM_SS, 0.0);
+    Kokkos::deep_copy(VD_SS, 0.0);
+
     // Capture variables for device lambda - use raw copies, not shared_ptr
     auto surfaces = state.geom->surfaces;
     auto gk = state.gk;
@@ -724,18 +729,21 @@ void TH::solve_pressure(State<ExecutionSpace>& state) {
             double W_m_donor = W_l(i_donor, k-1) + W_v(i_donor, k-1);
             double V_m_donor = v_m_donor * W_m_donor / A_f_donor;
 
-            double cf_term = gap_W * gk(ns, k_node) * V_m_donor / A_f_donor;
+            double cf_term = gap_W * gk(ns, k_node) * V_m_donor;
             Kokkos::atomic_add(&CF_SS(i), cf_term);
             Kokkos::atomic_add(&CF_SS(j), -cf_term);
 
             double tm_term = gap_W * M_m_tm(ns);
-            Kokkos::atomic_add(&TM_SS(i), tm_term / A_f_i);
-            Kokkos::atomic_add(&TM_SS(j), -tm_term / A_f_j);
+            Kokkos::atomic_add(&TM_SS(i), tm_term);
+            Kokkos::atomic_add(&TM_SS(j), -tm_term);
 
             double vd_term = gap_W * M_m_vd(ns);
-            Kokkos::atomic_add(&VD_SS(i), vd_term / A_f_i);
-            Kokkos::atomic_add(&VD_SS(j), -vd_term / A_f_j);
+            Kokkos::atomic_add(&VD_SS(i), vd_term);
+            Kokkos::atomic_add(&VD_SS(j), -vd_term);
         });
+
+    // Synchronize to ensure momentum exchange terms are computed before use
+    Kokkos::fence();
 
     // Compute pressure drops on device
     auto P = state.P;
@@ -829,6 +837,9 @@ void TH::solve_pressure(State<ExecutionSpace>& state) {
             double dP_total = dP_accel + dP_tpfric + dP_grav + dP_momexch;
             P(ij, k) = P(ij, k-1) - dP_total;
         });
+
+    // Ensure all pressure writes complete
+    Kokkos::fence();
 }
 
 double TH::__Reynolds(double G, double D_h, double mu) {
