@@ -114,9 +114,10 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
     // extract SE quarter of core_map for quarter core symmetry
     if (_core_sym == 4) {
         size_t half_core_size = _core_size / 2;
-        _core_map = ViewSizeT2D("core_map", _core_size / 2, _core_size / 2);
-        for (size_t aj = 0; aj < _core_size / 2; ++aj) {
-            for (size_t ai = 0; ai < _core_size / 2; ++ai) {
+        size_t new_core_size = (_core_size % 2 == 0) ? half_core_size : half_core_size + 1;
+        _core_map = ViewSizeT2D("core_map", new_core_size, new_core_size);
+        for (size_t aj = 0; aj < new_core_size; ++aj) {
+            for (size_t ai = 0; ai < new_core_size; ++ai) {
                 _core_map(aj, ai) = _full_core_map(half_core_size + aj, half_core_size + ai);
             }
         }
@@ -124,16 +125,25 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
         _core_map = _full_core_map;
     }
 
-    std::cout << "\nCore Map" << std::endl;
-    for (size_t aj = 0; aj < _core_map.extent(0); ++aj) {
-        for (size_t ai = 0; ai < _core_map.extent(1); ++ai) {
-            std::cout << std::setw(4) << (_core_map(aj, ai) == 0 ? "" : std::to_string(_core_map(aj, ai)));
+    std::cout << "\nFull Core Map" << std::endl;
+    for (size_t aj = 0; aj < _full_core_map.extent(0); ++aj) {
+        for (size_t ai = 0; ai < _full_core_map.extent(1); ++ai) {
+            std::cout << std::setw(4) << (_full_core_map(aj, ai) == 0 ? "" : std::to_string(_full_core_map(aj, ai)));
         }
         std::cout << std::endl;
     }
 
-    _core_size = _core_map.extent(0);
+    if (_core_sym == 4) {
+        std::cout << "\nQuarter Core Map" << std::endl;
+        for (size_t aj = 0; aj < _core_map.extent(0); ++aj) {
+            for (size_t ai = 0; ai < _core_map.extent(1); ++ai) {
+                std::cout << std::setw(4) << (_core_map(aj, ai) == 0 ? "" : std::to_string(_core_map(aj, ai)));
+            }
+            std::cout << std::endl;
+        }
+    }
 
+    _core_size = _core_map.extent(0);
     _nz = axial_mesh.extent(0) - 1;
     _nchan = channel_area.extent(0);
 
@@ -172,7 +182,7 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
         }
     }
 
-    std::cout << "Total assemblies in core: " << nassemblies() << std::endl;
+    std::cout << "\nTotal assemblies in core: " << nassemblies() << std::endl;
     std::cout << "Total channels in core: " << nchannels() << std::endl;
 
     // Flatten channel_area from 4D (nchan, nchan, nz, nassembly) to 2D (nchannels, nz)
@@ -291,7 +301,8 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
 
     std::cout << "\n=== GEOMETRY SUMMARY ===" << std::endl;
     std::cout << "Assembly size: (" << _nchan << ", " << _nchan << ")" << std::endl;
-    std::cout << "Core size: (" << _core_map.extent(0) << ", " << _core_map.extent(1) << ")" << std::endl;
+    std::cout << "Core size: (" << _full_core_map.extent(0) << ", " << _full_core_map.extent(1) << ")" << std::endl;
+    std::cout << "Core symmetry: " << _core_sym << std::endl;
     std::cout << "Nsurfaces: " << nsurfaces() << std::endl;
     std::cout << "Nchannels: " << nchannels() << std::endl;
     std::cout << "Nassemblies: " << nassemblies() << std::endl;
@@ -354,14 +365,6 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
 
     std::cout << "\nGap Width: " << gap_W << " m" << std::endl;
     std::cout << "Length: " << l << " m" << std::endl;
-
-    std::cout << "\nCore Map" << std::endl;
-    for (size_t aj = 0; aj < _core_map.extent(0); ++aj) {
-        for (size_t ai = 0; ai < _core_map.extent(1); ++ai) {
-            std::cout << std::setw(4) << (_core_map(aj, ai) == 0 ? "" : std::to_string(_core_map(aj, ai)));
-        }
-        std::cout << std::endl;
-    }
 
     std::cout << "========================\n" << std::endl;
 }
