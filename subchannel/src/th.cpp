@@ -88,6 +88,7 @@ void TH::solve_evaporation_term(State<ExecutionSpace>& state) {
             Qflux_boil = Qflux_wall;
             evap(ij, k_node) = P_H * Qflux_boil / h_fg;
         }
+
     });
 
     Kokkos::fence();
@@ -229,17 +230,11 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
             double X_bar = 0.0;
             if (G_m_sum > 1e-6) {
                 X_bar = K_M * (G_m_i - G_m_j) / G_m_sum;
-                // Limit X_bar to reasonable range to prevent instabilities
-                if (X_bar > 1.0) X_bar = 1.0;
-                if (X_bar < -1.0) X_bar = -1.0;
             }
 
             double tp_mult = 0.5 * (Theta(i) + Theta(j));
             double lambda = 0.0058 * S_ij / D_rod_i;
             double reynbar = 0.5 * (reyn0(i) + reyn0(j));
-
-            // Protect against zero Reynolds number
-            if (reynbar < 1.0) reynbar = 1.0;
 
             double spbar = 0.5 * (spv(i, k) + spv(j, k));
             double eddy_V;
@@ -465,11 +460,12 @@ void TH::solve_flow_rates(State<ExecutionSpace>& state) {
 
         // Update liquid flow rate (Eq. 61 from ANTS Theory)
         W_l(ij, k) = W_l(ij, k-1) - dz * (evap(ij, k_node) + SS_l(ij));
-        W_l(ij, k) = (W_l(ij, k) > 0.0) ? W_l(ij, k) : 0.0; // prevent negative
+        // W_l(ij, k) = (W_l(ij, k) > 0.0) ? W_l(ij, k) : 0.0; // prevent negative
 
         // Update vapor flow rate (Eq. 62 from ANTS Theory)
         W_v(ij, k) = W_v(ij, k-1) + dz * (evap(ij, k_node) - SS_v(ij));
-        W_v(ij, k) = (W_v(ij, k) > 0.0) ? W_v(ij, k) : 0.0; // prevent negative
+        // W_v(ij, k) = (W_v(ij, k) > 0.0) ? W_v(ij, k) : 0.0; // prevent negative
+
     });
 
     Kokkos::fence(); // ensure completion
@@ -511,14 +507,16 @@ void TH::solve_enthalpy(State<ExecutionSpace>& state) {
         double h_l_donor = h_l(i_donor, k-1);
         double term = gap_width * (gk(ns, k_node) * h_l_donor + Q_m_tm(ns) + Q_m_vd(ns));
 
+        // Kokkos::printf("Surface %d between channels %d and %d: gk = %f, h_l_donor = %f, term = %f\n", ns, i, j, gk(ns, k_node), h_l_donor, term);
+
         Kokkos::atomic_add(&SS_m(i), term);
         Kokkos::atomic_add(&SS_m(j), -term);
     });
 
     // Update liquid enthalpy on device
     Kokkos::parallel_for("update_enthalpy", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels), KOKKOS_LAMBDA(const size_t ij) {
-        double A_f_ijk = flow_area_view(ij, k_node);
-        if (A_f_ijk < 1e-12) return; // skip channels with no flow area
+        double A_f = flow_area_view(ij, k_node);
+        if (A_f < 1e-12) return; // skip channels with no flow area
 
         // Eq. 63 from ANTS Theory
         h_l(ij, k) = (

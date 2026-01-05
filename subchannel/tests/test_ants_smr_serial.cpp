@@ -15,12 +15,11 @@ TEST(SubchannelTest, SMR_Serial) {
 
     const char* raw_args[] = {
         "exe",
-        "../subchannel/data/HT1C1_dep.h5",
-        "--device", "serial",
-        "--no-crossflow"
+        "../subchannel/data/smr.h5",
+        "--device", "serial"
     };
     char** args = const_cast<char**>(raw_args);
-    int argc = 5;
+    int argc = 4;
 
     // Initialize Kokkos
     Kokkos::initialize(argc, args);

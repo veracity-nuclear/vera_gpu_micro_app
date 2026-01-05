@@ -45,7 +45,7 @@ class Geometry {
 
 public:
     // Constructor for single assembly geometry
-    Geometry(double height, double flow_area, double hydraulic_diameter, double gap_width, double length, size_t nchan, size_t naxial);
+    Geometry(double height, double flow_area, double hydraulic_diameter, double gap_width, double length, size_t nchan, size_t naxial, ViewSizeT2D core_map);
     // Constructor for full core geometry
     Geometry(const ArgumentParser& args);
     // Destructor
@@ -87,9 +87,13 @@ private:
     size_t _core_size;              // core size in assemblies (core_size x core_size)
     ViewSizeT2D _core_map;          // core map of assembly indices
     ViewSizeT2D _ns_global;         // mapping from (aij, ns) to global surface index
-    ViewSizeT4D _ij_global;              // mapping from (aj, ai, j, i) to global channel index
+    ViewSizeT4D _ij_global;         // mapping from (aj, ai, j, i) to global channel index
     View1D _axial_mesh;             // axial mesh positions [m] (size: _nz+1)
-    View2D _channel_area;           // channel flow areas [m^2] (size: nchannels x _nz)
-    View2D _hydraulic_diameter;     // hydraulic diameters [m] (size: nchannels x _nz)
+    View2D _channel_area;           // channel flow areas [m^2] (size: nchannels x nz)
+    View2D _hydraulic_diameter;     // hydraulic diameters [m] (size: nchannels x nz)
+    View2D _heated_perimeter;       // heated perimeters [m] (size: nchannels x nz)
+
+    View4D _init_default_channel_area(double default_area_cm2);
+    View4D _init_default_pin_area(const View4D& pin_volumes);
 };
 

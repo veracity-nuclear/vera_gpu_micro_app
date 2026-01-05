@@ -1,28 +1,37 @@
 #include <gtest/gtest.h>
 #include <cmath>
 #include <iostream>
+#include <iomanip>
+#include <string>
+#include <vector>
 #include <Kokkos_Core.hpp>
 
 #include "geometry.hpp"
 #include "materials.hpp"
 #include "solver.hpp"
+#include "linear_algebra.hpp"
 
-TEST(SubchannelTest, OpenMP7x7Execution) {
+TEST(SubchannelTest, 7x7_OpenMP) {
 
     // geometric parameters
-    size_t N = 10; // 10x10 grid
+    size_t N = 7; // 7x7 grid
     double height = 3.81; // m
     double flow_area = 1.436e-4; // m^2
     double hydraulic_diameter = 1.436e-2; // m
     double gap_width = 0.39e-2; // m
-    double length = 1.3e-2; // m
-    size_t naxial = 25; // number of axial nodes to discretize to
-    Geometry<Kokkos::OpenMP> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial);
+    double length = 1.3e-2; // m, length of axial momentum cell
+    size_t naxial = 10; // number of axial nodes to discretize to
 
-    // Explicitly use OpenMP execution space
+    // Create a core map for a single assembly (1x1)
+    Kokkos::View<size_t**, Kokkos::OpenMP> core_map("core_map", 1, 1);
+    core_map(0, 0) = 1;
+
+    Geometry<Kokkos::OpenMP> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial, core_map);
+
+    // working fluid is water
     Water<Kokkos::OpenMP> fluid;
 
-    // Create views with OpenMP execution space
+    // create 1D views for each solver parameters
     Kokkos::View<double*, Kokkos::OpenMP> inlet_mass_flow("inlet_mass_flow", N*N);
     Kokkos::View<double*, Kokkos::OpenMP> inlet_temperature("inlet_temperature", N*N);
     Kokkos::View<double*, Kokkos::OpenMP> inlet_pressure("inlet_pressure", N*N);
@@ -59,9 +68,6 @@ TEST(SubchannelTest, OpenMP7x7Execution) {
     Kokkos::deep_copy(inlet_pressure, h_inlet_pressure);
     Kokkos::deep_copy(linear_heat_rate, h_linear_heat_rate);
 
-    std::cout << "Testing OpenMP execution space with 7x7 grid..." << std::endl;
-
-    // Explicitly instantiate Solver with OpenMP
     Solver<Kokkos::OpenMP> solver(
         std::make_shared<Geometry<Kokkos::OpenMP>>(geometry),
         std::make_shared<Water<Kokkos::OpenMP>>(fluid),
@@ -71,17 +77,37 @@ TEST(SubchannelTest, OpenMP7x7Execution) {
         inlet_mass_flow
     );
 
-    solver.solve();
+    size_t outer_iter = 100;
+    size_t inner_iter = 100;
+    solver.solve(outer_iter, inner_iter);
 
+    auto h = solver.get_surface_liquid_enthalpies();
+    auto T = solver.get_surface_temperatures();
     auto P = solver.get_surface_pressures();
     auto alpha = solver.get_surface_void_fractions();
+    auto X = solver.get_surface_qualities();
+    auto evap = solver.get_evaporation_rates();
+    auto W_l = solver.get_surface_liquid_flow_rates();
+    auto W_v = solver.get_surface_vapor_flow_rates();
 
     // Create host mirrors for accessing data
+    auto h_h = Kokkos::create_mirror_view(h);
+    auto h_T = Kokkos::create_mirror_view(T);
     auto h_P = Kokkos::create_mirror_view(P);
     auto h_alpha = Kokkos::create_mirror_view(alpha);
+    auto h_X = Kokkos::create_mirror_view(X);
+    auto h_evap = Kokkos::create_mirror_view(evap);
+    auto h_W_l = Kokkos::create_mirror_view(W_l);
+    auto h_W_v = Kokkos::create_mirror_view(W_v);
 
+    Kokkos::deep_copy(h_h, h);
+    Kokkos::deep_copy(h_T, T);
     Kokkos::deep_copy(h_P, P);
     Kokkos::deep_copy(h_alpha, alpha);
+    Kokkos::deep_copy(h_X, X);
+    Kokkos::deep_copy(h_evap, evap);
+    Kokkos::deep_copy(h_W_l, W_l);
+    Kokkos::deep_copy(h_W_v, W_v);
 
     std::cout << "Exit Void Distribution" << std::endl;
     for (size_t j = 0; j < N; ++j) {

@@ -11,10 +11,10 @@
 #include "solver.hpp"
 #include "linear_algebra.hpp"
 
-TEST(SubchannelTest, 7x7_Serial) {
+TEST(SubchannelTest, Minicore_Serial) {
 
     // geometric parameters
-    size_t N = 7; // 7x7 grid
+    size_t N = 5; // 5x5 grid
     double height = 3.81; // m
     double flow_area = 1.436e-4; // m^2
     double hydraulic_diameter = 1.436e-2; // m
@@ -22,9 +22,18 @@ TEST(SubchannelTest, 7x7_Serial) {
     double length = 1.3e-2; // m, length of axial momentum cell
     size_t naxial = 10; // number of axial nodes to discretize to
 
-    // Create a core map for a single assembly (1x1)
-    Kokkos::View<size_t**, Kokkos::Serial> core_map("core_map", 1, 1);
-    core_map(0, 0) = 1;
+    // Create a core map
+    std::vector<std::vector<size_t>> map = {
+        {1, 1, 1},
+        {1, 1, 1},
+        {1, 1, 0}
+    };
+    Kokkos::View<size_t**, Kokkos::Serial> core_map("core_map", map.size(), map[0].size());
+    for (size_t aj = 0; aj < map.size(); ++aj) {
+        for (size_t ai = 0; ai < map[aj].size(); ++ai) {
+            core_map(aj, ai) = map[aj][ai];
+        }
+    }
 
     Geometry<Kokkos::Serial> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial, core_map);
 
@@ -32,10 +41,10 @@ TEST(SubchannelTest, 7x7_Serial) {
     Water<Kokkos::Serial> fluid;
 
     // create 1D views for each solver parameters
-    Kokkos::View<double*, Kokkos::Serial> inlet_mass_flow("inlet_mass_flow", N*N);
-    Kokkos::View<double*, Kokkos::Serial> inlet_temperature("inlet_temperature", N*N);
-    Kokkos::View<double*, Kokkos::Serial> inlet_pressure("inlet_pressure", N*N);
-    Kokkos::View<double*, Kokkos::Serial> linear_heat_rate("linear_heat_rate", N*N);
+    Kokkos::View<double*, Kokkos::Serial> inlet_mass_flow("inlet_mass_flow", geometry.nchannels());
+    Kokkos::View<double*, Kokkos::Serial> inlet_temperature("inlet_temperature", geometry.nchannels());
+    Kokkos::View<double*, Kokkos::Serial> inlet_pressure("inlet_pressure", geometry.nchannels());
+    Kokkos::View<double*, Kokkos::Serial> linear_heat_rate("linear_heat_rate", geometry.nchannels());
 
     auto h_inlet_mass_flow = Kokkos::create_mirror_view(inlet_mass_flow);
     auto h_inlet_temperature = Kokkos::create_mirror_view(inlet_temperature);
@@ -44,20 +53,26 @@ TEST(SubchannelTest, 7x7_Serial) {
 
     // create a gradient heat rate distribution
     const double c_tl = 1.1, c_tr = 1.0, c_bl = 1.0, c_br = 0.9;
-    for (int j = 0; j < N; ++j) {
-        double v = double(j) / double(N - 1);
-        for (int i = 0; i < N; ++i) {
-            double u = double(i) / double(N - 1);
-            double val =
-                (1.0 - u) * (1.0 - v) * c_tl +
-                u         * (1.0 - v) * c_tr +
-                (1.0 - u) * v         * c_bl +
-                u         * v         * c_br;
-            h_linear_heat_rate[j * N + i] = val * 29.1e3; // W/m
+    for (size_t aj = 0; aj < core_map.extent(0); ++aj) {
+        for (size_t ai = 0; ai < core_map.extent(1); ++ai) {
+            if (core_map(aj, ai) == 0) continue; // skip non-existent assemblies
+            for (int j = 0; j < N; ++j) {
+                double v = double(j) / double(N - 1);
+                for (int i = 0; i < N; ++i) {
+                    size_t aij = geometry.global_chan_index(aj, ai, j, i);
+                    double u = double(i) / double(N - 1);
+                    double val =
+                        (1.0 - u) * (1.0 - v) * c_tl +
+                        u         * (1.0 - v) * c_tr +
+                        (1.0 - u) * v         * c_bl +
+                        u         * v         * c_br;
+                    h_linear_heat_rate[aij] = val * 29.1e3; // W/m
+                }
+            }
         }
     }
 
-    for (size_t i = 0; i < N*N; ++i) {
+    for (size_t i = 0; i < geometry.nchannels(); ++i) {
         h_inlet_mass_flow(i) = 0.25; // kg/s
         h_inlet_temperature(i) = 278.0 + 273.15; // K
         h_inlet_pressure(i) = 7.255e6; // Pa
@@ -128,6 +143,8 @@ TEST(SubchannelTest, 7x7_Serial) {
         std::cout << std::endl;
     }
     std::cout << std::endl;
+
+    solver.print_state_at_plane(solver.state.surface_plane);
 }
 
 int main(int argc, char **argv) {

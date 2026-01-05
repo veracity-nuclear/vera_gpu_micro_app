@@ -86,15 +86,19 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
     }
 
     // extract inlet temperature
-    double inlet_temp = state_pt.getDataSet("core_inlet_temp").read<double>() + 273.15; // convert to K
+    double inlet_temp = 500.0; // default inlet temperature [K]
+    if (state_pt.exist("core_inlet_temp")) {
+        inlet_temp = state_pt.getDataSet("core_inlet_temp").read<double>() + 273.15; // convert to K
+    } else if (state_pt.exist("tinlet")) {
+        inlet_temp = state_pt.getDataSet("tinlet").read<double>() + 273.15; // convert to K
+    }
+
     View1D inlet_temperature = View1D("inlet_temperature", state.geom->nchannels());
     for (size_t ij = 0; ij < inlet_temperature.extent(0); ++ij) {
         inlet_temperature(ij) = inlet_temp;
     }
 
     // extract inlet pressure and mass flow rate
-    auto channel_pressure = HDF5ToKokkosView<View4D>(state_pt.getDataSet("channel_pressure"), "channel_pressure");
-    auto channel_pressure_inlet = Kokkos::subview(channel_pressure, Kokkos::ALL(), Kokkos::ALL(), 0, Kokkos::ALL());
     View1D inlet_pressure("inlet_pressure", state.geom->nchannels());
 
     // /STATE_0001/pressure [MPa]
@@ -104,13 +108,19 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
     View1D mass_flow_rate("mass_flow_rate", state.geom->nchannels());
     // /STATE_0001/flow_dist {560}
     View1D flow_dist = HDF5ToKokkosView<View1D>(state_pt.getDataSet("flow_dist"), "flow_dist");
+    if (flow_dist.extent(0) != state.geom->nassemblies()) {
+        flow_dist = View1D("flow_dist", state.geom->nassemblies());
+        for (size_t a = 0; a < flow_dist.extent(0); ++a) {
+            flow_dist(a) = 1.0;
+        }
+    }
+
     // /STATE_0001/flow {SCALAR} [%] % of rated flow
     double flow_percent = state_pt.getDataSet("flow").read<double>() * 0.01;
     // /CORE/rated_flow {SCALAR} [kg/s] Rated vessel flow at 100% flow
     double rated_flow = state_pt.getDataSet("rated_flow").read<double>(); // kg/s
     double total_mass_flow = rated_flow * flow_percent;
     double avg_assy_mass_flow = total_mass_flow / state.geom->nassemblies();
-
 
     std::cout << "Total mass flow = " << total_mass_flow << " kg/s" << std::endl;
     std::cout << "Avg assembly mass flow = " << avg_assy_mass_flow << " kg/s" << std::endl;
@@ -136,23 +146,6 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
             assy_idx++;
         }
     }
-
-    // Compute average inlet pressure and total mass flow rate
-    double avg_inlet_pressure = 0.0;
-    double total_mass_flow_rate = 0.0;
-    for (size_t i = 0; i < inlet_pressure.extent(0); ++i) {
-        avg_inlet_pressure += inlet_pressure(i);
-        total_mass_flow_rate += mass_flow_rate(i);
-    }
-    avg_inlet_pressure /= inlet_pressure.extent(0);
-
-    std::cout << "Inlet Temperature: " << inlet_temp << " K" << std::endl;
-    std::cout << "Inlet Pressure (avg): " << avg_inlet_pressure / 1e3 << " kPa" << std::endl;
-    std::cout << "Mass Flow Rate (total): " << total_mass_flow_rate << " kg/s" << std::endl;
-
-    // Create host mirror to read LHR for printing
-    auto h_lhr_print = Kokkos::create_mirror_view(state.lhr);
-    Kokkos::deep_copy(h_lhr_print, state.lhr);
 
     // initialize solution vectors
     Kokkos::resize(state.h_l, nchan, nz);
@@ -463,6 +456,7 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
         std::cout << "Completed axial plane " << std::setw(3) << k << "  / " <<  std::setw(3) << state.geom->naxial()
                   << std::setw(8) << duration.count() * 1e-3 << " s" << std::endl;
     }
+
 }
 
 template <typename ExecutionSpace>
@@ -530,8 +524,8 @@ void Solver<ExecutionSpace>::print_state_at_plane(size_t k) {
         P_sum += val;
     }
     double P_avg = P_sum / state.geom->nchannels();
-    std::cout << std::setw(25) << "Pressure [MPa]" << std::setw(15) << std::setprecision(6) << P_min / 1e6
-              << std::setw(15) << P_max / 1e6 << std::setw(15) << P_avg / 1e6 << std::endl;
+    std::cout << std::setw(25) << "Pressure [kPa]" << std::setw(15) << std::setprecision(6) << P_min / 1e3
+              << std::setw(15) << P_max / 1e3 << std::setw(15) << P_avg / 1e3 << std::endl;
 
     // Compute statistics for Liquid Flow Rate
     double W_l_min = std::numeric_limits<double>::max();

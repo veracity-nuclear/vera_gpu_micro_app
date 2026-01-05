@@ -20,7 +20,12 @@ TEST(SubchannelTest, SingleChannel) {
     double gap_width = 0.39e-2; // m
     double length = 1.3e-2; // m, length of axial momentum cell
     size_t naxial = 10; // number of axial nodes to discretize to
-    Geometry<Kokkos::Serial> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial);
+
+    // Create a core map for a single assembly (1x1)
+    Kokkos::View<size_t**, Kokkos::Serial> core_map("core_map", 1, 1);
+    core_map(0, 0) = 1;
+
+    Geometry<Kokkos::Serial> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial, core_map);
 
     // working fluid is water
     Water<Kokkos::Serial> fluid;

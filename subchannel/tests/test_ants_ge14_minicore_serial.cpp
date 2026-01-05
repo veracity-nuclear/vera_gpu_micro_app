@@ -15,9 +15,9 @@ TEST(SubchannelTest, SMR_Serial) {
 
     const char* raw_args[] = {
         "exe",
-        "../subchannel/data/smr.h5",
-        "--device", "openmp",
-        "--kokkos-num-threads=4"
+        "../subchannel/data/3DMini.h5",
+        "--device", "serial",
+        "--no-crossflow"
     };
     char** args = const_cast<char**>(raw_args);
     int argc = 5;
@@ -28,7 +28,7 @@ TEST(SubchannelTest, SMR_Serial) {
 
         auto parser = ArgumentParser::vera_gpu_subchannel_parser(raw_args[0]);
         parser.parse(argc, args);
-        Solver<Kokkos::OpenMP> solver(parser);
+        Solver<Kokkos::Serial> solver(parser);
         solver.solve();
         solver.print_state_at_plane(solver.state.surface_plane);
 

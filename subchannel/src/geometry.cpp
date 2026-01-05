@@ -1,14 +1,22 @@
 #include "geometry.hpp"
 
 template <typename ExecutionSpace>
-Geometry<ExecutionSpace>::Geometry(double height, double flow_area, double hydraulic_diameter, double gap_width, double length, size_t nchan, size_t naxial)
+Geometry<ExecutionSpace>::Geometry(
+    double height,
+    double flow_area,
+    double hydraulic_diameter,
+    double gap_width,
+    double length,
+    size_t nchan,
+    size_t naxial,
+    ViewSizeT2D core_map
+)
     : gap_W(gap_width), l(length), _nchan(nchan), _nz(naxial) {
 
-    // Initialize core_map for single assembly (1x1 core)
-    _core_size = 1;
+    // Initialize core_map
+    _core_map = core_map;
+    _core_size = _core_map.extent(0);
     _core_sym = 1;
-    _core_map = ViewSizeT2D("core_map", 1, 1);
-    _core_map(0, 0) = 1;  // Single assembly
 
     // Initialize uniform axial mesh
     _axial_mesh = View1D("axial_mesh", _nz + 1);
@@ -17,22 +25,26 @@ Geometry<ExecutionSpace>::Geometry(double height, double flow_area, double hydra
     }
 
     // Initialize constant flow area for all channels
-    size_t total_channels = _nchan * _nchan;
-    _channel_area = View2D("channel_area", total_channels, _nz + 1);
-    _hydraulic_diameter = View2D("hydraulic_diameter", total_channels, _nz + 1);
-    for (size_t aij = 0; aij < total_channels; ++aij) {
+    _channel_area = View2D("channel_area", nchannels(), _nz + 1);
+    _hydraulic_diameter = View2D("hydraulic_diameter", nchannels(), _nz + 1);
+    for (size_t aij = 0; aij < nchannels(); ++aij) {
         for (size_t k = 0; k < _nz + 1; ++k) {
             _channel_area(aij, k) = flow_area;
             _hydraulic_diameter(aij, k) = hydraulic_diameter;
         }
     }
 
-    // Initialize global channel index mapping for single assembly
-    _ij_global = ViewSizeT4D("ij_global", 1, 1, _nchan, _nchan);
+    // Initialize global channel index mapping
+    _ij_global = ViewSizeT4D("ij_global", _core_size, _core_size, _nchan, _nchan);
     size_t global_idx = 0;
-    for (size_t j = 0; j < _nchan; ++j) {
-        for (size_t i = 0; i < _nchan; ++i) {
-            _ij_global(0, 0, j, i) = global_idx++;
+    for (size_t aj = 0; aj < _core_size; ++aj) {
+        for (size_t ai = 0; ai < _core_size; ++ai) {
+            if (_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
+            for (size_t j = 0; j < _nchan; ++j) {
+                for (size_t i = 0; i < _nchan; ++i) {
+                    _ij_global(aj, ai, j, i) = global_idx++;
+                }
+            }
         }
     }
 
@@ -51,42 +63,71 @@ Geometry<ExecutionSpace>::Geometry(double height, double flow_area, double hydra
 
     // create all W -> E surfaces in between subchannels for any axial plane
     size_t ns = 0; // surface index
-    for (size_t j = 0; j < _nchan; ++j) {
-        for (size_t i = 0; i < _nchan; ++i) {
+    for (size_t aj = 0; aj < _core_size; ++aj) {
+        for (size_t j = 0; j < _nchan; ++j) {
+            for (size_t ai = 0; ai < _core_size; ++ai) {
+                if (_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
+                for (size_t i = 0; i < _nchan; ++i) {
 
-            size_t aij = _ij_global(0, 0, j, i);  // aij the flattened global channel index
+                    size_t aij = _ij_global(aj, ai, j, i);  // aij the flattened global channel index
 
-            // west -> east surfaces in assembly at (aj, ai)
-            if (i + 1 < _nchan) {
-                size_t aij_neigh = _ij_global(0, 0, j, i + 1);
-                surfaces(ns) = Surface(ns, aij, aij_neigh);
-                _ns_global(aij_neigh, 0) = ns;  // ns is the neighbor channel's west surface
-                _ns_global(aij, 1) = ns;        // ns is the current channel's east surface
-                ns++;
+                    // west -> east surfaces in assembly at (aj, ai)
+                    if (i + 1 < _nchan) {
+                        size_t aij_neigh = _ij_global(aj, ai, j, i + 1);
+                        surfaces(ns) = Surface(ns, aij, aij_neigh);
+                        _ns_global(aij_neigh, 0) = ns;  // ns is the neighbor channel's west surface
+                        _ns_global(aij, 1) = ns;        // ns is the current channel's east surface
+                        ns++;
+                    }
+
+                    // east assembly neighbor surface
+                    else if (ai + 1 < _core_size && _core_map(aj, ai + 1) > 0) {
+                        size_t aij_neigh = _ij_global(aj, ai + 1, j, 0);
+                        surfaces(ns) = Surface(ns, aij, aij_neigh);
+                        _ns_global(aij_neigh, 0) = ns;  // ns is the neighbor channel's west surface
+                        _ns_global(aij, 1) = ns;        // ns is the current channel's east surface
+                        ns++;
+                    }
+                }
             }
         }
     }
 
     // create all N -> S surfaces in between subchannels for any axial plane
-    for (size_t i = 0; i < _nchan; ++i) {
-        for (size_t j = 0; j < _nchan; ++j) {
+    for (size_t ai = 0; ai < _core_size; ++ai) {
+        for (size_t i = 0; i < _nchan; ++i) {
+            for (size_t aj = 0; aj < _core_size; ++aj) {
+                if (_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
+                for (size_t j = 0; j < _nchan; ++j) {
 
-            size_t aij = _ij_global(0, 0, j, i);  // aij the flattened global channel index
+                    size_t aij = _ij_global(aj, ai, j, i);  // aij the flattened global channel index
 
-            // north -> south surfaces in assembly at (aj, ai)
-            if (j + 1 < _nchan) {
-                size_t aij_neigh = _ij_global(0, 0, j + 1, i);
-                surfaces(ns) = Surface(ns, aij, aij_neigh);
-                _ns_global(aij_neigh, 2) = ns;  // ns is the neighbor channel's north surface
-                _ns_global(aij, 3) = ns;        // ns is the current channel's south surface
-                ns++;
+                    // north -> south surfaces in assembly at (aj, ai)
+                    if (j + 1 < _nchan) {
+                        size_t aij_neigh = _ij_global(aj, ai, j + 1, i);
+                        surfaces(ns) = Surface(ns, aij, aij_neigh);
+                        _ns_global(aij_neigh, 2) = ns;  // ns is the neighbor channel's north surface
+                        _ns_global(aij, 3) = ns;        // ns is the current channel's south surface
+                        ns++;
+                    }
+
+                    // south assembly neighbor surface
+                    else if (aj + 1 < _core_size && _core_map(aj + 1, ai) > 0) {
+                        size_t aij_neigh = _ij_global(aj + 1, ai, 0, i);
+                        surfaces(ns) = Surface(ns, aij, aij_neigh);
+                        _ns_global(aij_neigh, 2) = ns;  // ns is the neighbor channel's north surface
+                        _ns_global(aij, 3) = ns;        // ns is the current channel's south surface
+                        ns++;
+                    }
+                }
             }
         }
     }
 
     // output geometry info
-    std::cout << "Single Assembly Geometry Initialized:" << std::endl;
-    std::cout << "  Number of Channels (nchan x nchan): " << _nchan << " x " << _nchan << std::endl;
+    std::cout << "Geometry Initialized:" << std::endl;
+    std::cout << "  Number of Channels per Assembly (nchan x nchan): " << _nchan << " x " << _nchan << std::endl;
+    std::cout << "  Core Size: " << _core_size << " x " << _core_size << std::endl;
     std::cout << "  Number of Axial Cells (naxial): " << _nz << std::endl;
     std::cout << "  Total Assemblies: " << nassemblies() << std::endl;
     std::cout << "  Total Channels: " << nchannels() << std::endl;
@@ -101,11 +142,6 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
 
     HighFive::File file(filename, HighFive::File::ReadOnly);
     HighFive::Group core = file.getGroup("CORE");
-
-    auto axial_mesh = HDF5ToKokkosView<View1D>(core.getDataSet("axial_mesh"), "axial_mesh"); // cm
-    auto cell_height = HDF5ToKokkosView<View1D>(core.getDataSet("channel_cell_height"), "cell_height"); // cm
-    auto pin_area = HDF5ToKokkosView<View4D>(core.getDataSet("pin_surface_area"), "pin_surface_area"); // cm^2
-    auto channel_area = HDF5ToKokkosView<View4D>(core.getDataSet("channel_area"), "channel_area"); // cm^2
 
     auto _full_core_map = HDF5ToKokkosView<ViewSizeT2D>(core.getDataSet("core_map"), "core_map");
     _core_sym = core.getDataSet("core_sym").read<size_t>();
@@ -142,25 +178,40 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
             std::cout << std::endl;
         }
     }
-
     _core_size = _core_map.extent(0);
-    _nz = axial_mesh.extent(0) - 1;
-    _nchan = channel_area.extent(0);
 
-    // Store axial mesh for variable spacing
-    // convert axial mesh from cm to m
+    auto axial_mesh = HDF5ToKokkosView<View1D>(core.getDataSet("axial_mesh"), "axial_mesh"); // cm
+    _nz = axial_mesh.extent(0) - 1;
     for (size_t k = 0; k < axial_mesh.extent(0); ++k) {
         axial_mesh(k) *= 1e-2;
     }
-    for (size_t k = 0; k < cell_height.extent(0); ++k) {
-        cell_height(k) *= 1e-2;
-    }
     _axial_mesh = axial_mesh;
+
+    auto pin_volumes = HDF5ToKokkosView<View4D>(core.getDataSet("pin_volumes"), "pin_volumes"); // cm^3
+    _nchan = pin_volumes.extent(0) + 1;
+
+    std::cout << "\n=== GEOMETRY SUMMARY ===" << std::endl;
+    std::cout << "Assembly size: (" << _nchan << ", " << _nchan << ")" << std::endl;
 
     double apitch = core.getDataSet("apitch").read<double>() * 1e-2; // convert from cm to m
     double ppitch = apitch / _nchan; // approximation, pin pitch is not in VERAout CORE group
     double length = ppitch; // approximation for channel cells inbetween assemblies
     double gap_width = ppitch * 0.5; // approximation, gap width is not in VERAout CORE group
+
+    View4D channel_area; // cm^2
+    if (core.exist("channel_area")) {
+        channel_area = HDF5ToKokkosView<View4D>(core.getDataSet("channel_area"), "channel_area"); // cm^2
+    } else {
+        double default_area_cm2 = ppitch * ppitch * 1e4; // cm^2
+        channel_area = _init_default_channel_area(default_area_cm2);
+    }
+
+    View4D pin_area; // cm^2
+    if (core.exist("pin_surface_area")) {
+        pin_area = HDF5ToKokkosView<View4D>(core.getDataSet("pin_surface_area"), "pin_surface_area"); // cm^2
+    } else {
+        pin_area = _init_default_pin_area(pin_volumes);
+    }
 
     gap_W = gap_width;
     l = length;
@@ -217,8 +268,12 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
                         if (j < npin() && i < npin()) { // SE pin exists
                             A_wetted += 0.25 * pin_area(i, j, k, assem_idx) * 1e-4;
                         }
-                        double P_wetted = A_wetted / cell_height(k);
-                        _hydraulic_diameter(aij, k) = 4.0 * _channel_area(aij, k) / P_wetted;
+                        double P_wetted = A_wetted / dz(k);
+                        if (P_wetted == 0.0) {
+                            _hydraulic_diameter(aij, k) = std::sqrt(4.0 * _channel_area(aij, k) / M_PI); // approximate with circular-equivalent hydraulic diameter
+                        } else {
+                            _hydraulic_diameter(aij, k) = 4.0 * _channel_area(aij, k) / P_wetted;
+                        }
                     }
                 }
             }
@@ -299,8 +354,6 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
         }
     }
 
-    std::cout << "\n=== GEOMETRY SUMMARY ===" << std::endl;
-    std::cout << "Assembly size: (" << _nchan << ", " << _nchan << ")" << std::endl;
     std::cout << "Core size: (" << _full_core_map.extent(0) << ", " << _full_core_map.extent(1) << ")" << std::endl;
     std::cout << "Core symmetry: " << _core_sym << std::endl;
     std::cout << "Nsurfaces: " << nsurfaces() << std::endl;
@@ -395,6 +448,38 @@ size_t Geometry<ExecutionSpace>::nassemblies() const {
         }
     }
     return nassy;
+}
+
+template <typename ExecutionSpace>
+typename Geometry<ExecutionSpace>::View4D Geometry<ExecutionSpace>::_init_default_channel_area(double default_area_cm2) {
+    // Initialize default channel area View with uniform values
+    View4D channel_area("channel_area", _nchan, _nchan, _nz, nassemblies());
+    for (size_t a = 0; a < nassemblies(); ++a) {
+        for (size_t k = 0; k < _nz; ++k) {
+            for (size_t j = 0; j < _nchan; ++j) {
+                for (size_t i = 0; i < _nchan; ++i) {
+                    channel_area(i, j, k, a) = default_area_cm2; // cm^2
+                }
+            }
+        }
+    }
+    return channel_area;
+}
+
+template <typename ExecutionSpace>
+typename Geometry<ExecutionSpace>::View4D Geometry<ExecutionSpace>::_init_default_pin_area(const View4D& pin_volumes) {
+    // Initialize default channel area View with uniform values
+    View4D pin_area("channel_area", _nchan, _nchan, _nz, nassemblies());
+    for (size_t a = 0; a < nassemblies(); ++a) {
+        for (size_t k = 0; k < _nz; ++k) {
+            for (size_t j = 0; j < _nchan; ++j) {
+                for (size_t i = 0; i < _nchan; ++i) {
+                    pin_area(i, j, k, a) = pin_volumes(i, j, k, a) / (dz(k) * 1e2); // cm^2 (dz returns [m], so convert to cm before dividing)
+                }
+            }
+        }
+    }
+    return pin_area;
 }
 
 // Explicit template instantiations
