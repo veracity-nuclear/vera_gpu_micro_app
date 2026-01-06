@@ -10,30 +10,129 @@
  * https://doi.org/10.1016/j.nucengdes.2023.112328
  */
 
-/*
-
- 1. Move loops outside of the TH functions to planar
- 2.
-
-*/
-
 template <typename ExecutionSpace>
 void TH::planar(State<ExecutionSpace>& state) {
+    std::cout << "Accumulating surface sources..." << std::endl;
+    accumulate_surface_sources<ExecutionSpace>(state);
+    std::cout << "Solving flow rates..." << std::endl;
     solve_flow_rates<ExecutionSpace>(state);
+    std::cout << "Solving enthalpy..." << std::endl;
     solve_enthalpy<ExecutionSpace>(state);
+    std::cout << "Solving void fraction..." << std::endl;
     solve_void_fraction<ExecutionSpace>(state);
+    std::cout << "Solving quality..." << std::endl;
     solve_quality<ExecutionSpace>(state);
+    std::cout << "Solving pressure..." << std::endl;
     solve_pressure<ExecutionSpace>(state);
+    std::cout << "Planar complete." << std::endl << std::endl;
 }
+
+
+template <typename ExecutionSpace>
+void TH::accumulate_surface_sources(State<ExecutionSpace>& state) {
+
+    // extract necessary variables from the state
+    size_t nsurfaces = state.geom->nsurfaces();
+    size_t k = state.surface_plane;
+    size_t k_node = state.node_plane;
+    auto gk = state.gk;
+    auto X = state.X;
+    auto h_l = state.h_l;
+    auto alpha = state.alpha;
+    auto W_l = state.W_l;
+    auto W_v = state.W_v;
+    auto rho = state.fluid->rho(state.h_l);
+    auto rho_f = state.fluid->rho_f();
+    auto rho_g = state.fluid->rho_g();
+    auto gap_width = state.geom->gap_width();
+    auto channel_area = state.geom->channel_area_view();
+    auto surface_view = state.geom->surface_view();
+    auto G_l_tm = state.G_l_tm;
+    auto G_v_tm = state.G_v_tm;
+    auto Q_m_tm = state.Q_m_tm;
+    auto M_m_tm = state.M_m_tm;
+    auto G_l_vd = state.G_l_vd;
+    auto G_v_vd = state.G_v_vd;
+    auto Q_m_vd = state.Q_m_vd;
+    auto M_m_vd = state.M_m_vd;
+
+    // extract views to modify in this function
+    auto SS_l = state.SS_l;
+    auto SS_v = state.SS_v;
+    auto SS_m = state.SS_m;
+    auto CF_SS = state.CF_SS;
+    auto TM_SS = state.TM_SS;
+    auto VD_SS = state.VD_SS;
+
+    // Accumulate source terms from transverse surfaces
+    Kokkos::parallel_for("accumulate_surface_sources", Kokkos::RangePolicy<ExecutionSpace>(0, nsurfaces), KOKKOS_LAMBDA(const size_t s) {
+        auto surf = surface_view(s);
+        size_t ns = surf.idx;
+        size_t i = surf.from_node;
+        size_t j = surf.to_node;
+        size_t i_donor = (gk(ns, k_node) >= 0) ? i : j;
+
+        double A_f_i = channel_area(i, k);
+        double A_f_j = channel_area(j, k);
+        double A_f_donor = channel_area(i_donor, k-1);
+
+        std::cout << "Accumulating flow rate sources..." << std::endl;
+        double sl = gk(ns, k_node) * (1.0 - X(i_donor, k-1)) + G_l_tm(ns) + G_l_vd(ns);
+        double sl_term = gap_width * sl;
+        Kokkos::atomic_add(&SS_l(i), sl_term);
+        Kokkos::atomic_add(&SS_l(j), -sl_term);
+
+        double sv = gk(ns, k_node) * X(i_donor, k-1) + G_v_tm(ns) + G_v_vd(ns);
+        double sv_term = gap_width * sv;
+        Kokkos::atomic_add(&SS_v(i), sv_term);
+        Kokkos::atomic_add(&SS_v(j), -sv_term);
+
+        std::cout << "Accumulating enthalpy sources..." << std::endl;
+        double h_l_donor = h_l(i_donor, k-1);
+        double term = gap_width * (gk(ns, k_node) * h_l_donor + Q_m_tm(ns) + Q_m_vd(ns));
+        Kokkos::atomic_add(&SS_m(i), term);
+        Kokkos::atomic_add(&SS_m(j), -term);
+
+        // Compute V_m for donor channel inline
+        double v_m_donor;
+        if (alpha(i_donor, k-1) < 1e-6) {
+            v_m_donor = 1.0 / rho_f;
+        } else if (alpha(i_donor, k-1) > 1.0 - 1e-6) {
+            v_m_donor = 1.0 / rho_g;
+        } else {
+            double X_donor = X(i_donor, k-1);
+            double rho_l_donor = rho(i_donor, k-1);
+            v_m_donor = (1.0 - X_donor) * (1.0 - X_donor) / ((1.0 - alpha(i_donor, k-1)) * rho_l_donor) +
+                        X_donor * X_donor / (alpha(i_donor, k-1) * rho_g);
+        }
+        double W_m_donor = W_l(i_donor, k-1) + W_v(i_donor, k-1);
+        double V_m_donor = v_m_donor * W_m_donor / A_f_donor;
+
+        double cf_term = gap_width * gk(ns, k_node) * V_m_donor;
+        Kokkos::atomic_add(&CF_SS(i), cf_term);
+        Kokkos::atomic_add(&CF_SS(j), -cf_term);
+
+        double tm_term = gap_width * M_m_tm(ns);
+        Kokkos::atomic_add(&TM_SS(i), tm_term);
+        Kokkos::atomic_add(&TM_SS(j), -tm_term);
+
+        double vd_term = gap_width * M_m_vd(ns);
+        Kokkos::atomic_add(&VD_SS(i), vd_term);
+        Kokkos::atomic_add(&VD_SS(j), -vd_term);
+    });
+
+    Kokkos::fence();
+}
+
 
 template <typename ExecutionSpace>
 void TH::solve_evaporation_term(State<ExecutionSpace>& state) {
 
-    typename State<ExecutionSpace>::View2D mu = state.fluid->mu(state.h_l); // dynamic viscosity [Pa-s]
-    typename State<ExecutionSpace>::View2D rho = state.fluid->rho(state.h_l); // liquid density [kg/m^3]
-    typename State<ExecutionSpace>::View2D cond = state.fluid->k(state.h_l); // thermal conductivity [W/m-K]
-    typename State<ExecutionSpace>::View2D Cp = state.fluid->Cp(state.h_l); // specific heat [J/kg-K]
-    typename State<ExecutionSpace>::View2D T = state.fluid->T(state.h_l); // temperature [K]
+    auto mu = state.fluid->mu(state.h_l); // dynamic viscosity [Pa-s]
+    auto rho = state.fluid->rho(state.h_l); // liquid density [kg/m^3]
+    auto cond = state.fluid->k(state.h_l); // thermal conductivity [W/m-K]
+    auto Cp = state.fluid->Cp(state.h_l); // specific heat [J/kg-K]
+    auto T = state.fluid->T(state.h_l); // temperature [K]
 
     // Device-based implementation
     auto W_l = state.W_l;
@@ -328,12 +427,12 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
         planar(state);
         Kokkos::Profiling::popRegion();
 
-        // Copy updated data
         auto P = state.P;
         auto X = state.X;
         auto gk = state.gk;
 
         // calculate the residual vector f0
+        std::cout << "Calculating residual vector..." << std::endl;
         Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - calculate residual vector f0");
         for (size_t ns = 0; ns < nsurf; ++ns) {
             size_t i = state.geom->surfaces[ns].from_node;
@@ -428,6 +527,8 @@ void TH::solve_flow_rates(State<ExecutionSpace>& state) {
     auto G_v_tm = state.G_v_tm;
     auto G_l_vd = state.G_l_vd;
     auto G_v_vd = state.G_v_vd;
+    auto SS_l = state.SS_l;
+    auto SS_v = state.SS_v;
     auto surface_view = state.geom->surface_view();
     auto flow_area_view = state.geom->channel_area_view();
     const double gap_width = state.geom->gap_width();
@@ -435,45 +536,18 @@ void TH::solve_flow_rates(State<ExecutionSpace>& state) {
     const size_t nsurfaces = state.geom->nsurfaces();
     const size_t nchannels = state.geom->nchannels();
 
-    // Create source term views on device
-    Kokkos::View<double*, ExecutionSpace> SS_l("SS_l", nchannels);
-    Kokkos::View<double*, ExecutionSpace> SS_v("SS_v", nchannels);
-
-    // Initialize to zero
-    Kokkos::deep_copy(SS_l, 0.0);
-    Kokkos::deep_copy(SS_v, 0.0);
-
-    // Accumulate source terms from transverse surfaces
-    Kokkos::parallel_for("accumulate_flow_sources", Kokkos::RangePolicy<ExecutionSpace>(0, nsurfaces), KOKKOS_LAMBDA(const size_t s) {
-        auto surf = surface_view(s);
-        size_t ns = surf.idx;
-        size_t i = surf.from_node;
-        size_t j = surf.to_node;
-        size_t i_donor = (gk(ns, k_node) >= 0) ? i : j;
-
-        double sl = gk(ns, k_node) * (1.0 - X(i_donor, k-1)) + G_l_tm(ns) + G_l_vd(ns);
-        double sl_term = gap_width * sl;
-        Kokkos::atomic_add(&SS_l(i), sl_term);
-        Kokkos::atomic_add(&SS_l(j), -sl_term);
-
-        double sv = gk(ns, k_node) * X(i_donor, k-1) + G_v_tm(ns) + G_v_vd(ns);
-        double sv_term = gap_width * sv;
-        Kokkos::atomic_add(&SS_v(i), sv_term);
-        Kokkos::atomic_add(&SS_v(j), -sv_term);
-    });
-
     // Update flow rates on device
     Kokkos::parallel_for("update_flow_rates", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels), KOKKOS_LAMBDA(const size_t ij) {
-        double A_f_ijk = flow_area_view(ij, k_node);
-        if (A_f_ijk < 1e-12) return; // skip channels with no flow area
+        double A_f = flow_area_view(ij, k_node);
+        if (A_f < 1e-12) return; // skip channels with no flow area
 
         // Update liquid flow rate (Eq. 61 from ANTS Theory)
         W_l(ij, k) = W_l(ij, k-1) - dz * (evap(ij, k_node) + SS_l(ij));
-        // W_l(ij, k) = (W_l(ij, k) > 0.0) ? W_l(ij, k) : 0.0; // prevent negative
+        W_l(ij, k) = (W_l(ij, k) > 0.0) ? W_l(ij, k) : 0.0; // prevent negative
 
         // Update vapor flow rate (Eq. 62 from ANTS Theory)
         W_v(ij, k) = W_v(ij, k-1) + dz * (evap(ij, k_node) - SS_v(ij));
-        // W_v(ij, k) = (W_v(ij, k) > 0.0) ? W_v(ij, k) : 0.0; // prevent negative
+        W_v(ij, k) = (W_v(ij, k) > 0.0) ? W_v(ij, k) : 0.0; // prevent negative
 
     });
 
@@ -493,6 +567,7 @@ void TH::solve_enthalpy(State<ExecutionSpace>& state) {
     auto gk = state.gk;
     auto Q_m_tm = state.Q_m_tm;
     auto Q_m_vd = state.Q_m_vd;
+    auto SS_m = state.SS_m;
     auto surface_view = state.geom->surface_view();
     auto flow_area_view = state.geom->channel_area_view();
     const double gap_width = state.geom->gap_width();
@@ -500,27 +575,6 @@ void TH::solve_enthalpy(State<ExecutionSpace>& state) {
     const size_t nsurfaces = state.geom->nsurfaces();
     const size_t nchannels = state.geom->nchannels();
     const double h_g = state.fluid->h_g();
-
-    // Create source term view on device
-    Kokkos::View<double*, ExecutionSpace> SS_m("SS_m", nchannels);
-    Kokkos::deep_copy(SS_m, 0.0);
-
-    // Accumulate enthalpy source terms from transverse surfaces
-    Kokkos::parallel_for("accumulate_enthalpy_sources", Kokkos::RangePolicy<ExecutionSpace>(0, nsurfaces), KOKKOS_LAMBDA(const size_t s) {
-        auto surf = surface_view(s);
-        size_t ns = surf.idx;
-        size_t i = surf.from_node;
-        size_t j = surf.to_node;
-        size_t i_donor = (gk(ns, k_node) >= 0) ? i : j;
-
-        double h_l_donor = h_l(i_donor, k-1);
-        double term = gap_width * (gk(ns, k_node) * h_l_donor + Q_m_tm(ns) + Q_m_vd(ns));
-
-        // Kokkos::printf("Surface %d between channels %d and %d: gk = %f, h_l_donor = %f, term = %f\n", ns, i, j, gk(ns, k_node), h_l_donor, term);
-
-        Kokkos::atomic_add(&SS_m(i), term);
-        Kokkos::atomic_add(&SS_m(j), -term);
-    });
 
     // Update liquid enthalpy on device
     Kokkos::parallel_for("update_enthalpy", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels), KOKKOS_LAMBDA(const size_t ij) {
@@ -650,11 +704,11 @@ void TH::solve_quality(State<ExecutionSpace>& state) {
     const size_t nchannels = state.geom->nchannels();
 
     Kokkos::parallel_for("compute_quality", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels), KOKKOS_LAMBDA(const size_t ij) {
-        double A_f_ijk = flow_area_view(ij, k_node);
-        if (A_f_ijk < 1e-12) return; // skip channels with no flow area
+        double A_f = flow_area_view(ij, k_node);
+        if (A_f < 1e-12) return; // skip channels with no flow area
 
-        double G_v = W_v(ij, k) / A_f_ijk; // vapor mass flux (Eq. 8)
-        double G_l = W_l(ij, k) / A_f_ijk; // liquid mass flux (Eq. 9)
+        double G_v = W_v(ij, k) / A_f; // vapor mass flux (Eq. 8)
+        double G_l = W_l(ij, k) / A_f; // liquid mass flux (Eq. 9)
         X(ij, k) = G_v / (G_v + G_l); // Eq. 17 from ANTS Theory
     });
 
@@ -675,16 +729,6 @@ void TH::solve_pressure(State<ExecutionSpace>& state) {
     size_t k_node = state.node_plane;
     double dz = state.geom->dz(k_node);
 
-    // Allocate device views for momentum exchange terms
-    typename State<ExecutionSpace>::View1D CF_SS("CF_SS", state.geom->nchannels());
-    typename State<ExecutionSpace>::View1D TM_SS("TM_SS", state.geom->nchannels());
-    typename State<ExecutionSpace>::View1D VD_SS("VD_SS", state.geom->nchannels());
-
-    // Initialize to zero (critical - uninitialized memory causes NaN)
-    Kokkos::deep_copy(CF_SS, 0.0);
-    Kokkos::deep_copy(TM_SS, 0.0);
-    Kokkos::deep_copy(VD_SS, 0.0);
-
     // Capture variables for device lambda - use raw copies, not shared_ptr
     auto surfaces = state.geom->surfaces;
     auto gk = state.gk;
@@ -695,54 +739,13 @@ void TH::solve_pressure(State<ExecutionSpace>& state) {
     auto X = state.X;
     auto alpha = state.alpha;
     auto h_l = state.h_l;
+    auto CF_SS = state.CF_SS;
+    auto TM_SS = state.TM_SS;
+    auto VD_SS = state.VD_SS;
     auto channel_area = state.geom->channel_area_view();
     double gap_W = state.geom->gap_width();
     double rho_f = state.fluid->rho_f();
     double rho_g = state.fluid->rho_g();
-
-    // Accumulate surface momentum exchange terms on device
-    Kokkos::parallel_for("accumulate_momentum_exchange", Kokkos::RangePolicy<ExecutionSpace>(0, state.geom->nsurfaces()),
-        KOKKOS_LAMBDA(const size_t s) {
-            Surface surf = surfaces(s);
-            size_t ns = surf.idx;
-            size_t i = surf.from_node;
-            size_t j = surf.to_node;
-            size_t i_donor = (gk(ns, k_node) >= 0) ? i : j;
-
-            double A_f_i = channel_area(i, k);
-            double A_f_j = channel_area(j, k);
-            double A_f_donor = channel_area(i_donor, k-1);
-
-            // Compute V_m for donor channel inline
-            double v_m_donor;
-            if (alpha(i_donor, k-1) < 1e-6) {
-                v_m_donor = 1.0 / rho_f;
-            } else if (alpha(i_donor, k-1) > 1.0 - 1e-6) {
-                v_m_donor = 1.0 / rho_g;
-            } else {
-                double X_donor = X(i_donor, k-1);
-                double rho_l_donor = rho(i_donor, k-1);
-                v_m_donor = (1.0 - X_donor) * (1.0 - X_donor) / ((1.0 - alpha(i_donor, k-1)) * rho_l_donor) +
-                            X_donor * X_donor / (alpha(i_donor, k-1) * rho_g);
-            }
-            double W_m_donor = W_l(i_donor, k-1) + W_v(i_donor, k-1);
-            double V_m_donor = v_m_donor * W_m_donor / A_f_donor;
-
-            double cf_term = gap_W * gk(ns, k_node) * V_m_donor;
-            Kokkos::atomic_add(&CF_SS(i), cf_term);
-            Kokkos::atomic_add(&CF_SS(j), -cf_term);
-
-            double tm_term = gap_W * M_m_tm(ns);
-            Kokkos::atomic_add(&TM_SS(i), tm_term);
-            Kokkos::atomic_add(&TM_SS(j), -tm_term);
-
-            double vd_term = gap_W * M_m_vd(ns);
-            Kokkos::atomic_add(&VD_SS(i), vd_term);
-            Kokkos::atomic_add(&VD_SS(j), -vd_term);
-        });
-
-    // Synchronize to ensure momentum exchange terms are computed before use
-    Kokkos::fence();
 
     // Compute pressure drops on device
     auto P = state.P;

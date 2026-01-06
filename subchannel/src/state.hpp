@@ -14,26 +14,33 @@ struct State {
     std::shared_ptr<Water<ExecutionSpace>> fluid;   // reference to fluid properties
     std::shared_ptr<Geometry<ExecutionSpace>> geom; // reference to geometry
 
-    View2D h_l;       // liquid enthalpy
-    View2D W_l;       // liquid mass flow rate
-    View2D W_v;       // vapor mass flow rate
-    View2D P;         // pressure
-    View2D alpha;     // void fraction
-    View2D X;         // quality
-    View2D lhr;       // linear heat rate
-    View2D evap;      // evaporation term [kg/m/s]
+    View2D h_l;         // liquid enthalpy
+    View2D W_l;         // liquid mass flow rate
+    View2D W_v;         // vapor mass flow rate
+    View2D P;           // pressure
+    View2D alpha;       // void fraction
+    View2D X;           // quality
+    View2D lhr;         // linear heat rate
+    View2D evap;        // evaporation term [kg/m/s]
+    View2D gk;          // surface mass fluxes [kg/m/s]
 
-    View1D G_l_tm;    // turbulent mixing liquid mass transfer [kg/m^2/s]
-    View1D G_v_tm;    // turbulent mixing vapor mass transfer [kg/m^2/s]
-    View1D Q_m_tm;    // turbulent mixing energy transfer [W/m^2]
-    View1D M_m_tm;    // turbulent mixing momentum transfer [Pa]
+    View1D G_l_tm;      // turbulent mixing liquid mass transfer [kg/m^2/s]
+    View1D G_v_tm;      // turbulent mixing vapor mass transfer [kg/m^2/s]
+    View1D Q_m_tm;      // turbulent mixing energy transfer [W/m^2]
+    View1D M_m_tm;      // turbulent mixing momentum transfer [Pa]
 
-    View1D G_l_vd;    // void drift liquid mass transfer [kg/m^2/s]
-    View1D G_v_vd;    // void drift vapor mass transfer [kg/m^2/s]
-    View1D Q_m_vd;    // void drift energy transfer [W/m^2]
-    View1D M_m_vd;    // void drift momentum transfer [Pa]
+    View1D G_l_vd;      // void drift liquid mass transfer [kg/m^2/s]
+    View1D G_v_vd;      // void drift vapor mass transfer [kg/m^2/s]
+    View1D Q_m_vd;      // void drift energy transfer [W/m^2]
+    View1D M_m_vd;      // void drift momentum transfer [Pa]
 
-    View2D gk;        // surface mass fluxes [kg/m/s]
+    View1D SS_l;        // accumulated surface source terms for liquid
+    View1D SS_v;        // accumulated surface source terms for vapor
+    View1D SS_m;        // accumulated surface source terms for mixture enthalpy
+    View1D CF_SS;       // crossflow momentum source terms
+    View1D TM_SS;       // turbulent mixing momentum source terms
+    View1D VD_SS;       // void drift momentum source terms
+
 
     // -------------------------
     // Constructors

@@ -19,6 +19,9 @@ template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
 void planar(State<ExecutionSpace>& state);
 
 template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void accumulate_surface_sources(State<ExecutionSpace>& state);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
 void solve_evaporation_term(State<ExecutionSpace>& state);
 
 template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
