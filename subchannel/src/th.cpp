@@ -10,6 +10,13 @@
  * https://doi.org/10.1016/j.nucengdes.2023.112328
  */
 
+/*
+
+ 1. Move loops outside of the TH functions to planar
+ 2.
+
+*/
+
 template <typename ExecutionSpace>
 void TH::planar(State<ExecutionSpace>& state) {
     solve_flow_rates<ExecutionSpace>(state);
@@ -289,6 +296,7 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
 template <typename ExecutionSpace>
 void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
 
+    Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - setup");
     const size_t nchan = state.geom->nchan() * state.geom->nchan();
     const size_t nsurf = state.geom->nsurfaces();
     const size_t k = state.surface_plane;
@@ -304,16 +312,10 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     for (size_t ns = 0; ns < nsurf; ++ns) {
         state.gk(ns, k_node) = state.gk(ns, k_node - 1);
     }
-
-    // Create host mirrors for accessing data
-    auto h_P = Kokkos::create_mirror_view(state.P);
-    auto h_X = Kokkos::create_mirror_view(state.X);
-    auto h_gk = Kokkos::create_mirror_view(state.gk);
-
-    // Copy the updated gk (with previous plane values) to host
-    Kokkos::deep_copy(h_gk, state.gk);
+    Kokkos::Profiling::popRegion();
 
     // outer loop for newton iteration convergence
+    Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - newton iteration loop");
     for (size_t outer_iter = 0; outer_iter < state.max_outer_iter; ++outer_iter) {
 
         // Residual vectors and Jacobian Matrix as Kokkos Views
@@ -322,85 +324,92 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
         Kokkos::View<double**, ExecutionSpace> dfdg("dfdg", nsurf, nsurf);
 
         // PLANAR solve
+        Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - planar");
         planar(state);
+        Kokkos::Profiling::popRegion();
 
         // Copy updated data
-        Kokkos::deep_copy(h_P, state.P);
-        Kokkos::deep_copy(h_X, state.X);
-        Kokkos::deep_copy(h_gk, state.gk);
+        auto P = state.P;
+        auto X = state.X;
+        auto gk = state.gk;
 
         // calculate the residual vector f0
+        Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - calculate residual vector f0");
         for (size_t ns = 0; ns < nsurf; ++ns) {
             size_t i = state.geom->surfaces[ns].from_node;
             size_t j = state.geom->surfaces[ns].to_node;
-            size_t i_donor = (h_gk(ns, k_node) >= 0) ? i : j;
+            size_t i_donor = (gk(ns, k_node) >= 0) ? i : j;
 
-            double rho_m = state.fluid->rho_m(h_X(i_donor, k));
-            double deltaP = h_P(i, k) - h_P(j, k); // Eq. 56 from ANTS Theory
-            double Fns = 0.5 * K_ns * h_gk(ns, k_node) * std::abs(h_gk(ns, k_node)) / rho_m; // Eq. 57 from ANTS Theory
+            double rho_m = state.fluid->rho_m(X(i_donor, k));
+            double deltaP = P(i, k) - P(j, k); // Eq. 56 from ANTS Theory
+            double Fns = 0.5 * K_ns * gk(ns, k_node) * std::abs(gk(ns, k_node)) / rho_m; // Eq. 57 from ANTS Theory
             f0(ns) = -dz * aspect * (deltaP - Fns); // Eq. 55 from ANTS Theory
         }
+        Kokkos::Profiling::popRegion();
 
         // calculate max residual
+        Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - calculate max residual");
         double max_res = 0.0;
         for (size_t ns = 0; ns < nsurf; ++ns) {
             max_res = std::max(max_res, std::abs(f0(ns)));
         }
+        Kokkos::Profiling::popRegion();
 
         if (max_res < tol) {
             std::cout << "Converged plane " << k << " in " << outer_iter + 1 << " iterations." << std::endl;
             break;
         }
 
+        // Check if max iterations reached
+        if (outer_iter == state.max_outer_iter - 1) {
+            std::cout << "WARNING: Plane " << k << " reached max outer iterations (" << state.max_outer_iter
+                      << ") with residual = " << std::scientific << max_res << std::defaultfloat << std::endl;
+        }
+
         for (size_t ns1 = 0; ns1 < nsurf; ++ns1) {
 
             State perturb_state = state; // reset state to reference prior to perturbation
 
-            // Get host mirror for perturbation
-            auto h_perturb_gk = Kokkos::create_mirror_view(perturb_state.gk);
-            Kokkos::deep_copy(h_perturb_gk, perturb_state.gk);
+            auto gk_pert = perturb_state.gk;
+            auto P_pert = perturb_state.P;
+            auto X_pert = perturb_state.X;
 
             // perturb the mass flux at surface ns1
-            if (h_perturb_gk(ns1, k_node) >= 0) h_perturb_gk(ns1, k_node) -= gtol;
-            else h_perturb_gk(ns1, k_node) += gtol;
-
-            Kokkos::deep_copy(perturb_state.gk, h_perturb_gk);
+            if (gk_pert(ns1, k_node) >= 0) gk_pert(ns1, k_node) -= gtol;
+            else gk_pert(ns1, k_node) += gtol;
 
             // PLANAR_PERTURB solve
+            Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - planar perturb");
             planar(perturb_state);
+            Kokkos::Profiling::popRegion();
 
-            // Copy perturbed results
-            auto h_perturb_P = Kokkos::create_mirror_view(perturb_state.P);
-            auto h_perturb_X = Kokkos::create_mirror_view(perturb_state.X);
-            Kokkos::deep_copy(h_perturb_P, perturb_state.P);
-            Kokkos::deep_copy(h_perturb_X, perturb_state.X);
-            Kokkos::deep_copy(h_perturb_gk, perturb_state.gk);
-
+            Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - compute perturbed residuals f3");
             for (size_t ns = 0; ns < nsurf; ++ns) {
                 size_t i = state.geom->surfaces[ns].from_node;
                 size_t j = state.geom->surfaces[ns].to_node;
-                size_t i_donor = (h_perturb_gk(ns, k_node) >= 0) ? i : j;
-
-                double rho_m = perturb_state.fluid->rho_m(h_perturb_X(i_donor, k));
-                double deltaP = h_perturb_P(i, k) - h_perturb_P(j, k);
-                double Fns = 0.5 * K_ns * h_perturb_gk(ns, k_node) * std::abs(h_perturb_gk(ns, k_node)) / rho_m;
+                size_t i_donor = (gk_pert(ns, k_node) >= 0) ? i : j;
+                double rho_m = perturb_state.fluid->rho_m(X_pert(i_donor, k));
+                double deltaP = P_pert(i, k) - P_pert(j, k);
+                double Fns = 0.5 * K_ns * gk_pert(ns, k_node) * std::abs(gk_pert(ns, k_node)) / rho_m;
                 f3(ns) = -dz * aspect * (deltaP - Fns);
 
-                dfdg(ns, ns1) = (f3(ns) - f0(ns)) / (h_perturb_gk(ns1, k_node) - h_gk(ns1, k_node));
+                dfdg(ns, ns1) = (f3(ns) - f0(ns)) / (gk_pert(ns1, k_node) - gk(ns1, k_node));
             }
+            Kokkos::Profiling::popRegion();
         }
 
         // solve the system of equations (overwrites f0 as solution vector)
+        Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - solve_linear_system");
         solve_linear_system(nsurf, dfdg, f0);
+        Kokkos::Profiling::popRegion();
 
         // update mass fluxes from solution
         for (size_t ns = 0; ns < nsurf; ++ns) {
-            h_gk(ns, k_node) -= f0(ns);
+            gk(ns, k_node) -= f0(ns);
         }
 
-        Kokkos::deep_copy(state.gk, h_gk);
-
     } // end outer iteration loop
+    Kokkos::Profiling::popRegion();
 }
 
 template <typename ExecutionSpace>

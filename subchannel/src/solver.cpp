@@ -441,7 +441,9 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
         state.surface_plane = k;
 
         if (_cf_flag) {
+            Kokkos::Profiling::pushRegion("Solver::solve_surface_mass_flux");
             TH::solve_surface_mass_flux<ExecutionSpace>(state);
+            Kokkos::Profiling::popRegion();
         } else {
             TH::planar<ExecutionSpace>(state);
         }

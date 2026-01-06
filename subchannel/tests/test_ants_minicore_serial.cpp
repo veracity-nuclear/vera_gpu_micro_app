@@ -14,7 +14,7 @@
 TEST(SubchannelTest, Minicore_Serial) {
 
     // geometric parameters
-    size_t N = 5; // 5x5 grid
+    size_t N = 6; // NxN pins in assembly
     double height = 3.81; // m
     double flow_area = 1.436e-4; // m^2
     double hydraulic_diameter = 1.436e-2; // m
@@ -92,8 +92,8 @@ TEST(SubchannelTest, Minicore_Serial) {
         inlet_mass_flow
     );
 
-    size_t outer_iter = 100;
-    size_t inner_iter = 100;
+    size_t outer_iter = 25;
+    size_t inner_iter = 50;
     solver.solve(outer_iter, inner_iter);
 
     auto h = solver.get_surface_liquid_enthalpies();
