@@ -12,21 +12,13 @@
 
 template <typename ExecutionSpace>
 void TH::planar(State<ExecutionSpace>& state) {
-    std::cout << "Accumulating surface sources..." << std::endl;
     accumulate_surface_sources<ExecutionSpace>(state);
-    std::cout << "Solving flow rates..." << std::endl;
     solve_flow_rates<ExecutionSpace>(state);
-    std::cout << "Solving enthalpy..." << std::endl;
     solve_enthalpy<ExecutionSpace>(state);
-    std::cout << "Solving void fraction..." << std::endl;
     solve_void_fraction<ExecutionSpace>(state);
-    std::cout << "Solving quality..." << std::endl;
     solve_quality<ExecutionSpace>(state);
-    std::cout << "Solving pressure..." << std::endl;
     solve_pressure<ExecutionSpace>(state);
-    std::cout << "Planar complete." << std::endl << std::endl;
 }
-
 
 template <typename ExecutionSpace>
 void TH::accumulate_surface_sources(State<ExecutionSpace>& state) {
@@ -64,6 +56,13 @@ void TH::accumulate_surface_sources(State<ExecutionSpace>& state) {
     auto TM_SS = state.TM_SS;
     auto VD_SS = state.VD_SS;
 
+    Kokkos::deep_copy(SS_l, 0.0);
+    Kokkos::deep_copy(SS_v, 0.0);
+    Kokkos::deep_copy(SS_m, 0.0);
+    Kokkos::deep_copy(CF_SS, 0.0);
+    Kokkos::deep_copy(TM_SS, 0.0);
+    Kokkos::deep_copy(VD_SS, 0.0);
+
     // Accumulate source terms from transverse surfaces
     Kokkos::parallel_for("accumulate_surface_sources", Kokkos::RangePolicy<ExecutionSpace>(0, nsurfaces), KOKKOS_LAMBDA(const size_t s) {
         auto surf = surface_view(s);
@@ -76,7 +75,6 @@ void TH::accumulate_surface_sources(State<ExecutionSpace>& state) {
         double A_f_j = channel_area(j, k);
         double A_f_donor = channel_area(i_donor, k-1);
 
-        std::cout << "Accumulating flow rate sources..." << std::endl;
         double sl = gk(ns, k_node) * (1.0 - X(i_donor, k-1)) + G_l_tm(ns) + G_l_vd(ns);
         double sl_term = gap_width * sl;
         Kokkos::atomic_add(&SS_l(i), sl_term);
@@ -87,7 +85,6 @@ void TH::accumulate_surface_sources(State<ExecutionSpace>& state) {
         Kokkos::atomic_add(&SS_v(i), sv_term);
         Kokkos::atomic_add(&SS_v(j), -sv_term);
 
-        std::cout << "Accumulating enthalpy sources..." << std::endl;
         double h_l_donor = h_l(i_donor, k-1);
         double term = gap_width * (gk(ns, k_node) * h_l_donor + Q_m_tm(ns) + Q_m_vd(ns));
         Kokkos::atomic_add(&SS_m(i), term);
@@ -123,7 +120,6 @@ void TH::accumulate_surface_sources(State<ExecutionSpace>& state) {
 
     Kokkos::fence();
 }
-
 
 template <typename ExecutionSpace>
 void TH::solve_evaporation_term(State<ExecutionSpace>& state) {
@@ -432,7 +428,6 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
         auto gk = state.gk;
 
         // calculate the residual vector f0
-        std::cout << "Calculating residual vector..." << std::endl;
         Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - calculate residual vector f0");
         for (size_t ns = 0; ns < nsurf; ++ns) {
             size_t i = state.geom->surfaces[ns].from_node;
@@ -513,32 +508,22 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
 
 template <typename ExecutionSpace>
 void TH::solve_flow_rates(State<ExecutionSpace>& state) {
-    // Perform calculations for each surface axial plane
+
     size_t k = state.surface_plane;
     size_t k_node = state.node_plane;
 
-    // Device-based implementation: accumulate source terms, then update flow rates
     auto W_l = state.W_l;
     auto W_v = state.W_v;
-    auto X = state.X;
     auto evap = state.evap;
-    auto gk = state.gk;
-    auto G_l_tm = state.G_l_tm;
-    auto G_v_tm = state.G_v_tm;
-    auto G_l_vd = state.G_l_vd;
-    auto G_v_vd = state.G_v_vd;
     auto SS_l = state.SS_l;
     auto SS_v = state.SS_v;
-    auto surface_view = state.geom->surface_view();
-    auto flow_area_view = state.geom->channel_area_view();
-    const double gap_width = state.geom->gap_width();
+    auto flow_area = state.geom->channel_area_view();
     const double dz = state.geom->dz(k_node);
-    const size_t nsurfaces = state.geom->nsurfaces();
     const size_t nchannels = state.geom->nchannels();
 
     // Update flow rates on device
     Kokkos::parallel_for("update_flow_rates", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels), KOKKOS_LAMBDA(const size_t ij) {
-        double A_f = flow_area_view(ij, k_node);
+        double A_f = flow_area(ij, k);
         if (A_f < 1e-12) return; // skip channels with no flow area
 
         // Update liquid flow rate (Eq. 61 from ANTS Theory)

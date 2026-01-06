@@ -71,6 +71,12 @@ struct State {
           G_v_vd("G_v_vd", other.G_v_vd.extent(0)),
           Q_m_vd("Q_m_vd", other.Q_m_vd.extent(0)),
           M_m_vd("M_m_vd", other.M_m_vd.extent(0)),
+          SS_l("SS_l", other.SS_l.extent(0)),
+          SS_v("SS_v", other.SS_v.extent(0)),
+          SS_m("SS_m", other.SS_m.extent(0)),
+          CF_SS("CF_SS", other.CF_SS.extent(0)),
+          TM_SS("TM_SS", other.TM_SS.extent(0)),
+          VD_SS("VD_SS", other.VD_SS.extent(0)),
           gk("gk", other.gk.extent(0), other.gk.extent(1)) {
         Kokkos::deep_copy(h_l, other.h_l);
         Kokkos::deep_copy(W_l, other.W_l);
@@ -88,6 +94,12 @@ struct State {
         Kokkos::deep_copy(G_v_vd, other.G_v_vd);
         Kokkos::deep_copy(Q_m_vd, other.Q_m_vd);
         Kokkos::deep_copy(M_m_vd, other.M_m_vd);
+        Kokkos::deep_copy(SS_l, other.SS_l);
+        Kokkos::deep_copy(SS_v, other.SS_v);
+        Kokkos::deep_copy(SS_m, other.SS_m);
+        Kokkos::deep_copy(CF_SS, other.CF_SS);
+        Kokkos::deep_copy(TM_SS, other.TM_SS);
+        Kokkos::deep_copy(VD_SS, other.VD_SS);
         Kokkos::deep_copy(gk, other.gk);
     }
 
@@ -118,6 +130,12 @@ struct State {
             Kokkos::resize(G_v_vd, other.G_v_vd.extent(0));
             Kokkos::resize(Q_m_vd, other.Q_m_vd.extent(0));
             Kokkos::resize(M_m_vd, other.M_m_vd.extent(0));
+            Kokkos::resize(SS_l, other.SS_l.extent(0));
+            Kokkos::resize(SS_v, other.SS_v.extent(0));
+            Kokkos::resize(SS_m, other.SS_m.extent(0));
+            Kokkos::resize(CF_SS, other.CF_SS.extent(0));
+            Kokkos::resize(TM_SS, other.TM_SS.extent(0));
+            Kokkos::resize(VD_SS, other.VD_SS.extent(0));
             Kokkos::resize(gk, other.gk.extent(0), other.gk.extent(1));
 
             Kokkos::deep_copy(h_l, other.h_l);
@@ -136,6 +154,12 @@ struct State {
             Kokkos::deep_copy(G_v_vd, other.G_v_vd);
             Kokkos::deep_copy(Q_m_vd, other.Q_m_vd);
             Kokkos::deep_copy(M_m_vd, other.M_m_vd);
+            Kokkos::deep_copy(SS_l, other.SS_l);
+            Kokkos::deep_copy(SS_v, other.SS_v);
+            Kokkos::deep_copy(SS_m, other.SS_m);
+            Kokkos::deep_copy(CF_SS, other.CF_SS);
+            Kokkos::deep_copy(TM_SS, other.TM_SS);
+            Kokkos::deep_copy(VD_SS, other.VD_SS);
             Kokkos::deep_copy(gk, other.gk);
         }
         return *this;
