@@ -28,7 +28,6 @@ public:
     Solver(const ArgumentParser& args);
     Solver(
         std::shared_ptr<Geometry<ExecutionSpace>> geometry,
-        std::shared_ptr<Water<ExecutionSpace>> fluid,
         View1D inlet_temperature,
         View1D inlet_pressure,
         View1D linear_heat_rate,
@@ -42,7 +41,6 @@ public:
     void print_state_at_plane(size_t k);
 
     View2D get_surface_liquid_enthalpies() const { return state.h_l; }
-    View2D get_surface_temperatures() const { return state.fluid->T(state.h_l); }
     View2D get_surface_pressures() const { return state.P; }
     View2D get_surface_void_fractions() const { return state.alpha; }
     View2D get_surface_qualities() const { return state.X; }

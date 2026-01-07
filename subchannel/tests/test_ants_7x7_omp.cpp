@@ -29,7 +29,7 @@ TEST(SubchannelTest, 7x7_OpenMP) {
     Geometry<Kokkos::OpenMP> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial, core_map);
 
     // working fluid is water
-    Water<Kokkos::OpenMP> fluid;
+    Water fluid;
 
     // create 1D views for each solver parameters
     Kokkos::View<double*, Kokkos::OpenMP> inlet_mass_flow("inlet_mass_flow", N*N);
@@ -70,7 +70,6 @@ TEST(SubchannelTest, 7x7_OpenMP) {
 
     Solver<Kokkos::OpenMP> solver(
         std::make_shared<Geometry<Kokkos::OpenMP>>(geometry),
-        std::make_shared<Water<Kokkos::OpenMP>>(fluid),
         inlet_temperature,
         inlet_pressure,
         linear_heat_rate,
@@ -82,7 +81,6 @@ TEST(SubchannelTest, 7x7_OpenMP) {
     solver.solve(outer_iter, inner_iter);
 
     auto h = solver.get_surface_liquid_enthalpies();
-    auto T = solver.get_surface_temperatures();
     auto P = solver.get_surface_pressures();
     auto alpha = solver.get_surface_void_fractions();
     auto X = solver.get_surface_qualities();
@@ -92,7 +90,6 @@ TEST(SubchannelTest, 7x7_OpenMP) {
 
     // Create host mirrors for accessing data
     auto h_h = Kokkos::create_mirror_view(h);
-    auto h_T = Kokkos::create_mirror_view(T);
     auto h_P = Kokkos::create_mirror_view(P);
     auto h_alpha = Kokkos::create_mirror_view(alpha);
     auto h_X = Kokkos::create_mirror_view(X);
@@ -101,7 +98,6 @@ TEST(SubchannelTest, 7x7_OpenMP) {
     auto h_W_v = Kokkos::create_mirror_view(W_v);
 
     Kokkos::deep_copy(h_h, h);
-    Kokkos::deep_copy(h_T, T);
     Kokkos::deep_copy(h_P, P);
     Kokkos::deep_copy(h_alpha, alpha);
     Kokkos::deep_copy(h_X, X);

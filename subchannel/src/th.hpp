@@ -53,14 +53,12 @@ void solve_enthalpy(
 template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
 void solve_void_fraction(
     size_t ij, size_t k, size_t k_node, double A_f, double D_h, double rho_f, double rho_g,
-    double h_f, double h_fg, double mu_v, double sigma, size_t max_inner_iter,
+    double h_f, double h_fg, double mu_v, double sigma, size_t max_inner_iter, Water fluid,
     typename State<ExecutionSpace>::View2D P,
     typename State<ExecutionSpace>::View2D W_l,
     typename State<ExecutionSpace>::View2D W_v,
     typename State<ExecutionSpace>::View2D h_l,
     typename State<ExecutionSpace>::View2D X,
-    typename State<ExecutionSpace>::View2D rho,
-    typename State<ExecutionSpace>::View2D mu,
     typename State<ExecutionSpace>::View2D alpha
 );
 
@@ -75,7 +73,7 @@ void solve_quality(
 template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
 void solve_pressure(
     size_t ij, size_t k, size_t k_node, double A_f, double D_h, double dz,
-    double rho_f, double rho_g, double mu_f, double mu_g,
+    double rho_f, double rho_g, double mu_f, double mu_g, Water fluid,
     typename State<ExecutionSpace>::View2D W_l,
     typename State<ExecutionSpace>::View2D W_v,
     typename State<ExecutionSpace>::View2D h_l,
@@ -84,8 +82,6 @@ void solve_pressure(
     typename State<ExecutionSpace>::View1D CF_SS,
     typename State<ExecutionSpace>::View1D TM_SS,
     typename State<ExecutionSpace>::View1D VD_SS,
-    typename State<ExecutionSpace>::View2D rho,
-    typename State<ExecutionSpace>::View2D mu,
     typename State<ExecutionSpace>::View2D P
 );
 

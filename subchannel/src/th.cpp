@@ -39,16 +39,15 @@ void TH::planar(State<ExecutionSpace>& state) {
     auto CF_SS = state.CF_SS;
     auto TM_SS = state.TM_SS;
     auto VD_SS = state.VD_SS;
-    auto rho = state.fluid->rho(state.h_l);
-    auto mu = state.fluid->mu(state.h_l);
-    const double rho_f = state.fluid->rho_f();
-    const double rho_g = state.fluid->rho_g();
-    const double h_f = state.fluid->h_f();
-    const double h_fg = state.fluid->h_fg();
-    const double h_g = state.fluid->h_g();
-    const double mu_f = state.fluid->mu_f();
-    const double mu_g = state.fluid->mu_g();
-    const double sigma = state.fluid->sigma();
+    auto fluid = state.fluid;
+    const double rho_f = state.fluid.rho_f();
+    const double rho_g = state.fluid.rho_g();
+    const double h_f = state.fluid.h_f();
+    const double h_fg = state.fluid.h_fg();
+    const double h_g = state.fluid.h_g();
+    const double mu_f = state.fluid.mu_f();
+    const double mu_g = state.fluid.mu_g();
+    const double sigma = state.fluid.sigma();
 
     Kokkos::parallel_for("TH::planar", Kokkos::RangePolicy<ExecutionSpace>(0, state.geom->nchannels()), KOKKOS_LAMBDA(const size_t ij) {
         double A_f = flow_area(ij, k);
@@ -56,9 +55,9 @@ void TH::planar(State<ExecutionSpace>& state) {
         solve_flow_rates<ExecutionSpace>(ij, k, k_node, A_f, dz, evap, SS_l, SS_v, W_l, W_v);
         solve_enthalpy<ExecutionSpace>(ij, k, k_node, dz, gap_width, h_g, W_l, W_v, lhr, SS_m, h_l);
         solve_void_fraction<ExecutionSpace>(ij, k, k_node, A_f, D_h, rho_f, rho_g, h_f, h_fg, mu_g,
-            sigma, max_inner_iter, P, W_l, W_v, h_l, X, rho, mu, alpha);
+            sigma, max_inner_iter, fluid, P, W_l, W_v, h_l, X, alpha);
         solve_quality<ExecutionSpace>(ij, k, k_node, A_f, W_l, W_v, X);
-        solve_pressure<ExecutionSpace>(ij, k, k_node, A_f, D_h, dz, rho_f, rho_g, mu_f, mu_g, W_l, W_v, h_l, X, alpha, CF_SS, TM_SS, VD_SS, rho, mu, P);
+        solve_pressure<ExecutionSpace>(ij, k, k_node, A_f, D_h, dz, rho_f, rho_g, mu_f, mu_g, fluid, W_l, W_v, h_l, X, alpha, CF_SS, TM_SS, VD_SS, P);
     });
 }
 
@@ -75,9 +74,8 @@ void TH::accumulate_surface_sources(State<ExecutionSpace>& state) {
     auto alpha = state.alpha;
     auto W_l = state.W_l;
     auto W_v = state.W_v;
-    auto rho = state.fluid->rho(state.h_l);
-    auto rho_f = state.fluid->rho_f();
-    auto rho_g = state.fluid->rho_g();
+    auto rho_f = state.fluid.rho_f();
+    auto rho_g = state.fluid.rho_g();
     auto gap_width = state.geom->gap_width();
     auto channel_area = state.geom->channel_area_view();
     auto surface_view = state.geom->surface_view();
@@ -89,6 +87,7 @@ void TH::accumulate_surface_sources(State<ExecutionSpace>& state) {
     auto G_v_vd = state.G_v_vd;
     auto Q_m_vd = state.Q_m_vd;
     auto M_m_vd = state.M_m_vd;
+    auto fluid = state.fluid;
 
     // extract views to modify in this function
     auto SS_l = state.SS_l;
@@ -140,7 +139,7 @@ void TH::accumulate_surface_sources(State<ExecutionSpace>& state) {
             v_m_donor = 1.0 / rho_g;
         } else {
             double X_donor = X(i_donor, k-1);
-            double rho_l_donor = rho(i_donor, k-1);
+            double rho_l_donor = fluid.rho(h_l_donor);
             v_m_donor = (1.0 - X_donor) * (1.0 - X_donor) / ((1.0 - alpha(i_donor, k-1)) * rho_l_donor) +
                         X_donor * X_donor / (alpha(i_donor, k-1) * rho_g);
         }
@@ -164,13 +163,8 @@ void TH::accumulate_surface_sources(State<ExecutionSpace>& state) {
 }
 
 template <typename ExecutionSpace>
+KOKKOS_INLINE_FUNCTION
 void TH::solve_evaporation_term(State<ExecutionSpace>& state) {
-
-    auto mu = state.fluid->mu(state.h_l); // dynamic viscosity [Pa-s]
-    auto rho = state.fluid->rho(state.h_l); // liquid density [kg/m^3]
-    auto cond = state.fluid->k(state.h_l); // thermal conductivity [W/m-K]
-    auto Cp = state.fluid->Cp(state.h_l); // specific heat [J/kg-K]
-    auto T = state.fluid->T(state.h_l); // temperature [K]
 
     // Device-based implementation
     auto W_l = state.W_l;
@@ -187,15 +181,15 @@ void TH::solve_evaporation_term(State<ExecutionSpace>& state) {
     const size_t nchannels = state.geom->nchannels();
 
     // Fluid properties (constants)
-    const double h_f = state.fluid->h_f();
-    const double h_fg = state.fluid->h_fg();
-    const double rho_g = state.fluid->rho_g();
-    const double v_fg = state.fluid->v_fg();
-    const double Tsat = state.fluid->Tsat();
+    const double h_f = state.fluid.h_f();
+    const double h_fg = state.fluid.h_fg();
+    const double rho_g = state.fluid.rho_g();
+    const double v_fg = state.fluid.v_fg();
+    const double Tsat = state.fluid.Tsat();
     const double H_0 = 0.075; // [s^-1 K^-1], condensation parameter
 
-    // Geometry accessors (need to capture these outside lambda)
     auto geom = state.geom;
+    auto fluid = state.fluid;
 
     // Compute evaporation term on device
     Kokkos::parallel_for("compute_evaporation", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels), KOKKOS_LAMBDA(const size_t ij) {
@@ -203,8 +197,8 @@ void TH::solve_evaporation_term(State<ExecutionSpace>& state) {
         double P_H = geom->heated_perimeter(ij, k); // heated perimeter [m]
         double A_f = flow_area_view(ij, k); // flow area [m^2]
 
-        double Re = (W_l(ij, k) / A_f) * D_h / mu(ij, k); // Reynolds number
-        double Pr = Cp(ij, k) * mu(ij, k) / cond(ij, k); // Prandtl number
+        double Re = (W_l(ij, k) / A_f) * D_h / fluid.mu(h_l(ij, k)); // Reynolds number
+        double Pr = fluid.Cp(h_l(ij, k)) * fluid.mu(h_l(ij, k)) / fluid.k(h_l(ij, k)); // Prandtl number
         double Pe = Re * Pr; // Peclet number
         double Qflux_wall = lhr(ij, k_node) / P_H; // wall heat flux [W/m^2]
         double G_l = W_l(ij, k) / A_f; // liquid mass flux [kg/m^2-s]
@@ -223,8 +217,8 @@ void TH::solve_evaporation_term(State<ExecutionSpace>& state) {
                 Qflux_boil = 0.0;
             }
 
-            double epsilon = rho(ij, k) * (h_f - h_l(ij, k)) / (rho_g * h_fg); // pumping parameter (Eq. 53)
-            double gamma_cond = (H_0 * (1.0 / v_fg) * A_f * alpha(ij, k) * (Tsat - T(ij, k))) / P_H; // condensation rate (Eq. 54)
+            double epsilon = fluid.rho(h_l(ij, k)) * (h_f - h_l(ij, k)) / (rho_g * h_fg); // pumping parameter (Eq. 53)
+            double gamma_cond = (H_0 * (1.0 / v_fg) * A_f * alpha(ij, k) * (Tsat - fluid.T(h_l(ij, k)))) / P_H; // condensation rate (Eq. 54)
             evap(ij, k_node) = P_H * Qflux_boil / (h_fg * (1.0 + epsilon)) - P_H * gamma_cond; // Eq. 50
 
         } else {
@@ -246,15 +240,12 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
     size_t k = state.surface_plane;  // closure relations use lagging edge values
     size_t k_node = state.node_plane;
 
-    typename State<ExecutionSpace>::View2D spv = state.fluid->mu(state.h_l);
-    typename State<ExecutionSpace>::View2D rho_l = state.fluid->rho(state.h_l);
-
-    double rho_f = state.fluid->rho_f();
-    double rho_g = state.fluid->rho_g();
+    double rho_f = state.fluid.rho_f();
+    double rho_g = state.fluid.rho_g();
     double S_ij = state.geom->gap_width();
-    double mu_g = state.fluid->mu_g();
-    double mu_f = state.fluid->mu_f();
-    double h_g = state.fluid->h_g();
+    double mu_g = state.fluid.mu_g();
+    double mu_f = state.fluid.mu_f();
+    double h_g = state.fluid.h_g();
 
     // Allocate device views for per-channel properties
     typename State<ExecutionSpace>::View1D gbar0("gbar0", state.geom->nchannels());
@@ -269,6 +260,7 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
     auto h_l = state.h_l;
     auto channel_area = state.geom->channel_area_view();
     auto hydraulic_diameter = state.geom->hydraulic_diameter_view();
+    auto fluid = state.fluid;
 
     // Compute per-channel properties on device
     Kokkos::parallel_for("compute_mixing_properties", Kokkos::RangePolicy<ExecutionSpace>(0, state.geom->nchannels()),
@@ -353,8 +345,8 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
             // Compute mixture mass flux
             double G_m_i = (W_l(i, k) + W_v(i, k)) / A_f_i;
             double G_m_j = (W_l(j, k) + W_v(j, k)) / A_f_j;
-            double rho_l_i = rho_l(i, k);
-            double rho_l_j = rho_l(j, k);
+            double rho_l_i = fluid.rho(h_l(i, k));
+            double rho_l_j = fluid.rho(h_l(j, k));
             double h_l_i = h_l(i, k);
             double h_l_j = h_l(j, k);
             double alpha_i = alpha(i, k);
@@ -380,7 +372,7 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
             double lambda = 0.0058 * S_ij / D_rod_i;
             double reynbar = 0.5 * (reyn0(i) + reyn0(j));
 
-            double spbar = 0.5 * (spv(i, k) + spv(j, k));
+            double spbar = 0.5 * (fluid.mu(h_l(i, k)) + fluid.mu(h_l(j, k)));
             double eddy_V;
             if (reyn0(i) < reyn0(j)) {
                 eddy_V = 0.5 * lambda * Kokkos::pow(reynbar, -0.1) * (1.0 + Kokkos::pow(D_h_i / D_h_j, 1.5)) * (D_h_i / D_rod_i) * gbar0(i) * spbar;
@@ -476,7 +468,7 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
             size_t j = state.geom->surfaces[ns].to_node;
             size_t i_donor = (gk(ns, k_node) >= 0) ? i : j;
 
-            double rho_m = state.fluid->rho_m(X(i_donor, k));
+            double rho_m = state.fluid.rho_m(X(i_donor, k));
             double deltaP = P(i, k) - P(j, k); // Eq. 56 from ANTS Theory
             double Fns = 0.5 * K_ns * gk(ns, k_node) * std::abs(gk(ns, k_node)) / rho_m; // Eq. 57 from ANTS Theory
             f0(ns) = -dz * aspect * (deltaP - Fns); // Eq. 55 from ANTS Theory
@@ -525,7 +517,7 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
                 size_t i = state.geom->surfaces[ns].from_node;
                 size_t j = state.geom->surfaces[ns].to_node;
                 size_t i_donor = (gk_pert(ns, k_node) >= 0) ? i : j;
-                double rho_m = perturb_state.fluid->rho_m(X_pert(i_donor, k));
+                double rho_m = perturb_state.fluid.rho_m(X_pert(i_donor, k));
                 double deltaP = P_pert(i, k) - P_pert(j, k);
                 double Fns = 0.5 * K_ns * gk_pert(ns, k_node) * std::abs(gk_pert(ns, k_node)) / rho_m;
                 f3(ns) = -dz * aspect * (deltaP - Fns);
@@ -593,13 +585,12 @@ KOKKOS_INLINE_FUNCTION
 void TH::solve_void_fraction(
     size_t ij, size_t k, size_t k_node, double A_f, double D_h, double rho_f, double rho_g,
     double h_f, double h_fg, double mu_v, double sigma, size_t max_inner_iter,
+    Water fluid,
     typename State<ExecutionSpace>::View2D P,
     typename State<ExecutionSpace>::View2D W_l,
     typename State<ExecutionSpace>::View2D W_v,
     typename State<ExecutionSpace>::View2D h_l,
     typename State<ExecutionSpace>::View2D X,
-    typename State<ExecutionSpace>::View2D rho,
-    typename State<ExecutionSpace>::View2D mu,
     typename State<ExecutionSpace>::View2D alpha
 ) {
     const double tol = 1e-6;
@@ -617,8 +608,8 @@ void TH::solve_void_fraction(
     }
 
     double h_v = h_f + X(ij, k) * h_fg;
-    double rho_l = rho(ij, k);
-    double mu_l = mu(ij, k);
+    double rho_l = fluid.rho(h_l(ij, k));
+    double mu_l = fluid.mu(h_l(ij, k));
 
     double Re_g = __Reynolds(W_v(ij, k) / A_f, D_h, mu_v); // local vapor Reynolds number
     double Re_f = __Reynolds(W_l(ij, k) / A_f, D_h, mu_l); // local liquid Reynolds number
@@ -712,6 +703,7 @@ KOKKOS_INLINE_FUNCTION
 void TH::solve_pressure(
     size_t ij, size_t k, size_t k_node, double A_f, double D_h, double dz,
     double rho_f, double rho_g, double mu_f, double mu_g,
+    Water fluid,
     typename State<ExecutionSpace>::View2D W_l,
     typename State<ExecutionSpace>::View2D W_v,
     typename State<ExecutionSpace>::View2D h_l,
@@ -720,8 +712,6 @@ void TH::solve_pressure(
     typename State<ExecutionSpace>::View1D CF_SS,
     typename State<ExecutionSpace>::View1D TM_SS,
     typename State<ExecutionSpace>::View1D VD_SS,
-    typename State<ExecutionSpace>::View2D rho,
-    typename State<ExecutionSpace>::View2D mu,
     typename State<ExecutionSpace>::View2D P
 ) {
     // coefficients for Adams correlation from ANTS Theory
@@ -742,7 +732,7 @@ void TH::solve_pressure(
     } else if (alpha(ij, k) > 1.0 - 1e-6) {
         nu_m_k = 1.0 / rho_g;
     } else {
-        nu_m_k = (1.0 - X(ij, k)) * (1.0 - X(ij, k)) / ((1.0 - alpha(ij, k)) * rho(ij, k)) +
+        nu_m_k = (1.0 - X(ij, k)) * (1.0 - X(ij, k)) / ((1.0 - alpha(ij, k)) * fluid.rho(h_l(ij, k))) +
                     X(ij, k) * X(ij, k) / (alpha(ij, k) * rho_g);
     }
 
@@ -751,7 +741,7 @@ void TH::solve_pressure(
     } else if (alpha(ij, k-1) > 1.0 - 1e-6) {
         nu_m_km1 = 1.0 / rho_g;
     } else {
-        nu_m_km1 = (1.0 - X(ij, k-1)) * (1.0 - X(ij, k-1)) / ((1.0 - alpha(ij, k-1)) * rho(ij, k-1)) +
+        nu_m_km1 = (1.0 - X(ij, k-1)) * (1.0 - X(ij, k-1)) / ((1.0 - alpha(ij, k-1)) * fluid.rho(h_l(ij, k-1))) +
                     X(ij, k-1) * X(ij, k-1) / (alpha(ij, k-1) * rho_g);
     }
 
@@ -759,7 +749,7 @@ void TH::solve_pressure(
 
     // ----- two-phase frictional pressure drop -----
     // Reynolds number (liq. only)
-    double Re = G_l * D_h / mu(ij, k);
+    double Re = G_l * D_h / fluid.mu(h_l(ij, k));
 
     // frictional pressure drop from wall shear
     double f = a_1 * Kokkos::pow(Re, n);
@@ -795,7 +785,7 @@ void TH::solve_pressure(
     double dP_tpfric = dP_wall_shear + dP_form;
 
     // ----- two-phase gravitational pressure drop -----
-    double dP_grav = rho(ij, k) * 9.81 * dz;
+    double dP_grav = fluid.rho(h_l(ij, k)) * 9.81 * dz;
 
     // ----- momentum exchange -----
     double dP_CF = dz * CF_SS(ij);
@@ -860,9 +850,9 @@ template void solve_mixing<Kokkos::DefaultExecutionSpace>(State<Kokkos::DefaultE
 template void solve_surface_mass_flux<Kokkos::DefaultExecutionSpace>(State<Kokkos::DefaultExecutionSpace>&);
 template void solve_flow_rates<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D);
 template void solve_enthalpy<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, double, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View2D);
-template void solve_void_fraction<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, double, double, double, double, double, double, size_t, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D);
+template void solve_void_fraction<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, double, double, double, double, double, double, size_t, Water, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D);
 template void solve_quality<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D);
-template void solve_pressure<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, double, double, double, double, double, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D);
+template void solve_pressure<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, double, double, double, double, double, Water, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View2D);
 
 template void planar<Kokkos::Serial>(State<Kokkos::Serial>&);
 template void solve_evaporation_term<Kokkos::Serial>(State<Kokkos::Serial>&);
@@ -870,8 +860,8 @@ template void solve_mixing<Kokkos::Serial>(State<Kokkos::Serial>&);
 template void solve_surface_mass_flux<Kokkos::Serial>(State<Kokkos::Serial>&);
 template void solve_flow_rates<Kokkos::Serial>(size_t, size_t, size_t, double, double, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D);
 template void solve_enthalpy<Kokkos::Serial>(size_t, size_t, size_t, double, double, double, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View2D);
-template void solve_void_fraction<Kokkos::Serial>(size_t, size_t, size_t, double, double, double, double, double, double, double, double, size_t, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D);
+template void solve_void_fraction<Kokkos::Serial>(size_t, size_t, size_t, double, double, double, double, double, double, double, double, size_t, Water, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D);
 template void solve_quality<Kokkos::Serial>(size_t, size_t, size_t, double, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D);
-template void solve_pressure<Kokkos::Serial>(size_t, size_t, size_t, double, double, double, double, double, double, double, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D);
+template void solve_pressure<Kokkos::Serial>(size_t, size_t, size_t, double, double, double, double, double, double, double, Water, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View2D);
 
 }

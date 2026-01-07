@@ -5,7 +5,6 @@ template <typename ExecutionSpace>
 Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
 
     state.geom = std::make_shared<Geometry<ExecutionSpace>>(args);
-    state.fluid = std::make_shared<Water<ExecutionSpace>>();
 
     // check for crossflow flag
     if (args.get_flag("no-crossflow")) {
@@ -192,7 +191,7 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
     // set inlet boundary conditions for surface quantities (0 to naxial)
     for (size_t k = 0; k < nz; ++k) {
         for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-            h_h_l(i, k) = state.fluid->h(h_inlet_temperature(i));
+            h_h_l(i, k) = state.fluid.h(h_inlet_temperature(i));
             h_P(i, k) = h_inlet_pressure(i);
             h_W_l(i, k) = h_mass_flow_rate(i);
         }
@@ -213,7 +212,7 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
     std::cout << "Crossflow: " << (_cf_flag ? "ENABLED" : "DISABLED") << std::endl;
 
     // Compute inlet enthalpy
-    double h_in = state.fluid->h(inlet_temp);
+    double h_in = state.fluid.h(inlet_temp);
     std::cout << "\nInlet Conditions:" << std::endl;
     std::cout << "  Temperature: " << inlet_temp - 273.15 << " °C (" << inlet_temp << " K)" << std::endl;
     std::cout << "  Enthalpy: " << h_in / 1e3 << " kJ/kg" << std::endl;
@@ -247,14 +246,12 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
 template <typename ExecutionSpace>
 Solver<ExecutionSpace>::Solver(
     std::shared_ptr<Geometry<ExecutionSpace>> geometry,
-    std::shared_ptr<Water<ExecutionSpace>> fluid,
     View1D inlet_temperature,
     View1D inlet_pressure,
     View1D linear_heat_rate,
     View1D mass_flow_rate
 ) {
     state.geom = geometry;
-    state.fluid = fluid;
 
     size_t nz = state.geom->naxial() + 1;
     size_t nchan = state.geom->nchannels();
@@ -308,7 +305,7 @@ Solver<ExecutionSpace>::Solver(
     // set inlet boundary conditions for surface quantities (0 to naxial)
     for (size_t k = 0; k < nz; ++k) {
         for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-            h_h_l(i, k) = fluid->h(h_inlet_temperature(i));
+            h_h_l(i, k) = state.fluid.h(h_inlet_temperature(i));
             h_P(i, k) = h_inlet_pressure(i);
             h_W_l(i, k) = h_mass_flow_rate(i);
         }
@@ -378,7 +375,7 @@ Solver<ExecutionSpace>::Solver(
             h_min = std::min(h_min, h_val);
             h_max = std::max(h_max, h_val);
             h_sum += h_val;
-            double T_val = state.fluid->T(h_val);
+            double T_val = state.fluid.T(h_val);
             T_min = std::min(T_min, T_val);
             T_max = std::max(T_max, T_val);
             T_sum += T_val;
@@ -522,7 +519,7 @@ void Solver<ExecutionSpace>::print_state_at_plane(size_t k) {
     double T_max = std::numeric_limits<double>::lowest();
     double T_sum = 0.0;
     for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-        double T_val = state.fluid->T(h_h_l(i, k));
+        double T_val = state.fluid.T(h_h_l(i, k));
         T_min = std::min(T_min, T_val);
         T_max = std::max(T_max, T_val);
         T_sum += T_val;

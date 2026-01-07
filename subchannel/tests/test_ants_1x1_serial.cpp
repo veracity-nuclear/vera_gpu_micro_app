@@ -28,7 +28,7 @@ TEST(SubchannelTest, SingleChannel) {
     Geometry<Kokkos::Serial> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial, core_map);
 
     // working fluid is water
-    Water<Kokkos::Serial> fluid;
+    Water fluid;
 
     // create 1D views for each solver parameters
     Kokkos::View<double*, Kokkos::Serial> inlet_mass_flow("inlet_mass_flow", N*N);
@@ -57,7 +57,6 @@ TEST(SubchannelTest, SingleChannel) {
 
     Solver<Kokkos::Serial> solver(
         std::make_shared<Geometry<Kokkos::Serial>>(geometry),
-        std::make_shared<Water<Kokkos::Serial>>(fluid),
         inlet_temperature,
         inlet_pressure,
         linear_heat_rate,

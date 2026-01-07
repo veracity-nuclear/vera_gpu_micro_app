@@ -1,6 +1,5 @@
 add_library(subchannel_lib
     src/geometry.cpp
-    src/materials.cpp
     src/solver.cpp
     src/th.cpp
 )

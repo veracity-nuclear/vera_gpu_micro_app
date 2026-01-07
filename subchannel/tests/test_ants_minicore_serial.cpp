@@ -14,7 +14,7 @@
 TEST(SubchannelTest, Minicore_Serial) {
 
     // geometric parameters
-    size_t N = 5; // NxN pins in assembly
+    size_t N = 10; // NxN pins in assembly
     double height = 3.81; // m
     double flow_area = 1.436e-4; // m^2
     double hydraulic_diameter = 1.436e-2; // m
@@ -38,7 +38,7 @@ TEST(SubchannelTest, Minicore_Serial) {
     Geometry<Kokkos::Serial> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial, core_map);
 
     // working fluid is water
-    Water<Kokkos::Serial> fluid;
+    Water fluid;
 
     // create 1D views for each solver parameters
     Kokkos::View<double*, Kokkos::Serial> inlet_mass_flow("inlet_mass_flow", geometry.nchannels());
@@ -85,7 +85,6 @@ TEST(SubchannelTest, Minicore_Serial) {
 
     Solver<Kokkos::Serial> solver(
         std::make_shared<Geometry<Kokkos::Serial>>(geometry),
-        std::make_shared<Water<Kokkos::Serial>>(fluid),
         inlet_temperature,
         inlet_pressure,
         linear_heat_rate,
@@ -95,55 +94,6 @@ TEST(SubchannelTest, Minicore_Serial) {
     size_t outer_iter = 25;
     size_t inner_iter = 50;
     solver.solve(outer_iter, inner_iter);
-
-    auto h = solver.get_surface_liquid_enthalpies();
-    auto T = solver.get_surface_temperatures();
-    auto P = solver.get_surface_pressures();
-    auto alpha = solver.get_surface_void_fractions();
-    auto X = solver.get_surface_qualities();
-    auto evap = solver.get_evaporation_rates();
-    auto W_l = solver.get_surface_liquid_flow_rates();
-    auto W_v = solver.get_surface_vapor_flow_rates();
-
-    // Create host mirrors for accessing data
-    auto h_h = Kokkos::create_mirror_view(h);
-    auto h_T = Kokkos::create_mirror_view(T);
-    auto h_P = Kokkos::create_mirror_view(P);
-    auto h_alpha = Kokkos::create_mirror_view(alpha);
-    auto h_X = Kokkos::create_mirror_view(X);
-    auto h_evap = Kokkos::create_mirror_view(evap);
-    auto h_W_l = Kokkos::create_mirror_view(W_l);
-    auto h_W_v = Kokkos::create_mirror_view(W_v);
-
-    Kokkos::deep_copy(h_h, h);
-    Kokkos::deep_copy(h_T, T);
-    Kokkos::deep_copy(h_P, P);
-    Kokkos::deep_copy(h_alpha, alpha);
-    Kokkos::deep_copy(h_X, X);
-    Kokkos::deep_copy(h_evap, evap);
-    Kokkos::deep_copy(h_W_l, W_l);
-    Kokkos::deep_copy(h_W_v, W_v);
-
-    std::cout << "Exit Void Distribution" << std::endl;
-    for (size_t j = 0; j < N; ++j) {
-        for (size_t i = 0; i < N; ++i) {
-            size_t k = naxial;
-            std::cout << std::setw(12) << std::setprecision(3) << h_alpha(i + j*N, k) << " ";
-        }
-        std::cout << std::endl;
-    }
-    std::cout << std::endl;
-
-    std::cout << "Pressure Drop Distribution (kPa)" << std::endl;
-    for (size_t j = 0; j < N; ++j) {
-        for (size_t i = 0; i < N; ++i) {
-            size_t k = naxial;
-            std::cout << std::setw(12) << std::setprecision(6) << (h_P(i + j*N, 0) - h_P(i + j*N, k)) / 1000.0 << " ";
-        }
-        std::cout << std::endl;
-    }
-    std::cout << std::endl;
-
     solver.print_state_at_plane(solver.state.surface_plane);
 }
 

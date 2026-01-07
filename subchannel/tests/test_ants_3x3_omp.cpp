@@ -25,7 +25,7 @@ TEST(SubchannelTest, OpenMPExecution) {
     Geometry<Kokkos::OpenMP> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial, core_map);
 
     // Explicitly use OpenMP execution space
-    Water<Kokkos::OpenMP> fluid;
+    Water fluid;
 
     // Create views with OpenMP execution space
     Kokkos::View<double*, Kokkos::OpenMP> inlet_mass_flow("inlet_mass_flow", N*N);
@@ -57,7 +57,6 @@ TEST(SubchannelTest, OpenMPExecution) {
     // Explicitly instantiate Solver with OpenMP
     Solver<Kokkos::OpenMP> solver(
         std::make_shared<Geometry<Kokkos::OpenMP>>(geometry),
-        std::make_shared<Water<Kokkos::OpenMP>>(fluid),
         inlet_temperature,
         inlet_pressure,
         linear_heat_rate,
