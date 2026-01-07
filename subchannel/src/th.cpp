@@ -353,12 +353,13 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
             double alpha_j = alpha(j, k);
 
             // Liquid velocity inline calculation
-            double V_l_i = (alpha_i < 1.0) ? W_l(i, k) / (A_f_i * (1.0 - alpha_i) * rho_l_i) : 0.0;
-            double V_l_j = (alpha_j < 1.0) ? W_l(j, k) / (A_f_j * (1.0 - alpha_j) * rho_l_j) : 0.0;
+            double V_l_i = __liquid_velocity(W_l(i, k), A_f_i, alpha_i, rho_l_i);
+            double V_l_j = __liquid_velocity(W_l(j, k), A_f_j, alpha_j, rho_l_j);
+
 
             // Vapor velocity inline calculation
-            double V_v_i = (alpha_i > 0.0) ? W_v(i, k) / (A_f_i * alpha_i * rho_g) : 0.0;
-            double V_v_j = (alpha_j > 0.0) ? W_v(j, k) / (A_f_j * alpha_j * rho_g) : 0.0;
+            double V_v_i = __vapor_velocity(W_v(i, k), A_f_i, alpha_i, rho_g);
+            double V_v_j = __vapor_velocity(W_v(j, k), A_f_j, alpha_j, rho_g);
 
             // Quality average with protection against division by zero
             const double K_M = 1.4;
@@ -613,12 +614,7 @@ void TH::solve_void_fraction(
 
     double Re_g = __Reynolds(W_v(ij, k) / A_f, D_h, mu_v); // local vapor Reynolds number
     double Re_f = __Reynolds(W_l(ij, k) / A_f, D_h, mu_l); // local liquid Reynolds number
-    double Re;
-    if (Re_g > Re_f) {
-        Re = Re_g;
-    } else {
-        Re = Re_f;
-    }
+    double Re = (Re_g > Re_f) ? Re_g : Re_f;
     double A1 = 1 / (1 + Kokkos::exp(-Re / 60000));
     double B1 = (0.8 < A1) ? 0.8 : A1; // from Zuber correlation
     double B2 = 1.41;
@@ -725,7 +721,6 @@ void TH::solve_pressure(
     double G = (W_l(ij, k) + W_v(ij, k)) / A_f;
 
     // ----- two-phase acceleration pressure drop -----
-    // Compute nu_m (specific volume) at k and k-1
     double nu_m_k, nu_m_km1;
     if (alpha(ij, k) < 1e-6) {
         nu_m_k = 1.0 / rho_f;
@@ -775,17 +770,17 @@ void TH::solve_pressure(
     // form loss coefficient (no form losses in this simple model)
     double K_loss = 0.0;
 
-    // two-phase multiplier for form losses (homogeneous)
+    // two-phase multiplier for form losses (homogeneous), Eq. 35 from ANTS Theory
     double phi2_hom = 1.0 + X(ij, k) * (rho_f / rho_g - 1.0);
 
-    // two-phase geometry form loss pressure drop
+    // two-phase geometry form loss pressure drop, Eq. 36 from ANTS Theory
     double dP_form = K_loss * G * G / (2.0 * rho_f) * phi2_hom;
 
-    // two-phase frictional pressure drop
+    // two-phase frictional pressure drop, Eq. 36 from ANTS Theory
     double dP_tpfric = dP_wall_shear + dP_form;
 
     // ----- two-phase gravitational pressure drop -----
-    double dP_grav = fluid.rho(h_l(ij, k)) * 9.81 * dz;
+    double dP_grav = fluid.rho(h_l(ij, k)) * g * dz;
 
     // ----- momentum exchange -----
     double dP_CF = dz * CF_SS(ij);

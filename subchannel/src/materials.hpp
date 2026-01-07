@@ -5,13 +5,13 @@
 struct Water {
 
     // enthalpy [J/kg]
-    KOKKOS_INLINE_FUNCTION constexpr double h(double T) const { return 4220.0 * (T - 273.15); }
+    KOKKOS_INLINE_FUNCTION constexpr double h(double T) const { return Cp(0) * (T - 273.15); }
     KOKKOS_INLINE_FUNCTION constexpr double h_f() const { return 1263.1e3; } // saturated liquid enthalpy at saturation temperature
     KOKKOS_INLINE_FUNCTION constexpr double h_g() const { return 2773.7e3; } // saturated vapor enthalpy at saturation temperature
     KOKKOS_INLINE_FUNCTION constexpr double h_fg() const { return h_g() - h_f(); } // latent heat of vaporization at saturation temperature
 
     // temperature [K]
-    KOKKOS_INLINE_FUNCTION constexpr double T(double h) const { return h / 4220.0 + 273.15; }
+    KOKKOS_INLINE_FUNCTION constexpr double T(double h) const { return h / Cp(0) + 273.15; }
     KOKKOS_INLINE_FUNCTION constexpr double Tsat() const { return 285.83 + 273.15; } // K, saturation temperature at 7 MPa
 
     // density [kg/m^3]
