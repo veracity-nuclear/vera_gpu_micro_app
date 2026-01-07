@@ -502,13 +502,14 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
                       << ") with residual = " << std::scientific << max_res << std::defaultfloat << std::endl;
         }
 
+        State perturb_state = state;
         for (size_t ns1 = 0; ns1 < nsurf; ++ns1) {
-
-            State perturb_state = state; // reset state to reference prior to perturbation
 
             auto gk_pert = perturb_state.gk;
             auto P_pert = perturb_state.P;
             auto X_pert = perturb_state.X;
+
+            const double gk0 = gk(ns1, k_node);
 
             // perturb the mass flux at surface ns1
             if (gk_pert(ns1, k_node) >= 0) gk_pert(ns1, k_node) -= gtol;
@@ -532,6 +533,8 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
                 dfdg(ns, ns1) = (f3(ns) - f0(ns)) / (gk_pert(ns1, k_node) - gk(ns1, k_node));
             }
             Kokkos::Profiling::popRegion();
+
+            gk_pert(ns1, k_node) = gk0; // restore original value
         }
 
         // solve the system of equations (overwrites f0 as solution vector)
