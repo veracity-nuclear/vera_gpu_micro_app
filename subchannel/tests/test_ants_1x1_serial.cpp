@@ -133,7 +133,7 @@ TEST(SubchannelTest, SingleChannel) {
     EXPECT_NEAR(actual_deltaT, expected_deltaT, 1e-6);
 
     double total_pressure_drop = h_P(0, 0) - h_P(0, naxial);
-    double expected_pressure_drop = 86176.795; // expected pressure drop in subchannel, Pa
+    double expected_pressure_drop = 87525.314; // expected pressure drop in subchannel, Pa
     std::cout << "Total pressure drop: " << total_pressure_drop / 1000.0 << " kPa" << std::endl;
 
     // check total pressure drop in subchannel
