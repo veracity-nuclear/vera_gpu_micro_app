@@ -167,6 +167,14 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
     Kokkos::resize(state.M_m_vd, nsurf);
     Kokkos::resize(state.gk, nsurf, state.geom->naxial());
 
+    // initialize views for accumulated source terms
+    Kokkos::resize(state.SS_l, nchan);
+    Kokkos::resize(state.SS_v, nchan);
+    Kokkos::resize(state.SS_m, nchan);
+    Kokkos::resize(state.CF_SS, nchan);
+    Kokkos::resize(state.TM_SS, nchan);
+    Kokkos::resize(state.VD_SS, nchan);
+
     // Create host mirrors for initialization
     auto h_h_l = Kokkos::create_mirror_view(state.h_l);
     auto h_P = Kokkos::create_mirror_view(state.P);
