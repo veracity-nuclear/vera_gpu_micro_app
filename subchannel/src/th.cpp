@@ -50,7 +50,7 @@ void TH::planar(State<ExecutionSpace>& state) {
     const double mu_g = state.fluid->mu_g();
     const double sigma = state.fluid->sigma();
 
-    for (size_t ij = 0; ij < state.geom->nchannels(); ++ij) {
+    Kokkos::parallel_for("TH::planar", Kokkos::RangePolicy<ExecutionSpace>(0, state.geom->nchannels()), KOKKOS_LAMBDA(const size_t ij) {
         double A_f = flow_area(ij, k);
         double D_h = hydraulic_diameter(ij, k);
         solve_flow_rates<ExecutionSpace>(ij, k, k_node, A_f, dz, evap, SS_l, SS_v, W_l, W_v);
@@ -59,7 +59,7 @@ void TH::planar(State<ExecutionSpace>& state) {
             sigma, max_inner_iter, P, W_l, W_v, h_l, X, rho, mu, alpha);
         solve_quality<ExecutionSpace>(ij, k, k_node, A_f, W_l, W_v, X);
         solve_pressure<ExecutionSpace>(ij, k, k_node, A_f, D_h, dz, rho_f, rho_g, mu_f, mu_g, W_l, W_v, h_l, X, alpha, CF_SS, TM_SS, VD_SS, rho, mu, P);
-    }
+    });
 }
 
 template <typename ExecutionSpace>
@@ -552,11 +552,11 @@ template <typename ExecutionSpace>
 KOKKOS_INLINE_FUNCTION
 void TH::solve_flow_rates(
     size_t ij, size_t k, size_t k_node, double A_f, double dz,
-    const typename State<ExecutionSpace>::View2D& evap,
-    const typename State<ExecutionSpace>::View1D& SS_l,
-    const typename State<ExecutionSpace>::View1D& SS_v,
-    typename State<ExecutionSpace>::View2D& W_l,
-    typename State<ExecutionSpace>::View2D& W_v
+    typename State<ExecutionSpace>::View2D evap,
+    typename State<ExecutionSpace>::View1D SS_l,
+    typename State<ExecutionSpace>::View1D SS_v,
+    typename State<ExecutionSpace>::View2D W_l,
+    typename State<ExecutionSpace>::View2D W_v
 ) {
     // Update liquid flow rate (Eq. 61 from ANTS Theory)
     W_l(ij, k) = W_l(ij, k-1) - dz * (evap(ij, k_node) + SS_l(ij));
@@ -571,11 +571,11 @@ template <typename ExecutionSpace>
 KOKKOS_INLINE_FUNCTION
 void TH::solve_enthalpy(
     size_t ij, size_t k, size_t k_node, double dz, double gap_width, double h_g,
-    const typename State<ExecutionSpace>::View2D& W_l,
-    const typename State<ExecutionSpace>::View2D& W_v,
-    const typename State<ExecutionSpace>::View2D& lhr,
-    const typename State<ExecutionSpace>::View1D& SS_m,
-    typename State<ExecutionSpace>::View2D& h_l
+    typename State<ExecutionSpace>::View2D W_l,
+    typename State<ExecutionSpace>::View2D W_v,
+    typename State<ExecutionSpace>::View2D lhr,
+    typename State<ExecutionSpace>::View1D SS_m,
+    typename State<ExecutionSpace>::View2D h_l
 ) {
     // Eq. 63 from ANTS Theory
     h_l(ij, k) = (
@@ -590,14 +590,14 @@ KOKKOS_INLINE_FUNCTION
 void TH::solve_void_fraction(
     size_t ij, size_t k, size_t k_node, double A_f, double D_h, double rho_f, double rho_g,
     double h_f, double h_fg, double mu_v, double sigma, size_t max_inner_iter,
-    const typename State<ExecutionSpace>::View2D& P,
-    const typename State<ExecutionSpace>::View2D& W_l,
-    const typename State<ExecutionSpace>::View2D& W_v,
-    const typename State<ExecutionSpace>::View2D& h_l,
-    const typename State<ExecutionSpace>::View2D& X,
-    const typename State<ExecutionSpace>::View2D& rho,
-    const typename State<ExecutionSpace>::View2D& mu,
-    typename State<ExecutionSpace>::View2D& alpha
+    typename State<ExecutionSpace>::View2D P,
+    typename State<ExecutionSpace>::View2D W_l,
+    typename State<ExecutionSpace>::View2D W_v,
+    typename State<ExecutionSpace>::View2D h_l,
+    typename State<ExecutionSpace>::View2D X,
+    typename State<ExecutionSpace>::View2D rho,
+    typename State<ExecutionSpace>::View2D mu,
+    typename State<ExecutionSpace>::View2D alpha
 ) {
     const double tol = 1e-6;
     const double eps = 1e-12; // small number to prevent division by zero
@@ -695,9 +695,9 @@ template <typename ExecutionSpace>
 KOKKOS_INLINE_FUNCTION
 void TH::solve_quality(
     size_t ij, size_t k, size_t k_node, double A_f,
-    const typename State<ExecutionSpace>::View2D& W_l,
-    const typename State<ExecutionSpace>::View2D& W_v,
-    typename State<ExecutionSpace>::View2D& X
+    typename State<ExecutionSpace>::View2D W_l,
+    typename State<ExecutionSpace>::View2D W_v,
+    typename State<ExecutionSpace>::View2D X
 ) {
     double G_v = W_v(ij, k) / A_f; // vapor mass flux (Eq. 8 from ANTS Theory)
     double G_l = W_l(ij, k) / A_f; // liquid mass flux (Eq. 9 from ANTS Theory)
@@ -709,17 +709,17 @@ KOKKOS_INLINE_FUNCTION
 void TH::solve_pressure(
     size_t ij, size_t k, size_t k_node, double A_f, double D_h, double dz,
     double rho_f, double rho_g, double mu_f, double mu_g,
-    const typename State<ExecutionSpace>::View2D& W_l,
-    const typename State<ExecutionSpace>::View2D& W_v,
-    const typename State<ExecutionSpace>::View2D& h_l,
-    const typename State<ExecutionSpace>::View2D& X,
-    const typename State<ExecutionSpace>::View2D& alpha,
-    const typename State<ExecutionSpace>::View1D& CF_SS,
-    const typename State<ExecutionSpace>::View1D& TM_SS,
-    const typename State<ExecutionSpace>::View1D& VD_SS,
-    const typename State<ExecutionSpace>::View2D& rho,
-    const typename State<ExecutionSpace>::View2D& mu,
-    typename State<ExecutionSpace>::View2D& P
+    typename State<ExecutionSpace>::View2D W_l,
+    typename State<ExecutionSpace>::View2D W_v,
+    typename State<ExecutionSpace>::View2D h_l,
+    typename State<ExecutionSpace>::View2D X,
+    typename State<ExecutionSpace>::View2D alpha,
+    typename State<ExecutionSpace>::View1D CF_SS,
+    typename State<ExecutionSpace>::View1D TM_SS,
+    typename State<ExecutionSpace>::View1D VD_SS,
+    typename State<ExecutionSpace>::View2D rho,
+    typename State<ExecutionSpace>::View2D mu,
+    typename State<ExecutionSpace>::View2D P
 ) {
     // coefficients for Adams correlation from ANTS Theory
     const double a_1 = 0.1892;
@@ -855,20 +855,20 @@ template void planar<Kokkos::DefaultExecutionSpace>(State<Kokkos::DefaultExecuti
 template void solve_evaporation_term<Kokkos::DefaultExecutionSpace>(State<Kokkos::DefaultExecutionSpace>&);
 template void solve_mixing<Kokkos::DefaultExecutionSpace>(State<Kokkos::DefaultExecutionSpace>&);
 template void solve_surface_mass_flux<Kokkos::DefaultExecutionSpace>(State<Kokkos::DefaultExecutionSpace>&);
-template void solve_flow_rates<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View1D&, const State<Kokkos::DefaultExecutionSpace>::View1D&, State<Kokkos::DefaultExecutionSpace>::View2D&, State<Kokkos::DefaultExecutionSpace>::View2D&);
-template void solve_enthalpy<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, double, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View1D&, State<Kokkos::DefaultExecutionSpace>::View2D&);
-template void solve_void_fraction<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, double, double, double, double, double, double, size_t, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View2D&, State<Kokkos::DefaultExecutionSpace>::View2D&);
-template void solve_quality<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View2D&, State<Kokkos::DefaultExecutionSpace>::View2D&);
-template void solve_pressure<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, double, double, double, double, double, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View1D&, const State<Kokkos::DefaultExecutionSpace>::View1D&, const State<Kokkos::DefaultExecutionSpace>::View1D&, const State<Kokkos::DefaultExecutionSpace>::View2D&, const State<Kokkos::DefaultExecutionSpace>::View2D&, State<Kokkos::DefaultExecutionSpace>::View2D&);
+template void solve_flow_rates<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D);
+template void solve_enthalpy<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, double, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View2D);
+template void solve_void_fraction<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, double, double, double, double, double, double, size_t, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D);
+template void solve_quality<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D);
+template void solve_pressure<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, double, double, double, double, double, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D);
 
 template void planar<Kokkos::Serial>(State<Kokkos::Serial>&);
 template void solve_evaporation_term<Kokkos::Serial>(State<Kokkos::Serial>&);
 template void solve_mixing<Kokkos::Serial>(State<Kokkos::Serial>&);
 template void solve_surface_mass_flux<Kokkos::Serial>(State<Kokkos::Serial>&);
-template void solve_flow_rates<Kokkos::Serial>(size_t, size_t, size_t, double, double, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View1D&, const State<Kokkos::Serial>::View1D&, State<Kokkos::Serial>::View2D&, State<Kokkos::Serial>::View2D&);
-template void solve_enthalpy<Kokkos::Serial>(size_t, size_t, size_t, double, double, double, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View1D&, State<Kokkos::Serial>::View2D&);
-template void solve_void_fraction<Kokkos::Serial>(size_t, size_t, size_t, double, double, double, double, double, double, double, double, size_t, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View2D&, State<Kokkos::Serial>::View2D&);
-template void solve_quality<Kokkos::Serial>(size_t, size_t, size_t, double, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View2D&, State<Kokkos::Serial>::View2D&);
-template void solve_pressure<Kokkos::Serial>(size_t, size_t, size_t, double, double, double, double, double, double, double, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View1D&, const State<Kokkos::Serial>::View1D&, const State<Kokkos::Serial>::View1D&, const State<Kokkos::Serial>::View2D&, const State<Kokkos::Serial>::View2D&, State<Kokkos::Serial>::View2D&);
+template void solve_flow_rates<Kokkos::Serial>(size_t, size_t, size_t, double, double, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D);
+template void solve_enthalpy<Kokkos::Serial>(size_t, size_t, size_t, double, double, double, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View2D);
+template void solve_void_fraction<Kokkos::Serial>(size_t, size_t, size_t, double, double, double, double, double, double, double, double, size_t, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D);
+template void solve_quality<Kokkos::Serial>(size_t, size_t, size_t, double, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D);
+template void solve_pressure<Kokkos::Serial>(size_t, size_t, size_t, double, double, double, double, double, double, double, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D);
 
 }
