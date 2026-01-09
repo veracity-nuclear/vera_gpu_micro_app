@@ -31,6 +31,7 @@ template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
 void solve_surface_mass_flux(State<ExecutionSpace>& state);
 
 template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+KOKKOS_INLINE_FUNCTION
 void solve_flow_rates(
     size_t ij, size_t k, size_t k_node, double A_f, double dz,
     typename State<ExecutionSpace>::View2D evap,
@@ -41,6 +42,7 @@ void solve_flow_rates(
 );
 
 template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+KOKKOS_INLINE_FUNCTION
 void solve_enthalpy(
     size_t ij, size_t k, size_t k_node, double dz, double gap_width, double h_g,
     typename State<ExecutionSpace>::View2D W_l,
@@ -51,6 +53,7 @@ void solve_enthalpy(
 );
 
 template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+KOKKOS_INLINE_FUNCTION
 void solve_void_fraction(
     size_t ij, size_t k, size_t k_node, double A_f, double D_h, double rho_f, double rho_g,
     double h_f, double h_fg, double mu_v, double sigma, size_t max_inner_iter, Water fluid,
@@ -63,6 +66,7 @@ void solve_void_fraction(
 );
 
 template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+KOKKOS_INLINE_FUNCTION
 void solve_quality(
     size_t ij, size_t k, size_t k_node, double A_f,
     typename State<ExecutionSpace>::View2D W_l,
@@ -71,6 +75,7 @@ void solve_quality(
 );
 
 template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+KOKKOS_INLINE_FUNCTION
 void solve_pressure(
     size_t ij, size_t k, size_t k_node, double A_f, double D_h, double dz,
     double rho_f, double rho_g, double mu_f, double mu_g, Water fluid,
@@ -85,12 +90,19 @@ void solve_pressure(
     typename State<ExecutionSpace>::View2D P
 );
 
+KOKKOS_INLINE_FUNCTION
 double __Reynolds(double G, double D_h, double mu);
+KOKKOS_INLINE_FUNCTION
 double __Prandtl(double Cp, double mu, double k);
+KOKKOS_INLINE_FUNCTION
 double __Peclet(double Re, double Pr);
+KOKKOS_INLINE_FUNCTION
 double __liquid_velocity(double W_l, double A_f, double alpha, double rho_l);
+KOKKOS_INLINE_FUNCTION
 double __vapor_velocity(double W_v, double A_f, double alpha, double rho_g);
+KOKKOS_INLINE_FUNCTION
 double __eddy_velocity(double Re, double S_ij, double D_H_i, double D_H_j, double D_rod, double G_m_i, double rho_m);
+KOKKOS_INLINE_FUNCTION
 double __quality_avg(double G_m_i, double G_m_j);
 
 } // namespace TH

@@ -18,6 +18,7 @@ void TH::planar(State<ExecutionSpace>& state) {
     const size_t k = state.surface_plane;
     const size_t k_node = state.node_plane;
     const size_t max_inner_iter = state.max_inner_iter;
+    const size_t nchannels = state.geom->nchannels();
     const double dz = state.geom->dz(state.node_plane);
     const double gap_width = state.geom->gap_width();
     auto flow_area = state.geom->channel_area_view();
@@ -49,7 +50,7 @@ void TH::planar(State<ExecutionSpace>& state) {
     const double mu_g = state.fluid.mu_g();
     const double sigma = state.fluid.sigma();
 
-    Kokkos::parallel_for("TH::planar", Kokkos::RangePolicy<ExecutionSpace>(0, state.geom->nchannels()), KOKKOS_LAMBDA(const size_t ij) {
+    Kokkos::parallel_for("TH::planar", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels), KOKKOS_LAMBDA(const size_t ij) {
         double A_f = flow_area(ij, k);
         double D_h = hydraulic_diameter(ij, k);
         solve_flow_rates<ExecutionSpace>(ij, k, k_node, A_f, dz, evap, SS_l, SS_v, W_l, W_v);
@@ -59,6 +60,8 @@ void TH::planar(State<ExecutionSpace>& state) {
         solve_quality<ExecutionSpace>(ij, k, k_node, A_f, W_l, W_v, X);
         solve_pressure<ExecutionSpace>(ij, k, k_node, A_f, D_h, dz, rho_f, rho_g, mu_f, mu_g, fluid, W_l, W_v, h_l, X, alpha, CF_SS, TM_SS, VD_SS, P);
     });
+
+    Kokkos::fence();
 }
 
 template <typename ExecutionSpace>
@@ -163,7 +166,6 @@ void TH::accumulate_surface_sources(State<ExecutionSpace>& state) {
 }
 
 template <typename ExecutionSpace>
-KOKKOS_INLINE_FUNCTION
 void TH::solve_evaporation_term(State<ExecutionSpace>& state) {
 
     // Device-based implementation
@@ -194,8 +196,8 @@ void TH::solve_evaporation_term(State<ExecutionSpace>& state) {
     // Compute evaporation term on device
     Kokkos::parallel_for("compute_evaporation", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels), KOKKOS_LAMBDA(const size_t ij) {
         double D_h = hydraulic_diameter_view(ij, k); // hydraulic diameter [m]
-        double P_H = geom->heated_perimeter(ij, k); // heated perimeter [m]
         double A_f = flow_area_view(ij, k); // flow area [m^2]
+        double P_H = 4.0 * A_f / D_h; // heated perimeter [m]
 
         double Re = (W_l(ij, k) / A_f) * D_h / fluid.mu(h_l(ij, k)); // Reynolds number
         double Pr = fluid.Cp(h_l(ij, k)) * fluid.mu(h_l(ij, k)) / fluid.k(h_l(ij, k)); // Prandtl number
@@ -238,7 +240,6 @@ void TH::solve_mixing(State<ExecutionSpace>& state) {
     const double Thetam = 5.0; // constant set equal to 5.0 for BWR applications, from ANTS Theory
 
     size_t k = state.surface_plane;  // closure relations use lagging edge values
-    size_t k_node = state.node_plane;
 
     double rho_f = state.fluid.rho_f();
     double rho_g = state.fluid.rho_g();
@@ -439,40 +440,57 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     const double aspect = state.geom->aspect_ratio();
 
     // Copy previous plane solution as starting guess for gk
-    for (size_t ns = 0; ns < nsurf; ++ns) {
-        state.gk(ns, k_node) = state.gk(ns, k_node - 1);
+    auto h_gk = Kokkos::create_mirror_view(state.gk);
+    Kokkos::deep_copy(h_gk, state.gk);
+    if (k_node > 0) {
+        for (size_t ns = 0; ns < nsurf; ++ns) {
+            h_gk(ns, k_node) = h_gk(ns, k_node - 1);
+        }
     }
+    // If k_node == 0, gk is already initialized from inlet BC (should be 0)
+    Kokkos::deep_copy(state.gk, h_gk);
+
+    // Create surface mirror once (geometry doesn't change)
+    auto surfaces = Kokkos::create_mirror_view(state.geom->surface_view());
+    Kokkos::deep_copy(surfaces, state.geom->surface_view());
     Kokkos::Profiling::popRegion();
 
     // outer loop for newton iteration convergence
     Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - newton iteration loop");
     for (size_t outer_iter = 0; outer_iter < state.max_outer_iter; ++outer_iter) {
 
+        // Sync h_gk from device at start of each iteration
+        Kokkos::deep_copy(h_gk, state.gk);
+
         // Residual vectors and Jacobian Matrix as Kokkos Views
         Kokkos::View<double*, ExecutionSpace> f0("f0", nsurf);
         Kokkos::View<double*, ExecutionSpace> f3("f3", nsurf);
         Kokkos::View<double**, ExecutionSpace> dfdg("dfdg", nsurf, nsurf);
+        auto h_f0 = Kokkos::create_mirror_view(f0);
+        auto h_f3 = Kokkos::create_mirror_view(f3);
+        auto h_dfdg = Kokkos::create_mirror_view(dfdg);
 
         // PLANAR solve
         Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - planar");
         planar(state);
         Kokkos::Profiling::popRegion();
 
-        auto P = state.P;
-        auto X = state.X;
-        auto gk = state.gk;
+        auto h_P = Kokkos::create_mirror_view(state.P);
+        Kokkos::deep_copy(h_P, state.P);
+        auto h_X = Kokkos::create_mirror_view(state.X);
+        Kokkos::deep_copy(h_X, state.X);
 
         // calculate the residual vector f0
         Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - calculate residual vector f0");
         for (size_t ns = 0; ns < nsurf; ++ns) {
-            size_t i = state.geom->surfaces[ns].from_node;
-            size_t j = state.geom->surfaces[ns].to_node;
-            size_t i_donor = (gk(ns, k_node) >= 0) ? i : j;
+            size_t i = surfaces(ns).from_node;
+            size_t j = surfaces(ns).to_node;
+            size_t i_donor = (h_gk(ns, k_node) >= 0) ? i : j;
 
-            double rho_m = state.fluid.rho_m(X(i_donor, k));
-            double deltaP = P(i, k) - P(j, k); // Eq. 56 from ANTS Theory
-            double Fns = 0.5 * K_ns * gk(ns, k_node) * std::abs(gk(ns, k_node)) / rho_m; // Eq. 57 from ANTS Theory
-            f0(ns) = -dz * aspect * (deltaP - Fns); // Eq. 55 from ANTS Theory
+            double rho_m = state.fluid.rho_m(h_X(i_donor, k));
+            double deltaP = h_P(i, k) - h_P(j, k); // Eq. 56 from ANTS Theory
+            double Fns = 0.5 * K_ns * h_gk(ns, k_node) * std::abs(h_gk(ns, k_node)) / rho_m; // Eq. 57 from ANTS Theory
+            h_f0(ns) = -dz * aspect * (deltaP - Fns); // Eq. 55 from ANTS Theory
         }
         Kokkos::Profiling::popRegion();
 
@@ -480,7 +498,7 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
         Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - calculate max residual");
         double max_res = 0.0;
         for (size_t ns = 0; ns < nsurf; ++ns) {
-            max_res = std::max(max_res, std::abs(f0(ns)));
+            max_res = std::max(max_res, std::abs(h_f0(ns)));
         }
         Kokkos::Profiling::popRegion();
 
@@ -495,50 +513,63 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
                       << ") with residual = " << std::scientific << max_res << std::defaultfloat << std::endl;
         }
 
+        // make a copy of state to perturb
         State perturb_state = state;
+
+        Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - perturbation loop");
         for (size_t ns1 = 0; ns1 < nsurf; ++ns1) {
 
-            auto gk_pert = perturb_state.gk;
-            auto P_pert = perturb_state.P;
-            auto X_pert = perturb_state.X;
+            auto h_gk_pert = Kokkos::create_mirror_view(perturb_state.gk);
+            Kokkos::deep_copy(h_gk_pert, perturb_state.gk);
 
-            const double gk0 = gk(ns1, k_node);
+            const double gk0 = h_gk(ns1, k_node);
 
             // perturb the mass flux at surface ns1
-            if (gk_pert(ns1, k_node) >= 0) gk_pert(ns1, k_node) -= gtol;
-            else gk_pert(ns1, k_node) += gtol;
+            if (h_gk_pert(ns1, k_node) >= 0) h_gk_pert(ns1, k_node) -= gtol;
+            else h_gk_pert(ns1, k_node) += gtol;
+
+            Kokkos::deep_copy(perturb_state.gk, h_gk_pert);
 
             // PLANAR_PERTURB solve
-            Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - planar perturb");
             planar(perturb_state);
-            Kokkos::Profiling::popRegion();
+
+            auto h_P_pert = Kokkos::create_mirror_view(perturb_state.P);
+            Kokkos::deep_copy(h_P_pert, perturb_state.P);
+            auto h_X_pert = Kokkos::create_mirror_view(perturb_state.X);
+            Kokkos::deep_copy(h_X_pert, perturb_state.X);
 
             Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - compute perturbed residuals f3");
             for (size_t ns = 0; ns < nsurf; ++ns) {
-                size_t i = state.geom->surfaces[ns].from_node;
-                size_t j = state.geom->surfaces[ns].to_node;
-                size_t i_donor = (gk_pert(ns, k_node) >= 0) ? i : j;
-                double rho_m = perturb_state.fluid.rho_m(X_pert(i_donor, k));
-                double deltaP = P_pert(i, k) - P_pert(j, k);
-                double Fns = 0.5 * K_ns * gk_pert(ns, k_node) * std::abs(gk_pert(ns, k_node)) / rho_m;
-                f3(ns) = -dz * aspect * (deltaP - Fns);
+                size_t i = surfaces(ns).from_node;
+                size_t j = surfaces(ns).to_node;
+                size_t i_donor = (h_gk_pert(ns, k_node) >= 0) ? i : j;
+                double rho_m = perturb_state.fluid.rho_m(h_X_pert(i_donor, k));
+                double deltaP = h_P_pert(i, k) - h_P_pert(j, k);
+                double Fns = 0.5 * K_ns * h_gk_pert(ns, k_node) * std::abs(h_gk_pert(ns, k_node)) / rho_m;
+                h_f3(ns) = -dz * aspect * (deltaP - Fns);
 
-                dfdg(ns, ns1) = (f3(ns) - f0(ns)) / (gk_pert(ns1, k_node) - gk(ns1, k_node));
+                h_dfdg(ns, ns1) = (h_f3(ns) - h_f0(ns)) / (h_gk_pert(ns1, k_node) - h_gk(ns1, k_node));
             }
             Kokkos::Profiling::popRegion();
 
-            gk_pert(ns1, k_node) = gk0; // restore original value
+            h_gk_pert(ns1, k_node) = gk0; // restore original value
+            Kokkos::deep_copy(perturb_state.gk, h_gk_pert);
         }
+        Kokkos::Profiling::popRegion();
 
         // solve the system of equations (overwrites f0 as solution vector)
         Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - solve_linear_system");
-        solve_linear_system(nsurf, dfdg, f0);
+        Kokkos::deep_copy(dfdg, h_dfdg);
+        Kokkos::deep_copy(f0, h_f0);
+        solve_linear_system<ExecutionSpace>(nsurf, dfdg, f0);
+        Kokkos::deep_copy(h_f0, f0);
         Kokkos::Profiling::popRegion();
 
         // update mass fluxes from solution
         for (size_t ns = 0; ns < nsurf; ++ns) {
-            gk(ns, k_node) -= f0(ns);
+            h_gk(ns, k_node) -= h_f0(ns);
         }
+        Kokkos::deep_copy(state.gk, h_gk);
 
     } // end outer iteration loop
     Kokkos::Profiling::popRegion();
@@ -574,11 +605,15 @@ void TH::solve_enthalpy(
     typename State<ExecutionSpace>::View2D h_l
 ) {
     // Eq. 63 from ANTS Theory
+    // Guard against division by zero when liquid flow rate becomes very small
+    const double W_l_min = 1e-10; // minimum liquid flow rate threshold [kg/s]
+    double W_l_safe = (W_l(ij, k) > W_l_min) ? W_l(ij, k) : W_l_min;
+
     h_l(ij, k) = (
         (W_v(ij, k-1) - W_v(ij, k)) * h_g
         + W_l(ij, k-1) * h_l(ij, k-1) + dz * lhr(ij, k_node)
         - dz * SS_m(ij)
-    ) / W_l(ij, k);
+    ) / W_l_safe;
 }
 
 template <typename ExecutionSpace>
@@ -594,7 +629,7 @@ void TH::solve_void_fraction(
     typename State<ExecutionSpace>::View2D X,
     typename State<ExecutionSpace>::View2D alpha
 ) {
-    const double tol = 1e-6;
+    const double tol = 1e-8;
     const double eps = 1e-12; // small number to prevent division by zero
 
     // based on the Chexal-Lellouche drift flux model
@@ -622,7 +657,6 @@ void TH::solve_void_fraction(
     // Inline bisection method - cannot use lambda functions inside KOKKOS_LAMBDA
     double a = 0.0;
     double b = 1.0;
-    const double bisection_tol = 1e-8;
 
     // Helper lambda-like evaluation using direct computation
     auto evaluate_f = [&](double alpha_val) {
@@ -644,11 +678,11 @@ void TH::solve_void_fraction(
     double fa = evaluate_f(a);
     double fb = evaluate_f(b);
 
-    if (Kokkos::fabs(fa) < bisection_tol) {
+    if (Kokkos::fabs(fa) < tol) {
         alpha(ij, k) = a;
         return;
     }
-    if (Kokkos::fabs(fb) < bisection_tol) {
+    if (Kokkos::fabs(fb) < tol) {
         alpha(ij, k) = b;
         return;
     }
@@ -664,7 +698,7 @@ void TH::solve_void_fraction(
         double c = 0.5 * (a + b);
         double fc = evaluate_f(c);
 
-        if (Kokkos::fabs(fc) < bisection_tol || (b - a) < bisection_tol) {
+        if (Kokkos::fabs(fc) < tol || (b - a) < tol) {
             alpha(ij, k) = c;
             return;
         }
@@ -839,16 +873,6 @@ double TH::__quality_avg(double G_m_i, double G_m_j) {
 // Explicit template instantiations
 namespace TH {
 
-template void planar<Kokkos::DefaultExecutionSpace>(State<Kokkos::DefaultExecutionSpace>&);
-template void solve_evaporation_term<Kokkos::DefaultExecutionSpace>(State<Kokkos::DefaultExecutionSpace>&);
-template void solve_mixing<Kokkos::DefaultExecutionSpace>(State<Kokkos::DefaultExecutionSpace>&);
-template void solve_surface_mass_flux<Kokkos::DefaultExecutionSpace>(State<Kokkos::DefaultExecutionSpace>&);
-template void solve_flow_rates<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D);
-template void solve_enthalpy<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, double, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View2D);
-template void solve_void_fraction<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, double, double, double, double, double, double, size_t, Water, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D);
-template void solve_quality<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D);
-template void solve_pressure<Kokkos::DefaultExecutionSpace>(size_t, size_t, size_t, double, double, double, double, double, double, double, Water, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View2D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View1D, State<Kokkos::DefaultExecutionSpace>::View2D);
-
 template void planar<Kokkos::Serial>(State<Kokkos::Serial>&);
 template void solve_evaporation_term<Kokkos::Serial>(State<Kokkos::Serial>&);
 template void solve_mixing<Kokkos::Serial>(State<Kokkos::Serial>&);
@@ -858,5 +882,27 @@ template void solve_enthalpy<Kokkos::Serial>(size_t, size_t, size_t, double, dou
 template void solve_void_fraction<Kokkos::Serial>(size_t, size_t, size_t, double, double, double, double, double, double, double, double, size_t, Water, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D);
 template void solve_quality<Kokkos::Serial>(size_t, size_t, size_t, double, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D);
 template void solve_pressure<Kokkos::Serial>(size_t, size_t, size_t, double, double, double, double, double, double, double, Water, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View2D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View1D, State<Kokkos::Serial>::View2D);
+
+template void planar<Kokkos::OpenMP>(State<Kokkos::OpenMP>&);
+template void solve_evaporation_term<Kokkos::OpenMP>(State<Kokkos::OpenMP>&);
+template void solve_mixing<Kokkos::OpenMP>(State<Kokkos::OpenMP>&);
+template void solve_surface_mass_flux<Kokkos::OpenMP>(State<Kokkos::OpenMP>&);
+template void solve_flow_rates<Kokkos::OpenMP>(size_t, size_t, size_t, double, double, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View1D, State<Kokkos::OpenMP>::View1D, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View2D);
+template void solve_enthalpy<Kokkos::OpenMP>(size_t, size_t, size_t, double, double, double, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View1D, State<Kokkos::OpenMP>::View2D);
+template void solve_void_fraction<Kokkos::OpenMP>(size_t, size_t, size_t, double, double, double, double, double, double, double, double, size_t, Water, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View2D);
+template void solve_quality<Kokkos::OpenMP>(size_t, size_t, size_t, double, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View2D);
+template void solve_pressure<Kokkos::OpenMP>(size_t, size_t, size_t, double, double, double, double, double, double, double, Water, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View2D, State<Kokkos::OpenMP>::View1D, State<Kokkos::OpenMP>::View1D, State<Kokkos::OpenMP>::View1D, State<Kokkos::OpenMP>::View2D);
+
+#ifdef KOKKOS_ENABLE_CUDA
+template void planar<Kokkos::Cuda>(State<Kokkos::Cuda>&);
+template void solve_evaporation_term<Kokkos::Cuda>(State<Kokkos::Cuda>&);
+template void solve_mixing<Kokkos::Cuda>(State<Kokkos::Cuda>&);
+template void solve_surface_mass_flux<Kokkos::Cuda>(State<Kokkos::Cuda>&);
+template void solve_flow_rates<Kokkos::Cuda>(size_t, size_t, size_t, double, double, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View1D, State<Kokkos::Cuda>::View1D, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View2D);
+template void solve_enthalpy<Kokkos::Cuda>(size_t, size_t, size_t, double, double, double, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View1D, State<Kokkos::Cuda>::View2D);
+template void solve_void_fraction<Kokkos::Cuda>(size_t, size_t, size_t, double, double, double, double, double, double, double, double, size_t, Water, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View2D);
+template void solve_quality<Kokkos::Cuda>(size_t, size_t, size_t, double, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View2D);
+template void solve_pressure<Kokkos::Cuda>(size_t, size_t, size_t, double, double, double, double, double, double, double, Water, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View2D, State<Kokkos::Cuda>::View1D, State<Kokkos::Cuda>::View1D, State<Kokkos::Cuda>::View1D, State<Kokkos::Cuda>::View2D);
+#endif
 
 }
