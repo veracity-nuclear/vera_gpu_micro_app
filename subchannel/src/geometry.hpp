@@ -24,10 +24,10 @@ struct Surface {
     size_t to_node;     // downstream node index
 
     // Default constructor (required by Kokkos, must be trivial)
-    KOKKOS_FUNCTION Surface() = default;
+    Surface() = default;
 
     // Parameterized constructor
-    KOKKOS_FUNCTION Surface(size_t ns, size_t from, size_t to) : idx(ns), from_node(from), to_node(to) {}
+    Surface(size_t ns, size_t from, size_t to) : idx(ns), from_node(from), to_node(to) {}
 };
 
 
@@ -54,24 +54,24 @@ public:
     SurfacesView surfaces;      // list of surfaces between subchannels
 
     const size_t boundary = std::numeric_limits<size_t>::max(); // for a neighbor that is a boundary
-    double core_height() const { return _axial_mesh(_nz - 1) - _axial_mesh(0); }
+    double core_height() const;
     double gap_width() const { return gap_W; }
     double aspect_ratio() const { return gap_W / l; }
-    double flow_area(size_t aij, size_t k) const { return _channel_area(aij, k); }
-    double hydraulic_diameter(size_t aij, size_t k) const { return _hydraulic_diameter(aij, k); }
+    double flow_area(size_t aij, size_t k) const;
+    double hydraulic_diameter(size_t aij, size_t k) const;
     double heated_perimeter(size_t aij, size_t k) const { return 4.0 * flow_area(aij, k) / hydraulic_diameter(aij, k); }
-    double dz(size_t k) const { return _axial_mesh(k + 1) - _axial_mesh(k); }
+    double dz(size_t k) const;
     size_t npin() const { return _nchan - 1; }
     size_t nchan() const { return _nchan; }
     size_t core_size() const { return _core_size; }
     size_t core_sym() const { return _core_sym; }
-    size_t core_map(size_t aj, size_t ai) const { return _core_map(aj, ai); }
+    size_t core_map(size_t aj, size_t ai) const;
     size_t naxial() const { return _nz; }
     size_t nsurfaces() const;
     size_t nchannels() const { return _nchan * _nchan * nassemblies(); }
     size_t nassemblies() const;
-    size_t global_chan_index(size_t aj, size_t ai, size_t j, size_t i) const { return _ij_global(aj, ai, j, i); }
-    size_t global_surf_index(size_t aij, size_t ns) const { return _ns_global(aij, ns); }
+    size_t global_chan_index(size_t aj, size_t ai, size_t j, size_t i) const;
+    size_t global_surf_index(size_t aij, size_t ns) const;
 
     // Device-accessible view accessors
     View2D channel_area_view() const { return _channel_area; }
