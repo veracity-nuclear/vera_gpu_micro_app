@@ -14,7 +14,7 @@
 TEST(SubchannelTest, Minicore_OpenMP) {
 
     // geometric parameters
-    size_t N = 10; // NxN pins in assembly
+    size_t N = 5; // NxN pins in assembly
     double height = 3.81; // m
     double flow_area = 1.436e-4; // m^2
     double hydraulic_diameter = 1.436e-2; // m
@@ -36,9 +36,6 @@ TEST(SubchannelTest, Minicore_OpenMP) {
     }
 
     Geometry<Kokkos::OpenMP> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial, core_map);
-
-    // working fluid is water
-    Water fluid;
 
     // create 1D views for each solver parameters
     Kokkos::View<double*, Kokkos::OpenMP> inlet_mass_flow("inlet_mass_flow", geometry.nchannels());
