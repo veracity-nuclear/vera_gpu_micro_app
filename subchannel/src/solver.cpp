@@ -30,13 +30,17 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
     auto nominal_lhr = core.getDataSet("nominal_linear_heat_rate").read<double>() * 100.0; // convert from W/cm to W/m
     auto percent_power = state_pt.getDataSet("power").read<double>() * 0.01; // convert from % to fraction
     nominal_lhr *= percent_power; // scale by core power level
-    Kokkos::parallel_for("denormalize_pin_powers",
-        Kokkos::MDRangePolicy<Kokkos::Rank<4>, ExecutionSpace>({0,0,0,0},
-            {pin_powers.extent(0), pin_powers.extent(1), pin_powers.extent(2), pin_powers.extent(3)}),
-        KOKKOS_LAMBDA(const size_t i, const size_t j, const size_t k, const size_t a) {
-            pin_powers(i, j, k, a) *= nominal_lhr;
-        });
-    Kokkos::fence();
+
+    // Denormalize pin powers using nested loops instead of Kokkos kernel
+    for (size_t i = 0; i < pin_powers.extent(0); ++i) {
+        for (size_t j = 0; j < pin_powers.extent(1); ++j) {
+            for (size_t k = 0; k < pin_powers.extent(2); ++k) {
+                for (size_t a = 0; a < pin_powers.extent(3); ++a) {
+                    pin_powers(i, j, k, a) *= nominal_lhr;
+                }
+            }
+        }
+    }
 
     // Allocate state.lhr for spatially-varying linear heat rate
     size_t nz = state.geom->naxial() + 1;
@@ -447,8 +451,12 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
         state.node_plane = k - 1;
 
         // closure relations
+        Kokkos::Profiling::pushRegion("Solver::solve_evaporation_term");
         TH::solve_evaporation_term<ExecutionSpace>(state);
+        Kokkos::Profiling::popRegion();
+        Kokkos::Profiling::pushRegion("Solver::solve_mixing");
         TH::solve_mixing<ExecutionSpace>(state);
+        Kokkos::Profiling::popRegion();
 
         // closure relations use lagging edge values, so update after solving them
         state.surface_plane = k;
@@ -457,9 +465,8 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
             Kokkos::Profiling::pushRegion("Solver::solve_surface_mass_flux");
             TH::solve_surface_mass_flux<ExecutionSpace>(state);
             Kokkos::Profiling::popRegion();
-        } else {
-            TH::planar<ExecutionSpace>(state);
         }
+        TH::planar<ExecutionSpace>(state);
 
         if (_verbose) {
             print_state_at_plane(k);
@@ -658,8 +665,8 @@ void Solver<ExecutionSpace>::print_state_at_plane(size_t k) {
 }
 
 // Explicit template instantiations
-template class Solver<Kokkos::DefaultExecutionSpace>;
 template class Solver<Kokkos::Serial>;
-#if defined(KOKKOS_ENABLE_SERIAL) && !defined(KOKKOS_ENABLE_OPENMP)
-template class Solver<Kokkos::Serial>;
+template class Solver<Kokkos::OpenMP>;
+#ifdef KOKKOS_ENABLE_CUDA
+template class Solver<Kokkos::Cuda>;
 #endif
