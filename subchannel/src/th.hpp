@@ -5,8 +5,8 @@
 #include <vector>
 #include <memory>
 #include <cmath>
+#include <Kokkos_Core.hpp>
 
-#include "vectors.hpp"
 #include "constants.hpp"
 #include "geometry.hpp"
 #include "materials.hpp"
@@ -15,15 +15,76 @@
 
 namespace TH {
 
-void planar(State& state);
-void solve_evaporation_term(State& state);
-void solve_mixing(State& state);
-void solve_surface_mass_flux(State& state);
-void solve_flow_rates(State& state);
-void solve_enthalpy(State& state);
-void solve_void_fraction(State& state);
-void solve_quality(State& state);
-void solve_pressure(State& state);
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void planar(State<ExecutionSpace>& state);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void accumulate_surface_sources(State<ExecutionSpace>& state);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_evaporation_term(State<ExecutionSpace>& state);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_mixing(State<ExecutionSpace>& state);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_surface_mass_flux(State<ExecutionSpace>& state);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_flow_rates(
+    size_t ij, size_t k, size_t k_node, double A_f, double dz,
+    typename State<ExecutionSpace>::View2D evap,
+    typename State<ExecutionSpace>::View1D SS_l,
+    typename State<ExecutionSpace>::View1D SS_v,
+    typename State<ExecutionSpace>::View2D W_l,
+    typename State<ExecutionSpace>::View2D W_v
+);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_enthalpy(
+    size_t ij, size_t k, size_t k_node, double dz, double gap_width, double h_g,
+    typename State<ExecutionSpace>::View2D W_l,
+    typename State<ExecutionSpace>::View2D W_v,
+    typename State<ExecutionSpace>::View2D lhr,
+    typename State<ExecutionSpace>::View1D SS_m,
+    typename State<ExecutionSpace>::View2D h_l
+);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_void_fraction(
+    size_t ij, size_t k, size_t k_node, double A_f, double D_h, double rho_f, double rho_g,
+    double h_f, double h_fg, double mu_v, double sigma, size_t max_inner_iter, Water fluid,
+    typename State<ExecutionSpace>::View2D P,
+    typename State<ExecutionSpace>::View2D W_l,
+    typename State<ExecutionSpace>::View2D W_v,
+    typename State<ExecutionSpace>::View2D h_l,
+    typename State<ExecutionSpace>::View2D X,
+    typename State<ExecutionSpace>::View2D alpha
+);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_quality(
+    size_t ij, size_t k, size_t k_node, double A_f,
+    typename State<ExecutionSpace>::View2D W_l,
+    typename State<ExecutionSpace>::View2D W_v,
+    typename State<ExecutionSpace>::View2D X
+);
+
+template <typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+void solve_pressure(
+    size_t ij, size_t k, size_t k_node, double A_f, double D_h, double dz,
+    double rho_f, double rho_g, double mu_f, double mu_g, Water fluid,
+    typename State<ExecutionSpace>::View2D W_l,
+    typename State<ExecutionSpace>::View2D W_v,
+    typename State<ExecutionSpace>::View2D h_l,
+    typename State<ExecutionSpace>::View2D X,
+    typename State<ExecutionSpace>::View2D alpha,
+    typename State<ExecutionSpace>::View1D CF_SS,
+    typename State<ExecutionSpace>::View1D TM_SS,
+    typename State<ExecutionSpace>::View1D VD_SS,
+    typename State<ExecutionSpace>::View2D P
+);
+
 double __Reynolds(double G, double D_h, double mu);
 double __Prandtl(double Cp, double mu, double k);
 double __Peclet(double Re, double Pr);

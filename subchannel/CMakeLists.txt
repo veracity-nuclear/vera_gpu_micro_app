@@ -1,6 +1,5 @@
 add_library(subchannel_lib
     src/geometry.cpp
-    src/materials.cpp
     src/solver.cpp
     src/th.cpp
 )
@@ -12,17 +11,39 @@ target_link_libraries(subchannel_lib
     utils
 )
 
+add_executable(micro_subchannel
+    src/main.cpp
+)
+target_link_libraries(micro_subchannel subchannel_lib)
+
+# Copy the data directory to the build location
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/data DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+
 # --- Tests ---
 enable_testing()
 set(TEST_EXECUTABLES
     test_geometry
-    test_single_channel
-    test_3x3_channels
+    test_ants_1x1_serial
+    test_ants_3x3_omp
+    test_ants_3x3_serial
+    test_ants_7x7_omp
+    test_ants_7x7_serial
+    test_ants_minicore_serial
+    test_ants_minicore_omp
+    test_ants_smr_serial
+    test_ants_smr_omp
 )
 set(TEST_LABELS
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
+    "BASIC\;CONTINUOUS\;HEAVY"
+    "BASIC\;CONTINUOUS\;HEAVY"
+    "BASIC\;CONTINUOUS\;HEAVY"
+    "CONTINUOUS\;HEAVY"
+    "CONTINUOUS\;HEAVY"
+    "HEAVY"
+    "HEAVY"
 )
 list(LENGTH TEST_EXECUTABLES list_length)
 math(EXPR last_index "${list_length} - 1")

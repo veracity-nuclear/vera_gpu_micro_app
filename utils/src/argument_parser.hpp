@@ -23,8 +23,9 @@ public:
     /// Constructor for ArgumentParser
     ArgumentParser(const std::string& program_name, const std::string& description);
 
-    // Factory method for VERA GPU app
+    // Factory methods for VERA GPU applications
     static ArgumentParser vera_gpu_moc_parser(const std::string& program_name);
+    static ArgumentParser vera_gpu_subchannel_parser(const std::string& program_name);
 
     // Add an argument
     void add_argument(const std::string& name, const std::string& help);

@@ -280,3 +280,20 @@ ArgumentParser ArgumentParser::vera_gpu_moc_parser(const std::string& program_na
 
     return parser;
 }
+
+ArgumentParser ArgumentParser::vera_gpu_subchannel_parser(const std::string& program_name) {
+    ArgumentParser parser(program_name, "VERA GPU Micro-App for subchannel thermal-hydraulics calculations");
+
+    // Add required positional arguments
+    parser.add_argument("filename", "Input VERAout file");
+
+    // Add optional arguments (arg, default, valid values)
+    parser.add_flag("verbose", "Enable verbose output");
+    parser.add_flag("no-crossflow", "Disable crossflow calculations");
+    parser.add_option("threads", "Number of threads to use", "0");
+    parser.add_option("device", "Device to use", "serial", {"serial", "openmp"});
+    parser.add_option("max_outer_iter", "Maximum number of outer loop iterations", "100");
+    parser.add_option("max_inner_iter", "Maximum number of inner loop iterations", "100");
+
+    return parser;
+}
