@@ -30,8 +30,11 @@ set(TEST_EXECUTABLES
     test_ants_7x7_serial
     test_ants_minicore_serial
     test_ants_minicore_omp
+    test_ants_minicore_cuda
     test_ants_smr_serial
     test_ants_smr_omp
+    test_ants_watts_bar_omp
+    test_ants_watts_bar_cuda
 )
 set(TEST_LABELS
     "BASIC\;CONTINUOUS\;HEAVY"
@@ -40,8 +43,11 @@ set(TEST_LABELS
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
-    "CONTINUOUS\;HEAVY"
-    "CONTINUOUS\;HEAVY"
+    "HEAVY"
+    "HEAVY"
+    "HEAVY"
+    "HEAVY"
+    "HEAVY"
     "HEAVY"
     "HEAVY"
 )
