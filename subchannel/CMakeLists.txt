@@ -30,11 +30,9 @@ set(TEST_EXECUTABLES
     test_ants_7x7_serial
     test_ants_minicore_serial
     test_ants_minicore_omp
-    test_ants_minicore_cuda
     test_ants_smr_serial
     test_ants_smr_omp
     test_ants_watts_bar_omp
-    test_ants_watts_bar_cuda
 )
 set(TEST_LABELS
     "BASIC\;CONTINUOUS\;HEAVY"
@@ -48,9 +46,19 @@ set(TEST_LABELS
     "HEAVY"
     "HEAVY"
     "HEAVY"
-    "HEAVY"
-    "HEAVY"
 )
+
+# Add CUDA tests only if CUDA is enabled
+if(Kokkos_ENABLE_CUDA)
+    list(APPEND TEST_EXECUTABLES
+        test_ants_minicore_cuda
+        test_ants_watts_bar_cuda
+    )
+    list(APPEND TEST_LABELS
+        "HEAVY"
+        "HEAVY"
+    )
+endif()
 list(LENGTH TEST_EXECUTABLES list_length)
 math(EXPR last_index "${list_length} - 1")
 foreach(i RANGE 0 ${last_index})
