@@ -441,6 +441,12 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     auto num_neighbors = state.geom->num_neighbors_view();
     auto neighbor_list = state.geom->surface_neighbors_view();
 
+    // Create host mirrors for geometry data
+    auto h_num_neighbors = Kokkos::create_mirror_view(num_neighbors);
+    Kokkos::deep_copy(h_num_neighbors, num_neighbors);
+    auto h_neighbor_list = Kokkos::create_mirror_view(neighbor_list);
+    Kokkos::deep_copy(h_neighbor_list, neighbor_list);
+
     // Copy previous plane solution as starting guess for gk
     auto h_gk = Kokkos::create_mirror_view(state.gk);
     Kokkos::deep_copy(h_gk, state.gk);
@@ -541,8 +547,8 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
             Kokkos::deep_copy(h_X_pert, perturb_state.X);
 
             Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - compute perturbed residuals f3");
-            for (size_t n = 0; n < num_neighbors(ns1); ++n) {
-                size_t ns = neighbor_list(ns1, n);
+            for (size_t n = 0; n < h_num_neighbors(ns1); ++n) {
+                size_t ns = h_neighbor_list(ns1, n);
                 size_t i = surfaces(ns).from_node;
                 size_t j = surfaces(ns).to_node;
                 size_t i_donor = (h_gk_pert(ns, k_node) >= 0) ? i : j;
