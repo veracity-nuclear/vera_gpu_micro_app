@@ -31,6 +31,14 @@ Geometry<ExecutionSpace>::Geometry(
     }
     Kokkos::deep_copy(_axial_mesh, _h_axial_mesh);
 
+    // Initialize dz (axial mesh spacing)
+    _dz = View1D("dz", _nz);
+    auto _h_dz = Kokkos::create_mirror_view(_dz);
+    for (size_t k = 0; k < _nz; ++k) {
+        _h_dz(k) = _h_axial_mesh(k + 1) - _h_axial_mesh(k);
+    }
+    Kokkos::deep_copy(_dz, _h_dz);
+
     // Initialize constant flow area for all channels
     _channel_area = View2D("channel_area", nchannels(), _nz + 1);
     _hydraulic_diameter = View2D("hydraulic_diameter", nchannels(), _nz + 1);
@@ -212,6 +220,16 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
     }
     _axial_mesh = axial_mesh;
 
+    // Initialize dz (axial mesh spacing)
+    _dz = View1D("dz", _nz);
+    auto _h_dz = Kokkos::create_mirror_view(_dz);
+    auto _h_axial_mesh = Kokkos::create_mirror_view(_axial_mesh);
+    Kokkos::deep_copy(_h_axial_mesh, _axial_mesh);
+    for (size_t k = 0; k < _nz; ++k) {
+        _h_dz(k) = _h_axial_mesh(k + 1) - _h_axial_mesh(k);
+    }
+    Kokkos::deep_copy(_dz, _h_dz);
+
     auto pin_volumes = HDF5ToKokkosView<View4D>(core.getDataSet("pin_volumes"), "pin_volumes"); // cm^3
     _nchan = pin_volumes.extent(0) + 1;
 
@@ -298,7 +316,7 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
                         if (j < npin() && i < npin()) { // SE pin exists
                             A_wetted += 0.25 * pin_area(i, j, k, assem_idx) * 1e-4;
                         }
-                        double P_wetted = A_wetted / dz(k);
+                        double P_wetted = A_wetted / _h_dz(k);
                         if (P_wetted == 0.0) {
                             _h_hydraulic_diameter(aij, k) = std::sqrt(4.0 * _h_channel_area(aij, k) / M_PI); // approximate with circular-equivalent hydraulic diameter
                         } else {

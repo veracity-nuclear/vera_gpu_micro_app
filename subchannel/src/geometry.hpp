@@ -77,6 +77,8 @@ public:
     // Device-accessible view accessors
     View2D channel_area_view() const { return _channel_area; }
     View2D hydraulic_diameter_view() const { return _hydraulic_diameter; }
+    View1D dz_view() const { return _dz; }
+    KOKKOS_INLINE_FUNCTION double gap_width_value() const { return gap_W; }
     SurfacesView surface_view() const { return surfaces; }
 
     // Surface connectivity accessors
@@ -96,6 +98,7 @@ private:
     ViewSizeT2D _ns_global;         // mapping from (aij, ns) to global surface index
     ViewSizeT4D _ij_global;         // mapping from (aj, ai, j, i) to global channel index
     View1D _axial_mesh;             // axial mesh positions [m] (size: _nz+1)
+    View1D _dz;                     // axial mesh spacing [m] (size: _nz)
     View2D _channel_area;           // channel flow areas [m^2] (size: nchannels x nz)
     View2D _hydraulic_diameter;     // hydraulic diameters [m] (size: nchannels x nz)
     View2D _heated_perimeter;       // heated perimeters [m] (size: nchannels x nz)
