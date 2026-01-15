@@ -1,4 +1,5 @@
 #include "geometry.hpp"
+#include <numeric>
 
 template <typename ExecutionSpace>
 Geometry<ExecutionSpace>::Geometry(
@@ -18,46 +19,65 @@ Geometry<ExecutionSpace>::Geometry(
     _core_size = _core_map.extent(0);
     _core_sym = 1;
 
+    auto _h_core_map = Kokkos::create_mirror_view(_core_map);
+    Kokkos::deep_copy(_h_core_map, _core_map);
+
     // Initialize uniform axial mesh
     _axial_mesh = View1D("axial_mesh", _nz + 1);
+    auto _h_axial_mesh = Kokkos::create_mirror_view(_axial_mesh);
+    Kokkos::deep_copy(_h_axial_mesh, _axial_mesh);
     for (size_t k = 0; k <= _nz; ++k) {
-        _axial_mesh(k) = k * (height / _nz);
+        _h_axial_mesh(k) = k * (height / _nz);
     }
+    Kokkos::deep_copy(_axial_mesh, _h_axial_mesh);
 
     // Initialize constant flow area for all channels
     _channel_area = View2D("channel_area", nchannels(), _nz + 1);
     _hydraulic_diameter = View2D("hydraulic_diameter", nchannels(), _nz + 1);
+    auto _h_channel_area = Kokkos::create_mirror_view(_channel_area);
+    auto _h_hydraulic_diameter = Kokkos::create_mirror_view(_hydraulic_diameter);
+    Kokkos::deep_copy(_h_channel_area, _channel_area);
+    Kokkos::deep_copy(_h_hydraulic_diameter, _hydraulic_diameter);
     for (size_t aij = 0; aij < nchannels(); ++aij) {
         for (size_t k = 0; k < _nz + 1; ++k) {
-            _channel_area(aij, k) = flow_area;
-            _hydraulic_diameter(aij, k) = hydraulic_diameter;
+            _h_channel_area(aij, k) = flow_area;
+            _h_hydraulic_diameter(aij, k) = hydraulic_diameter;
         }
     }
+    Kokkos::deep_copy(_channel_area, _h_channel_area);
+    Kokkos::deep_copy(_hydraulic_diameter, _h_hydraulic_diameter);
 
     // Initialize global channel index mapping
     _ij_global = ViewSizeT4D("ij_global", _core_size, _core_size, _nchan, _nchan);
+    auto _h_ij_global = Kokkos::create_mirror_view(_ij_global);
+    Kokkos::deep_copy(_h_ij_global, _ij_global);
     size_t global_idx = 0;
     for (size_t aj = 0; aj < _core_size; ++aj) {
         for (size_t ai = 0; ai < _core_size; ++ai) {
-            if (_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
+            if (_h_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
             for (size_t j = 0; j < _nchan; ++j) {
                 for (size_t i = 0; i < _nchan; ++i) {
-                    _ij_global(aj, ai, j, i) = global_idx++;
+                    _h_ij_global(aj, ai, j, i) = global_idx++;
                 }
             }
         }
     }
+    Kokkos::deep_copy(_ij_global, _h_ij_global);
 
     // Allocate the surfaces View
     surfaces = SurfacesView("surfaces", nsurfaces());
+    auto _h_surfaces = Kokkos::create_mirror_view(surfaces);
+    Kokkos::deep_copy(_h_surfaces, surfaces);
 
     // Allocate _ns_global for mapping channels to surfaces
     _ns_global = ViewSizeT2D("ns_global", nchannels(), 4);
+    auto _h_ns_global = Kokkos::create_mirror_view(_ns_global);
+    Kokkos::deep_copy(_h_ns_global, _ns_global);
 
     // Initialize to boundary
     for (size_t aij = 0; aij < nchannels(); ++aij) {
         for (size_t ns = 0; ns < 4; ++ns) {
-            _ns_global(aij, ns) = boundary;
+            _h_ns_global(aij, ns) = boundary;
         }
     }
 
@@ -66,26 +86,26 @@ Geometry<ExecutionSpace>::Geometry(
     for (size_t aj = 0; aj < _core_size; ++aj) {
         for (size_t j = 0; j < _nchan; ++j) {
             for (size_t ai = 0; ai < _core_size; ++ai) {
-                if (_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
+                if (_h_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
                 for (size_t i = 0; i < _nchan; ++i) {
 
-                    size_t aij = _ij_global(aj, ai, j, i);  // aij the flattened global channel index
+                    size_t aij = _h_ij_global(aj, ai, j, i);  // aij the flattened global channel index
 
                     // west -> east surfaces in assembly at (aj, ai)
                     if (i + 1 < _nchan) {
-                        size_t aij_neigh = _ij_global(aj, ai, j, i + 1);
-                        surfaces(ns) = Surface(ns, aij, aij_neigh);
-                        _ns_global(aij_neigh, 0) = ns;  // ns is the neighbor channel's west surface
-                        _ns_global(aij, 1) = ns;        // ns is the current channel's east surface
+                        size_t aij_neigh = _h_ij_global(aj, ai, j, i + 1);
+                        _h_surfaces(ns) = Surface(ns, aij, aij_neigh);
+                        _h_ns_global(aij_neigh, 0) = ns;  // ns is the neighbor channel's west surface
+                        _h_ns_global(aij, 1) = ns;        // ns is the current channel's east surface
                         ns++;
                     }
 
                     // east assembly neighbor surface
-                    else if (ai + 1 < _core_size && _core_map(aj, ai + 1) > 0) {
-                        size_t aij_neigh = _ij_global(aj, ai + 1, j, 0);
-                        surfaces(ns) = Surface(ns, aij, aij_neigh);
-                        _ns_global(aij_neigh, 0) = ns;  // ns is the neighbor channel's west surface
-                        _ns_global(aij, 1) = ns;        // ns is the current channel's east surface
+                    else if (ai + 1 < _core_size && _h_core_map(aj, ai + 1) > 0) {
+                        size_t aij_neigh = _h_ij_global(aj, ai + 1, j, 0);
+                        _h_surfaces(ns) = Surface(ns, aij, aij_neigh);
+                        _h_ns_global(aij_neigh, 0) = ns;  // ns is the neighbor channel's west surface
+                        _h_ns_global(aij, 1) = ns;        // ns is the current channel's east surface
                         ns++;
                     }
                 }
@@ -97,32 +117,34 @@ Geometry<ExecutionSpace>::Geometry(
     for (size_t ai = 0; ai < _core_size; ++ai) {
         for (size_t i = 0; i < _nchan; ++i) {
             for (size_t aj = 0; aj < _core_size; ++aj) {
-                if (_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
+                if (_h_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
                 for (size_t j = 0; j < _nchan; ++j) {
 
-                    size_t aij = _ij_global(aj, ai, j, i);  // aij the flattened global channel index
+                    size_t aij = _h_ij_global(aj, ai, j, i);  // aij the flattened global channel index
 
                     // north -> south surfaces in assembly at (aj, ai)
                     if (j + 1 < _nchan) {
-                        size_t aij_neigh = _ij_global(aj, ai, j + 1, i);
-                        surfaces(ns) = Surface(ns, aij, aij_neigh);
-                        _ns_global(aij_neigh, 2) = ns;  // ns is the neighbor channel's north surface
-                        _ns_global(aij, 3) = ns;        // ns is the current channel's south surface
+                        size_t aij_neigh = _h_ij_global(aj, ai, j + 1, i);
+                        _h_surfaces(ns) = Surface(ns, aij, aij_neigh);
+                        _h_ns_global(aij_neigh, 2) = ns;  // ns is the neighbor channel's north surface
+                        _h_ns_global(aij, 3) = ns;        // ns is the current channel's south surface
                         ns++;
                     }
 
                     // south assembly neighbor surface
-                    else if (aj + 1 < _core_size && _core_map(aj + 1, ai) > 0) {
-                        size_t aij_neigh = _ij_global(aj + 1, ai, 0, i);
-                        surfaces(ns) = Surface(ns, aij, aij_neigh);
-                        _ns_global(aij_neigh, 2) = ns;  // ns is the neighbor channel's north surface
-                        _ns_global(aij, 3) = ns;        // ns is the current channel's south surface
+                    else if (aj + 1 < _core_size && _h_core_map(aj + 1, ai) > 0) {
+                        size_t aij_neigh = _h_ij_global(aj + 1, ai, 0, i);
+                        _h_surfaces(ns) = Surface(ns, aij, aij_neigh);
+                        _h_ns_global(aij_neigh, 2) = ns;  // ns is the neighbor channel's north surface
+                        _h_ns_global(aij, 3) = ns;        // ns is the current channel's south surface
                         ns++;
                     }
                 }
             }
         }
     }
+    Kokkos::deep_copy(surfaces, _h_surfaces);
+    Kokkos::deep_copy(_ns_global, _h_ns_global);
 
     // output geometry info
     std::cout << "Geometry Initialized:" << std::endl;
@@ -132,6 +154,9 @@ Geometry<ExecutionSpace>::Geometry(
     std::cout << "  Total Assemblies: " << nassemblies() << std::endl;
     std::cout << "  Total Channels: " << nchannels() << std::endl;
     std::cout << "  Total Surfaces: " << nsurfaces() << std::endl;
+
+    // Build surface connectivity
+    build_surface_connectivity();
 }
 
 template <typename ExecutionSpace>
@@ -199,12 +224,14 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
     double gap_width = ppitch * 0.5; // approximation, gap width is not in VERAout CORE group
 
     View4D channel_area; // cm^2
-    if (core.exist("channel_area")) {
-        channel_area = HDF5ToKokkosView<View4D>(core.getDataSet("channel_area"), "channel_area"); // cm^2
-    } else {
-        double default_area_cm2 = ppitch * ppitch * 1e4; // cm^2
-        channel_area = _init_default_channel_area(default_area_cm2);
-    }
+    auto h_channel_area = Kokkos::create_mirror_view(channel_area);
+    // if (core.exist("channel_area")) {
+    //     channel_area = HDF5ToKokkosView<View4D>(core.getDataSet("channel_area"), "channel_area"); // cm^2
+    // } else {
+    //     double default_area_cm2 = ppitch * ppitch * 1e4; // cm^2
+    //     h_channel_area = _init_default_channel_area(default_area_cm2);
+    //     Kokkos::deep_copy(channel_area, h_channel_area);
+    // }
 
     View4D pin_area; // cm^2
     if (core.exist("pin_surface_area")) {
@@ -218,6 +245,7 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
 
     // allocate global channel index mapping View4D with shape (core_size, core_size, nchan, nchan)
     _ij_global = ViewSizeT4D("ij_global", _core_size, _core_size, _nchan, _nchan);
+    auto _h_ij_global = Kokkos::create_mirror_view(_ij_global);
 
     // fill global channel index mapping
     size_t global_idx = 0;
@@ -226,7 +254,7 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
             if (_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
             for (size_t j = 0; j < _nchan; ++j) {
                 for (size_t i = 0; i < _nchan; ++i) {
-                    _ij_global(aj, ai, j, i) = global_idx;
+                    _h_ij_global(aj, ai, j, i) = global_idx;
                     global_idx++;
                 }
             }
@@ -239,6 +267,8 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
     // Flatten channel_area from 4D (nchan, nchan, nz, nassembly) to 2D (nchannels, nz)
     _channel_area = View2D("channel_area", nchannels(), _nz);
     _hydraulic_diameter = View2D("hydraulic_diameter", nchannels(), _nz);
+    auto _h_channel_area = Kokkos::create_mirror_view(_channel_area);
+    auto _h_hydraulic_diameter = Kokkos::create_mirror_view(_hydraulic_diameter);
 
     for (size_t aj = 0; aj < _core_size; ++aj) {
         for (size_t ai = 0; ai < _core_size; ++ai) {
@@ -249,7 +279,7 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
                     size_t aij = _ij_global(aj, ai, j, i);
                     for (size_t k = 0; k < _nz; ++k) {
 
-                        _channel_area(aij, k) = channel_area(i, j, k, assem_idx) * 1e-4; // convert from cm^2 to m^2
+                        _h_channel_area(aij, k) = channel_area(i, j, k, assem_idx) * 1e-4; // convert from cm^2 to m^2
 
                         // Check 4 neighboring pins (SW, SE, NW, NE) to calculate the wetted perimeter
                         // Subchannel (j,i) is bounded by pins:
@@ -270,24 +300,28 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
                         }
                         double P_wetted = A_wetted / dz(k);
                         if (P_wetted == 0.0) {
-                            _hydraulic_diameter(aij, k) = std::sqrt(4.0 * _channel_area(aij, k) / M_PI); // approximate with circular-equivalent hydraulic diameter
+                            _h_hydraulic_diameter(aij, k) = std::sqrt(4.0 * _h_channel_area(aij, k) / M_PI); // approximate with circular-equivalent hydraulic diameter
                         } else {
-                            _hydraulic_diameter(aij, k) = 4.0 * _channel_area(aij, k) / P_wetted;
+                            _h_hydraulic_diameter(aij, k) = 4.0 * _h_channel_area(aij, k) / P_wetted;
                         }
                     }
                 }
             }
         }
     }
+    Kokkos::deep_copy(_channel_area, _h_channel_area);
+    Kokkos::deep_copy(_hydraulic_diameter, _h_hydraulic_diameter);
 
     // allocate memory for surfaces and channels Views
     surfaces = SurfacesView("surfaces", nsurfaces());
     _ns_global = ViewSizeT2D("ns_global", nchannels(), 4); // 4 surfaces per channel: W, E, N, S
+    auto h_surfaces = Kokkos::create_mirror_view(surfaces);
+    auto _h_ns_global = Kokkos::create_mirror_view(_ns_global);
 
     // initialize to boundary
     for (size_t aij = 0; aij < nchannels(); ++aij) {
         for (size_t ns = 0; ns < 4; ++ns) {
-            _ns_global(aij, ns) = boundary;
+            _h_ns_global(aij, ns) = boundary;
         }
     }
 
@@ -299,23 +333,23 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
                 if (_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
                 for (size_t i = 0; i < _nchan; ++i) {
 
-                    size_t aij = _ij_global(aj, ai, j, i);  // aij the flattened global channel index
+                    size_t aij = _h_ij_global(aj, ai, j, i);  // aij the flattened global channel index
 
                     // west -> east surfaces in assembly at (aj, ai)
                     if (i + 1 < _nchan) {
-                        size_t aij_neigh = _ij_global(aj, ai, j, i + 1);
-                        surfaces(ns) = Surface(ns, aij, aij_neigh);
-                        _ns_global(aij_neigh, 0) = ns;  // ns is the neighbor channel's west surface
-                        _ns_global(aij, 1) = ns;        // ns is the current channel's east surface
+                        size_t aij_neigh = _h_ij_global(aj, ai, j, i + 1);
+                        h_surfaces(ns) = Surface(ns, aij, aij_neigh);
+                        _h_ns_global(aij_neigh, 0) = ns;  // ns is the neighbor channel's west surface
+                        _h_ns_global(aij, 1) = ns;        // ns is the current channel's east surface
                         ns++;
                     }
 
                     // east assembly neighbor surface
                     else if (ai + 1 < _core_size && _core_map(aj, ai + 1) > 0) {
-                        size_t aij_neigh = _ij_global(aj, ai + 1, j, 0);
-                        surfaces(ns) = Surface(ns, aij, aij_neigh);
-                        _ns_global(aij_neigh, 0) = ns;  // ns is the neighbor channel's west surface
-                        _ns_global(aij, 1) = ns;        // ns is the current channel's east surface
+                        size_t aij_neigh = _h_ij_global(aj, ai + 1, j, 0);
+                        h_surfaces(ns) = Surface(ns, aij, aij_neigh);
+                        _h_ns_global(aij_neigh, 0) = ns;  // ns is the neighbor channel's west surface
+                        _h_ns_global(aij, 1) = ns;        // ns is the current channel's east surface
                         ns++;
                     }
                 }
@@ -330,23 +364,23 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
                 if (_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
                 for (size_t j = 0; j < _nchan; ++j) {
 
-                    size_t aij = _ij_global(aj, ai, j, i);  // aij the flattened global channel index
+                    size_t aij = _h_ij_global(aj, ai, j, i);  // aij the flattened global channel index
 
                     // north -> south surfaces in assembly at (aj, ai)
                     if (j + 1 < _nchan) {
-                        size_t aij_neigh = _ij_global(aj, ai, j + 1, i);
-                        surfaces(ns) = Surface(ns, aij, aij_neigh);
-                        _ns_global(aij_neigh, 2) = ns;  // ns is the neighbor channel's north surface
-                        _ns_global(aij, 3) = ns;        // ns is the current channel's south surface
+                        size_t aij_neigh = _h_ij_global(aj, ai, j + 1, i);
+                        h_surfaces(ns) = Surface(ns, aij, aij_neigh);
+                        _h_ns_global(aij_neigh, 2) = ns;  // ns is the neighbor channel's north surface
+                        _h_ns_global(aij, 3) = ns;        // ns is the current channel's south surface
                         ns++;
                     }
 
                     // south assembly neighbor surface
                     else if (aj + 1 < _core_size && _core_map(aj + 1, ai) > 0) {
-                        size_t aij_neigh = _ij_global(aj + 1, ai, 0, i);
-                        surfaces(ns) = Surface(ns, aij, aij_neigh);
-                        _ns_global(aij_neigh, 2) = ns;  // ns is the neighbor channel's north surface
-                        _ns_global(aij, 3) = ns;        // ns is the current channel's south surface
+                        size_t aij_neigh = _h_ij_global(aj + 1, ai, 0, i);
+                        h_surfaces(ns) = Surface(ns, aij, aij_neigh);
+                        _h_ns_global(aij_neigh, 2) = ns;  // ns is the neighbor channel's north surface
+                        _h_ns_global(aij, 3) = ns;        // ns is the current channel's south surface
                         ns++;
                     }
                 }
@@ -420,18 +454,60 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
     std::cout << "Length: " << l << " m" << std::endl;
 
     std::cout << "========================\n" << std::endl;
+
+    // Build surface connectivity
+    build_surface_connectivity();
+}
+
+template <typename ExecutionSpace>
+double Geometry<ExecutionSpace>::core_height() const {
+    auto _h_axial_mesh = Kokkos::create_mirror_view(_axial_mesh);
+    Kokkos::deep_copy(_h_axial_mesh, _axial_mesh);
+    return _h_axial_mesh(_nz - 1) - _h_axial_mesh(0);
+}
+
+template <typename ExecutionSpace>
+double Geometry<ExecutionSpace>::flow_area(size_t aij, size_t k) const {
+    auto _h_channel_area = Kokkos::create_mirror_view(_channel_area);
+    Kokkos::deep_copy(_h_channel_area, _channel_area);
+    return _h_channel_area(aij, k);
+}
+
+template <typename ExecutionSpace>
+double Geometry<ExecutionSpace>::hydraulic_diameter(size_t aij, size_t k) const {
+    auto _h_hydraulic_diameter = Kokkos::create_mirror_view(_hydraulic_diameter);
+    Kokkos::deep_copy(_h_hydraulic_diameter, _hydraulic_diameter);
+    return _h_hydraulic_diameter(aij, k);
+}
+
+template <typename ExecutionSpace>
+double Geometry<ExecutionSpace>::dz(size_t k) const {
+    auto _h_axial_mesh = Kokkos::create_mirror_view(_axial_mesh);
+    Kokkos::deep_copy(_h_axial_mesh, _axial_mesh);
+    return _h_axial_mesh(k + 1) - _h_axial_mesh(k);
+}
+
+template <typename ExecutionSpace>
+size_t Geometry<ExecutionSpace>::core_map(size_t aj, size_t ai) const {
+    auto _h_core_map = Kokkos::create_mirror_view(_core_map);
+    Kokkos::deep_copy(_h_core_map, _core_map);
+    return _h_core_map(aj, ai);
 }
 
 template <typename ExecutionSpace>
 size_t Geometry<ExecutionSpace>::nsurfaces() const {
+
+    auto _h_core_map = Kokkos::create_mirror_view(_core_map);
+    Kokkos::deep_copy(_h_core_map, _core_map);
+
     // Total number of internal surfaces in the subchannel grid
     size_t nsurf = 0;
-    for (size_t aj = 0; aj < _core_map.extent(0); ++aj) {
-        for (size_t ai = 0; ai < _core_map.extent(1); ++ai) {
-            if (_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
+    for (size_t aj = 0; aj < _h_core_map.extent(0); ++aj) {
+        for (size_t ai = 0; ai < _h_core_map.extent(1); ++ai) {
+            if (_h_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
             nsurf += (_nchan - 1) * _nchan * 2; // vertical and horizontal surfaces
-            if (ai + 1 < core_size() && _core_map(aj, ai + 1) > 0) nsurf += _nchan; // East assembly neighbor surfaces
-            if (aj + 1 < core_size() && _core_map(aj + 1, ai) > 0) nsurf += _nchan; // South assembly neighbor surfaces
+            if (ai + 1 < core_size() && _h_core_map(aj, ai + 1) > 0) nsurf += _nchan; // East assembly neighbor surfaces
+            if (aj + 1 < core_size() && _h_core_map(aj + 1, ai) > 0) nsurf += _nchan; // South assembly neighbor surfaces
         }
     }
 
@@ -440,51 +516,130 @@ size_t Geometry<ExecutionSpace>::nsurfaces() const {
 
 template <typename ExecutionSpace>
 size_t Geometry<ExecutionSpace>::nassemblies() const {
+
+    auto _h_core_map = Kokkos::create_mirror_view(_core_map);
+    Kokkos::deep_copy(_h_core_map, _core_map);
+
     // Total number of fuel assemblies in the core
     size_t nassy = 0;
-    for (size_t i = 0; i < _core_map.extent(0); ++i) {
-        for (size_t j = 0; j < _core_map.extent(1); ++j) {
-            if (_core_map(i, j) > 0) ++nassy;
+    for (size_t i = 0; i < _h_core_map.extent(0); ++i) {
+        for (size_t j = 0; j < _h_core_map.extent(1); ++j) {
+            if (_h_core_map(i, j) > 0) ++nassy;
         }
     }
     return nassy;
 }
 
 template <typename ExecutionSpace>
+size_t Geometry<ExecutionSpace>::global_chan_index(size_t aj, size_t ai, size_t j, size_t i) const {
+    auto _h_ij_global = Kokkos::create_mirror_view(_ij_global);
+    Kokkos::deep_copy(_h_ij_global, _ij_global);
+    return _h_ij_global(aj, ai, j, i);
+}
+
+template <typename ExecutionSpace>
+size_t Geometry<ExecutionSpace>::global_surf_index(size_t aij, size_t ns) const {
+    auto _h_ns_global = Kokkos::create_mirror_view(_ns_global);
+    Kokkos::deep_copy(_h_ns_global, _ns_global);
+    return _h_ns_global(aij, ns);
+}
+
+template <typename ExecutionSpace>
 typename Geometry<ExecutionSpace>::View4D Geometry<ExecutionSpace>::_init_default_channel_area(double default_area_cm2) {
     // Initialize default channel area View with uniform values
     View4D channel_area("channel_area", _nchan, _nchan, _nz, nassemblies());
+    auto _h_channel_area = Kokkos::create_mirror_view(channel_area);
     for (size_t a = 0; a < nassemblies(); ++a) {
         for (size_t k = 0; k < _nz; ++k) {
             for (size_t j = 0; j < _nchan; ++j) {
                 for (size_t i = 0; i < _nchan; ++i) {
-                    channel_area(i, j, k, a) = default_area_cm2; // cm^2
+                    _h_channel_area(i, j, k, a) = default_area_cm2; // cm^2
                 }
             }
         }
     }
+    Kokkos::deep_copy(channel_area, _h_channel_area);
     return channel_area;
 }
 
 template <typename ExecutionSpace>
 typename Geometry<ExecutionSpace>::View4D Geometry<ExecutionSpace>::_init_default_pin_area(const View4D& pin_volumes) {
+
+    auto _h_pin_volumes = Kokkos::create_mirror_view(pin_volumes);
+    Kokkos::deep_copy(_h_pin_volumes, pin_volumes);
+
     // Initialize default channel area View with uniform values
-    View4D pin_area("channel_area", _nchan, _nchan, _nz, nassemblies());
+    View4D pin_area("pin_area", _nchan, _nchan, _nz, nassemblies());
+    auto _h_pin_area = Kokkos::create_mirror_view(pin_area);
     for (size_t a = 0; a < nassemblies(); ++a) {
         for (size_t k = 0; k < _nz; ++k) {
             for (size_t j = 0; j < _nchan; ++j) {
                 for (size_t i = 0; i < _nchan; ++i) {
-                    pin_area(i, j, k, a) = pin_volumes(i, j, k, a) / (dz(k) * 1e2); // cm^2 (dz returns [m], so convert to cm before dividing)
+                    _h_pin_area(i, j, k, a) = _h_pin_volumes(i, j, k, a) / (dz(k) * 1e2); // cm^2 (dz returns [m], so convert to cm before dividing)
                 }
             }
         }
     }
+    Kokkos::deep_copy(pin_area, _h_pin_area);
     return pin_area;
 }
 
+template <typename ExecutionSpace>
+void Geometry<ExecutionSpace>::build_surface_connectivity() {
+    const size_t nsurf = nsurfaces();
+    const size_t max_neighbors = max_surface_connectivity(); // max number of surfaces that a surface can non-trivially perturb
+
+    // Allocate connectivity views
+    _num_neighbors = ViewSizeT1D("num_neighbors", nsurf);
+    _surface_neighbors = ViewSizeT2D("surface_neighbors", nsurf, max_neighbors);
+
+    auto h_surface_neighbors = Kokkos::create_mirror_view(_surface_neighbors);
+    auto h_num_neighbors = Kokkos::create_mirror_view(_num_neighbors);
+    auto h_surfaces = Kokkos::create_mirror_view(surfaces);
+    Kokkos::deep_copy(h_surfaces, surfaces);
+
+    // Initialize to zeros
+    for (size_t ns = 0; ns < nsurf; ++ns) {
+        h_num_neighbors(ns) = 0;
+        for (size_t n = 0; n < max_neighbors; ++n) {
+            h_surface_neighbors(ns, n) = boundary;
+        }
+    }
+
+    // Build connectivity: for each surface, find other surfaces sharing its endpoints
+    for (size_t ns1 = 0; ns1 < nsurf; ++ns1) {
+        size_t from1 = h_surfaces(ns1).from_node;
+        size_t to1 = h_surfaces(ns1).to_node;
+
+        size_t neighbor_count = 0;
+        for (size_t ns2 = 0; ns2 < nsurf; ++ns2) {
+            // if (ns1 == ns2) continue; // commenting out to see if this will add diagonals as well
+
+            size_t from2 = h_surfaces(ns2).from_node;
+            size_t to2 = h_surfaces(ns2).to_node;
+
+            // Surfaces are neighbors if they share at least one channel
+            if (from1 == from2 || from1 == to2 || to1 == from2 || to1 == to2) {
+                h_surface_neighbors(ns1, neighbor_count) = ns2;
+                neighbor_count++;
+                if (neighbor_count >= max_neighbors) break;
+            }
+        }
+        h_num_neighbors(ns1) = neighbor_count;
+    }
+
+    Kokkos::deep_copy(_surface_neighbors, h_surface_neighbors);
+    Kokkos::deep_copy(_num_neighbors, h_num_neighbors);
+
+    std::cout << "Surface connectivity built:" << std::endl;
+    std::cout << "  Average neighbors per surface: "
+              << std::accumulate(h_num_neighbors.data(), h_num_neighbors.data() + nsurf, 0.0) / nsurf
+              << std::endl;
+}
+
 // Explicit template instantiations
-template class Geometry<Kokkos::DefaultExecutionSpace>;
 template class Geometry<Kokkos::Serial>;
-#if defined(KOKKOS_ENABLE_SERIAL) && !defined(KOKKOS_ENABLE_OPENMP)
-template class Geometry<Kokkos::Serial>;
+template class Geometry<Kokkos::OpenMP>;
+#ifdef KOKKOS_ENABLE_CUDA
+template class Geometry<Kokkos::Cuda>;
 #endif

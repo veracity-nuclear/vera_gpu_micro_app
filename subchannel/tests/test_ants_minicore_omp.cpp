@@ -37,9 +37,6 @@ TEST(SubchannelTest, Minicore_OpenMP) {
 
     Geometry<Kokkos::OpenMP> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial, core_map);
 
-    // working fluid is water
-    Water fluid;
-
     // create 1D views for each solver parameters
     Kokkos::View<double*, Kokkos::OpenMP> inlet_mass_flow("inlet_mass_flow", geometry.nchannels());
     Kokkos::View<double*, Kokkos::OpenMP> inlet_temperature("inlet_temperature", geometry.nchannels());
