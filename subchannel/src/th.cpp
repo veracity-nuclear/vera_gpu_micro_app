@@ -438,6 +438,8 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     const double dz = state.geom->dz(k_node); // variable axial spacing
     const double S_ij = state.geom->gap_width();
     const double aspect = state.geom->aspect_ratio();
+    auto num_neighbors = state.geom->num_neighbors_view();
+    auto neighbor_list = state.geom->surface_neighbors_view();
 
     // Copy previous plane solution as starting guess for gk
     auto h_gk = Kokkos::create_mirror_view(state.gk);
@@ -539,7 +541,8 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
             Kokkos::deep_copy(h_X_pert, perturb_state.X);
 
             Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - compute perturbed residuals f3");
-            for (size_t ns = 0; ns < nsurf; ++ns) {
+            for (size_t n = 0; n < num_neighbors(ns1); ++n) {
+                size_t ns = neighbor_list(ns1, n);
                 size_t i = surfaces(ns).from_node;
                 size_t j = surfaces(ns).to_node;
                 size_t i_donor = (h_gk_pert(ns, k_node) >= 0) ? i : j;

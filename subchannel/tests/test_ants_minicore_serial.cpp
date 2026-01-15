@@ -14,7 +14,7 @@
 TEST(SubchannelTest, Minicore_Serial) {
 
     // geometric parameters
-    size_t N = 5; // NxN pins in assembly
+    size_t N = 10; // NxN pins in assembly
     double height = 3.81; // m
     double flow_area = 1.436e-4; // m^2
     double hydraulic_diameter = 1.436e-2; // m

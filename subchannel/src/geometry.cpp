@@ -1,4 +1,5 @@
 #include "geometry.hpp"
+#include <numeric>
 
 template <typename ExecutionSpace>
 Geometry<ExecutionSpace>::Geometry(
@@ -153,6 +154,9 @@ Geometry<ExecutionSpace>::Geometry(
     std::cout << "  Total Assemblies: " << nassemblies() << std::endl;
     std::cout << "  Total Channels: " << nchannels() << std::endl;
     std::cout << "  Total Surfaces: " << nsurfaces() << std::endl;
+
+    // Build surface connectivity
+    build_surface_connectivity();
 }
 
 template <typename ExecutionSpace>
@@ -450,6 +454,9 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
     std::cout << "Length: " << l << " m" << std::endl;
 
     std::cout << "========================\n" << std::endl;
+
+    // Build surface connectivity
+    build_surface_connectivity();
 }
 
 template <typename ExecutionSpace>
@@ -575,6 +582,59 @@ typename Geometry<ExecutionSpace>::View4D Geometry<ExecutionSpace>::_init_defaul
     }
     Kokkos::deep_copy(pin_area, _h_pin_area);
     return pin_area;
+}
+
+template <typename ExecutionSpace>
+void Geometry<ExecutionSpace>::build_surface_connectivity() {
+    const size_t nsurf = nsurfaces();
+    const size_t max_neighbors = max_surface_connectivity(); // max number of surfaces that a surface can non-trivially perturb
+
+    // Allocate connectivity views
+    _num_neighbors = ViewSizeT1D("num_neighbors", nsurf);
+    _surface_neighbors = ViewSizeT2D("surface_neighbors", nsurf, max_neighbors);
+
+    auto h_surface_neighbors = Kokkos::create_mirror_view(_surface_neighbors);
+    auto h_num_neighbors = Kokkos::create_mirror_view(_num_neighbors);
+    auto h_surfaces = Kokkos::create_mirror_view(surfaces);
+    Kokkos::deep_copy(h_surfaces, surfaces);
+
+    // Initialize to zeros
+    for (size_t ns = 0; ns < nsurf; ++ns) {
+        h_num_neighbors(ns) = 0;
+        for (size_t n = 0; n < max_neighbors; ++n) {
+            h_surface_neighbors(ns, n) = boundary;
+        }
+    }
+
+    // Build connectivity: for each surface, find other surfaces sharing its endpoints
+    for (size_t ns1 = 0; ns1 < nsurf; ++ns1) {
+        size_t from1 = h_surfaces(ns1).from_node;
+        size_t to1 = h_surfaces(ns1).to_node;
+
+        size_t neighbor_count = 0;
+        for (size_t ns2 = 0; ns2 < nsurf; ++ns2) {
+            // if (ns1 == ns2) continue; // commenting out to see if this will add diagonals as well
+
+            size_t from2 = h_surfaces(ns2).from_node;
+            size_t to2 = h_surfaces(ns2).to_node;
+
+            // Surfaces are neighbors if they share at least one channel
+            if (from1 == from2 || from1 == to2 || to1 == from2 || to1 == to2) {
+                h_surface_neighbors(ns1, neighbor_count) = ns2;
+                neighbor_count++;
+                if (neighbor_count >= max_neighbors) break;
+            }
+        }
+        h_num_neighbors(ns1) = neighbor_count;
+    }
+
+    Kokkos::deep_copy(_surface_neighbors, h_surface_neighbors);
+    Kokkos::deep_copy(_num_neighbors, h_num_neighbors);
+
+    std::cout << "Surface connectivity built:" << std::endl;
+    std::cout << "  Average neighbors per surface: "
+              << std::accumulate(h_num_neighbors.data(), h_num_neighbors.data() + nsurf, 0.0) / nsurf
+              << std::endl;
 }
 
 // Explicit template instantiations

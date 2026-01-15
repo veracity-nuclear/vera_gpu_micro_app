@@ -40,6 +40,7 @@ class Geometry {
     using View2D = Kokkos::View<double **, MemorySpace>;
     using View3D = Kokkos::View<double ***, MemorySpace>;
     using View4D = Kokkos::View<double ****, MemorySpace>;
+    using ViewSizeT1D = Kokkos::View<size_t *, MemorySpace>;
     using ViewSizeT2D = Kokkos::View<size_t **, MemorySpace>;
     using ViewSizeT4D = Kokkos::View<size_t ****, MemorySpace>;
 
@@ -78,6 +79,12 @@ public:
     View2D hydraulic_diameter_view() const { return _hydraulic_diameter; }
     SurfacesView surface_view() const { return surfaces; }
 
+    // Surface connectivity accessors
+    ViewSizeT1D num_neighbors_view() const { return _num_neighbors; }
+    ViewSizeT2D surface_neighbors_view() const { return _surface_neighbors; }
+    void build_surface_connectivity();
+    size_t max_surface_connectivity() const { return 7; } // max neighbors per surface
+
 private:
     double gap_W;                   // gap width between subchannels
     double l;                       // length of axial momentum cell
@@ -93,7 +100,10 @@ private:
     View2D _hydraulic_diameter;     // hydraulic diameters [m] (size: nchannels x nz)
     View2D _heated_perimeter;       // heated perimeters [m] (size: nchannels x nz)
 
+    // Surface connectivity data
+    ViewSizeT1D _num_neighbors; // number of neighbors per surface
+    ViewSizeT2D _surface_neighbors; // neighbor surfaces for each surface (size: nsurfaces x max_neighbors)
+
     View4D _init_default_channel_area(double default_area_cm2);
     View4D _init_default_pin_area(const View4D& pin_volumes);
 };
-
