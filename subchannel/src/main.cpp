@@ -71,8 +71,10 @@ int main(int argc, char* argv[]) {
 				Kokkos::finalize();
 				return 1;
 			#endif
+			#ifdef KOKKOS_ENABLE_CUDA
 			Solver<Kokkos::Cuda> solver(parser);
 			// solver.solve();
+			#endif
 		} else {
 			std::cerr << "Error: Unsupported device '" << device << "'." << std::endl;
 			Kokkos::finalize();
