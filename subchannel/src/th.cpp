@@ -55,25 +55,18 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     Functor functor(state);
 
     auto h_f0 = Kokkos::create_mirror_view(functor.f0);
-    auto h_f3 = Kokkos::create_mirror_view(functor.f3);
-    auto h_dfdg = Kokkos::create_mirror_view(functor.dfdg); Kokkos::deep_copy(h_dfdg, 0.0);
     auto h_gk_pert = Kokkos::create_mirror_view(functor.gk);
-    auto h_P_pert = Kokkos::create_mirror_view(functor.P);
-    auto h_X_pert = Kokkos::create_mirror_view(functor.X);
 
     // outer loop for newton iteration convergence
     for (size_t outer_iter = 0; outer_iter < state.max_outer_iter; ++outer_iter) {
 
-        Kokkos::deep_copy(h_dfdg, 0.0);
+        Kokkos::deep_copy(functor.dfdg, 0.0);
 
         // accumulate surface sources
         functor.accumulate_surf_sources();
 
         // PLANAR solve
         Kokkos::parallel_for("TH::planar", planar_policy(0, nchan), functor);
-
-        Kokkos::deep_copy(h_P_pert, functor.P);
-        Kokkos::deep_copy(h_X_pert, functor.X);
 
         // calculate the residual vector f0
         Kokkos::parallel_for("TH::solve_surface_mass_flux - calculate residuals f0", residual_policy(0, nsurf), functor);

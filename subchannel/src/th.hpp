@@ -322,6 +322,8 @@ struct ANTSFunctor {
     using IndexView1D = decltype(std::declval<Geometry<ExecutionSpace>>().num_neighbors_view());
     using IndexView2D = decltype(std::declval<Geometry<ExecutionSpace>>().surface_neighbors_view());
 
+    using team_member = typename Kokkos::TeamPolicy<ExecutionSpace>::member_type;
+
     // -------- Tags for different kernels --------
     struct planar                       {};
     struct planar_perturb               {};
@@ -332,6 +334,7 @@ struct ANTSFunctor {
     struct solve_surface_mass_flux      {};
     struct surface_residual             {};
     struct perturbed_surface_residual   {};
+    struct perturbation_team            {};
 
     // -------- Stored views / data --------
     // Geometry-derived views
@@ -352,17 +355,19 @@ struct ANTSFunctor {
     double Tsat, h_f, h_fg, h_g, rho_f, rho_g, mu_f, mu_g, v_f, v_fg, v_g, sigma;
 
     Water  fluid;
+    size_t nchan;
+    size_t nsurf;
     size_t k;       // surface_plane
     size_t k_node;  // node_plane
     double gap_width;
     double aspect;
-    double K_ns{};
-    double gtol{};
-    double tol{};
+    const double K_ns = 0.5; // gap loss coefficient
+    const double gtol = 1e-3;
+    const double tol = 1e-8;
     size_t max_inner_iter = 50;
     size_t max_outer_iter = 25;
-    size_t current_ns1;
-    double current_dG;
+    mutable size_t current_ns1;
+    mutable double current_dG;
 
     // Views for mixing terms
     View1D gbar0;
@@ -417,28 +422,20 @@ struct ANTSFunctor {
         , v_g(state.fluid.v_g())
         , sigma(state.fluid.sigma())
         , fluid(state.fluid)
+        , nchan(state.geom->nchannels())
+        , nsurf(state.geom->nsurfaces())
         , k(state.surface_plane)
         , k_node(state.node_plane)
         , gap_width(state.geom->gap_width())
         , aspect(state.geom->aspect_ratio())
     {
-        const size_t nchan = A_f.extent(0);
         gbar0 = View1D("gbar0", nchan);
         reyn0 = View1D("reyn0", nchan);
         Theta = View1D("Theta", nchan);
 
-        const size_t nsurf = surfaces.extent(0);
         f0   = View1D("f0", nsurf);
         f3   = View1D("f3", nsurf);
         dfdg = View2D("dfdg", nsurf, nsurf);
-
-        // initialize source terms to 0.0
-        Kokkos::deep_copy(SS_l, 0.0);
-        Kokkos::deep_copy(SS_v, 0.0);
-        Kokkos::deep_copy(SS_m, 0.0);
-        Kokkos::deep_copy(CF_SS, 0.0);
-        Kokkos::deep_copy(TM_SS, 0.0);
-        Kokkos::deep_copy(VD_SS, 0.0);
     }
 
     // helper functions to execute operator kernels
@@ -726,7 +723,6 @@ struct ANTSFunctor {
     // TH::solve_surface_mass_flux - surface_residual -> per-surface (ns)
     KOKKOS_INLINE_FUNCTION
     void operator()(surface_residual, const size_t ns) const {
-        const double K_ns = 0.5; // gap loss coefficient
         size_t i = surfaces(ns).from_node;
         size_t j = surfaces(ns).to_node;
         size_t i_donor = (gk(ns, k_node) >= 0) ? i : j;
@@ -738,7 +734,6 @@ struct ANTSFunctor {
 
     KOKKOS_INLINE_FUNCTION
     void operator()(perturbed_surface_residual, const size_t n) const {
-        const double K_ns = 0.5; // gap loss coefficient
         const size_t ns1 = current_ns1;         // constant for this kernel launch
         const size_t ns  = neighbor_list(ns1, n);
 
@@ -753,6 +748,71 @@ struct ANTSFunctor {
 
         f3(ns) = -dz(k_node) * aspect * (deltaP - Fns);
         dfdg(ns, ns1) = (f3(ns) - f0(ns)) / current_dG;
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    void operator()(perturbation_team, const team_member& team) const {
+
+        // Loop over ns1 SEQUENTIALLY (to avoid races on gk and sources)
+        for (size_t ns1 = 0; ns1 < nsurf; ++ns1) {
+
+            double gk0 = 0.0;
+            double dG  = 0.0;
+
+            // team-wide: set perturbed gk(ns1,k_node)
+            Kokkos::single(Kokkos::PerTeam(team), [&]() {
+                current_ns1 = ns1;
+                gk0 = gk(ns1, k_node);
+                dG = (gk0 >= 0.0 ? -gtol : gtol);
+                gk(ns1, k_node) = gk0 + dG;
+                current_dG = dG;
+            });
+            team.team_barrier();
+
+            // zero source terms over channels
+            Kokkos::parallel_for(
+                Kokkos::TeamThreadRange(team, nchan),
+                [&](const int ij) {
+                    SS_l(ij)  = 0.0;
+                    SS_v(ij)  = 0.0;
+                    SS_m(ij)  = 0.0;
+                    CF_SS(ij) = 0.0;
+                    TM_SS(ij) = 0.0;
+                    VD_SS(ij) = 0.0;
+                });
+            team.team_barrier();
+
+            // accumulate_surface_sources over all surfaces
+            Kokkos::parallel_for(
+                Kokkos::TeamThreadRange(team, nsurf),
+                [&](const int ns) {
+                    this->operator()(accumulate_surface_sources{}, static_cast<size_t>(ns));
+                });
+            team.team_barrier();
+
+            // planar_perturb over channels
+            Kokkos::parallel_for(
+                Kokkos::TeamThreadRange(team, nchan),
+                [&](const int ij) {
+                    this->operator()(planar{}, static_cast<size_t>(ij));
+                });
+            team.team_barrier();
+
+            // perturbed_residual over neighbors of ns1, fill f3 and dfdg(:,ns1)
+            const size_t nneigh = num_neighbors(ns1);
+            Kokkos::parallel_for(
+                Kokkos::TeamThreadRange(team, nneigh),
+                [&](const int n) {
+                    this->operator()(perturbed_surface_residual{}, static_cast<size_t>(n));
+                });
+            team.team_barrier();
+
+            // restore gk(ns1,k_node)
+            Kokkos::single(Kokkos::PerTeam(team), [&]() {
+                gk(ns1, k_node) = gk0;
+            });
+            team.team_barrier();
+        }
     }
 };
 
