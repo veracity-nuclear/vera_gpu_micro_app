@@ -18,7 +18,6 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     const size_t nsurf = state.geom->nsurfaces();
     const size_t k = state.surface_plane;
     const size_t k_node = state.node_plane;
-    const double K_ns = 0.5; // gap loss coefficient
     const double gtol = 1e-3; // mass flux perturbation amount
     const double tol = 1e-8; // convergence tolerance
     const double dz = state.geom->dz(k_node); // variable axial spacing
@@ -51,6 +50,7 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     using Functor = ANTSFunctor<ExecutionSpace>;
     using planar_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::planar>;
     using residual_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::surface_residual>;
+    using perturbed_residual_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::perturbed_surface_residual>;
 
     Functor functor(state);
 
@@ -98,6 +98,7 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
 
         Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - perturbation loop");
         for (size_t ns1 = 0; ns1 < nsurf; ++ns1) {
+            functor.current_ns1 = ns1;
 
             Kokkos::deep_copy(h_gk_pert, functor.gk);
 
@@ -107,6 +108,8 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
             if (h_gk_pert(ns1, k_node) >= 0) h_gk_pert(ns1, k_node) -= gtol;
             else h_gk_pert(ns1, k_node) += gtol;
 
+            functor.current_dG = h_gk_pert(ns1, k_node) - gk0;
+
             Kokkos::deep_copy(functor.gk, h_gk_pert);
 
             functor.accumulate_surf_sources();
@@ -114,23 +117,9 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
             // PLANAR_PERTURB solve
             Kokkos::parallel_for("TH::planar_perturb", planar_policy(0, nchan), functor);
 
-            Kokkos::deep_copy(h_P_pert, functor.P);
-            Kokkos::deep_copy(h_X_pert, functor.X);
-
-            Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - compute perturbed residuals f3");
-            for (size_t n = 0; n < h_num_neighbors(ns1); ++n) {
-                size_t ns = h_neighbor_list(ns1, n);
-                size_t i = surfaces(ns).from_node;
-                size_t j = surfaces(ns).to_node;
-                size_t i_donor = (h_gk_pert(ns, k_node) >= 0) ? i : j;
-                double rho_m = functor.fluid.rho_m(h_X_pert(i_donor, k));
-                double deltaP = h_P_pert(i, k) - h_P_pert(j, k);
-                double Fns = 0.5 * K_ns * h_gk_pert(ns, k_node) * std::abs(h_gk_pert(ns, k_node)) / rho_m;
-                h_f3(ns) = -dz * aspect * (deltaP - Fns);
-
-                h_dfdg(ns, ns1) = (h_f3(ns) - h_f0(ns)) / (h_gk_pert(ns1, k_node) - gk0);
-            }
-            Kokkos::Profiling::popRegion();
+            // now assemble f3 and dfdg(:, ns1) on device
+            const size_t nneigh = h_num_neighbors(ns1);
+            Kokkos::parallel_for("TH::perturbed_residual", perturbed_residual_policy(0, nneigh), functor);
 
             h_gk_pert(ns1, k_node) = gk0; // restore original value
             Kokkos::deep_copy(functor.gk, h_gk_pert);
@@ -139,8 +128,6 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
 
         // solve the system of equations (overwrites f0 as solution vector)
         Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - solve_linear_system");
-        Kokkos::deep_copy(functor.dfdg, h_dfdg);
-        Kokkos::deep_copy(functor.f0, h_f0);
         solve_linear_system<ExecutionSpace>(nsurf, functor.dfdg, functor.f0);
         Kokkos::deep_copy(h_f0, functor.f0);
         Kokkos::Profiling::popRegion();

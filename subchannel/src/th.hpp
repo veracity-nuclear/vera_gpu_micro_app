@@ -331,6 +331,7 @@ struct ANTSFunctor {
     struct solve_mixing                 {};
     struct solve_surface_mass_flux      {};
     struct surface_residual             {};
+    struct perturbed_surface_residual   {};
 
     // -------- Stored views / data --------
     // Geometry-derived views
@@ -360,6 +361,8 @@ struct ANTSFunctor {
     double tol{};
     size_t max_inner_iter = 50;
     size_t max_outer_iter = 25;
+    size_t current_ns1;
+    double current_dG;
 
     // Views for mixing terms
     View1D gbar0;
@@ -731,6 +734,25 @@ struct ANTSFunctor {
         double deltaP = P(i, k) - P(j, k); // Eq. 56 from ANTS Theory
         double Fns = 0.5 * K_ns * gk(ns, k_node) * Kokkos::abs(gk(ns, k_node)) / rho_m; // Eq. 57 from ANTS Theory
         f0(ns) = -dz(k_node) * aspect * (deltaP - Fns); // Eq. 55 from ANTS Theory
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    void operator()(perturbed_surface_residual, const size_t n) const {
+        const double K_ns = 0.5; // gap loss coefficient
+        const size_t ns1 = current_ns1;         // constant for this kernel launch
+        const size_t ns  = neighbor_list(ns1, n);
+
+        const size_t i = surfaces(ns).from_node;
+        const size_t j = surfaces(ns).to_node;
+        const size_t i_donor = (gk(ns, k_node) >= 0.0) ? i : j;
+
+        const double rho_m  = fluid.rho_m(X(i_donor, k));
+        const double deltaP = P(i, k) - P(j, k);
+        const double Gj     = gk(ns, k_node);
+        const double Fns    = 0.5 * K_ns * Gj * Kokkos::abs(Gj) / rho_m;
+
+        f3(ns) = -dz(k_node) * aspect * (deltaP - Fns);
+        dfdg(ns, ns1) = (f3(ns) - f0(ns)) / current_dG;
     }
 };
 
