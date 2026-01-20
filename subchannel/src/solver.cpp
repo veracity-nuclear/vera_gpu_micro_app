@@ -1,5 +1,4 @@
 #include "solver.hpp"
-#include <chrono>
 
 template <typename ExecutionSpace>
 Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
@@ -442,6 +441,15 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
 
     print_state_at_plane(0);
 
+    using Functor = TH::ANTSFunctor<ExecutionSpace>;
+    using evap_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::solve_evaporation_term>;
+    using mixing_terms_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::solve_mixing_terms>;
+    using mixing_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::solve_mixing>;
+    using surf_sources_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::accumulate_surface_sources>;
+    using planar_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::planar>;
+
+    Functor functor(state);
+
     // loop over axial planes
     for (size_t k = 1; k < state.geom->naxial() + 1; ++k) {
 
@@ -449,26 +457,32 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
 
         // set current axial planes in state
         state.node_plane = k - 1;
+        functor.k_node = k - 1;
 
         // closure relations
-        Kokkos::Profiling::pushRegion("Solver::solve_evaporation_term");
-        TH::solve_evaporation_term<ExecutionSpace>(state);
-        Kokkos::Profiling::popRegion();
-        Kokkos::Profiling::pushRegion("Solver::solve_mixing");
-        TH::solve_mixing<ExecutionSpace>(state);
-        Kokkos::Profiling::popRegion();
+        Kokkos::parallel_for("solve_evaporation_term", evap_policy(0, state.geom->nchannels()), functor);
+        Kokkos::parallel_for("solve_mixing_terms", mixing_terms_policy(0, state.geom->nchannels()), functor);
+        Kokkos::parallel_for("solve_mixing", mixing_policy(0, state.geom->nsurfaces()), functor);
 
         // closure relations use lagging edge values, so update after solving them
         state.surface_plane = k;
+        functor.k = k;
 
         if (_cf_flag) {
-            Kokkos::Profiling::pushRegion("Solver::solve_surface_mass_flux");
             TH::solve_surface_mass_flux<ExecutionSpace>(state);
-            Kokkos::Profiling::popRegion();
         }
-        TH::planar<ExecutionSpace>(state);
 
-        if (_verbose) {
+        // initialize source terms to 0.0
+        Kokkos::deep_copy(functor.SS_l, 0.0);
+        Kokkos::deep_copy(functor.SS_v, 0.0);
+        Kokkos::deep_copy(functor.SS_m, 0.0);
+        Kokkos::deep_copy(functor.CF_SS, 0.0);
+        Kokkos::deep_copy(functor.TM_SS, 0.0);
+        Kokkos::deep_copy(functor.VD_SS, 0.0);
+        Kokkos::parallel_for("TH::accumulate_surface_sources", surf_sources_policy(0, state.geom->nsurfaces()), functor);
+        Kokkos::parallel_for("TH::planar", planar_policy(0, state.geom->nchannels()), functor);
+
+        if (true) {
             print_state_at_plane(k);
         }
 
@@ -477,6 +491,8 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
 
         std::cout << "Completed axial plane " << std::setw(3) << k << "  / " <<  std::setw(3) << state.geom->naxial()
                   << std::setw(8) << duration.count() * 1e-3 << " s" << std::endl;
+
+        // if (k == 4) return;
     }
 
 }

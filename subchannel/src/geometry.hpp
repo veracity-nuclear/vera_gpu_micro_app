@@ -8,6 +8,7 @@
 #include <limits>
 #include <vector>
 #include <cmath>
+#include <numeric>
 #include <Kokkos_Core.hpp>
 #include <highfive/H5File.hpp>
 

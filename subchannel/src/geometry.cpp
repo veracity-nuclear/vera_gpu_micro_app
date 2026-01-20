@@ -1,5 +1,4 @@
 #include "geometry.hpp"
-#include <numeric>
 
 template <typename ExecutionSpace>
 Geometry<ExecutionSpace>::Geometry(
