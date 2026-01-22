@@ -329,7 +329,7 @@ struct ANTSFunctor {
     // -------- Tags for different kernels --------
     struct planar                       {};
     struct planar_perturb               {};
-    struct accumulate_surface_sources   {};
+    struct accumulate_surf_sources      {};
     struct solve_evaporation_term       {};
     struct solve_mixing_terms           {};
     struct solve_mixing                 {};
@@ -441,7 +441,8 @@ struct ANTSFunctor {
     }
 
     // helper functions to execute operator kernels
-    void accumulate_surf_sources() {
+    void accumulate_surface_sources() {
+
         // zero source terms
         Kokkos::deep_copy(SS_l,  0.0);
         Kokkos::deep_copy(SS_v,  0.0);
@@ -450,12 +451,8 @@ struct ANTSFunctor {
         Kokkos::deep_copy(TM_SS, 0.0);
         Kokkos::deep_copy(VD_SS, 0.0);
 
-        using policy = Kokkos::RangePolicy<ExecutionSpace, accumulate_surface_sources>;
+        using policy = Kokkos::RangePolicy<ExecutionSpace, accumulate_surf_sources>;
         Kokkos::parallel_for("TH::accumulate_surface_sources", policy(0, nsurf), *this);
-    }
-
-    void accumulate_surf_sources(size_t ij) {
-
     }
 
     void perturb_surface(size_t ns) {
@@ -467,7 +464,7 @@ struct ANTSFunctor {
 
         current_dG = dG;
 
-        accumulate_surf_sources();
+        accumulate_surface_sources();
     }
 
     // --------- One operator per high-level routine ---------
@@ -498,7 +495,7 @@ struct ANTSFunctor {
 
     // TH::accumulate_surface_sources -> per-surface (ns)
     KOKKOS_INLINE_FUNCTION
-    void operator()(accumulate_surface_sources, const size_t ns) const {
+    void operator()(accumulate_surf_sources, const size_t ns) const {
         auto surf = surfaces(ns);
         size_t i = surf.from_node;
         size_t j = surf.to_node;
@@ -808,7 +805,7 @@ struct ANTSFunctor {
             Kokkos::parallel_for(
                 Kokkos::TeamThreadRange(team, nsurf),
                 [&](const int ns) {
-                    this->operator()(accumulate_surface_sources{}, static_cast<size_t>(ns));
+                    this->operator()(accumulate_surf_sources{}, static_cast<size_t>(ns));
                 });
             team.team_barrier();
 

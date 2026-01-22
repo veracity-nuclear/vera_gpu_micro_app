@@ -242,13 +242,12 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
 
     View4D channel_area; // cm^2
     auto h_channel_area = Kokkos::create_mirror_view(channel_area);
-    // if (core.exist("channel_area")) {
-    //     channel_area = HDF5ToKokkosView<View4D>(core.getDataSet("channel_area"), "channel_area"); // cm^2
-    // } else {
-    //     double default_area_cm2 = ppitch * ppitch * 1e4; // cm^2
-    //     h_channel_area = _init_default_channel_area(default_area_cm2);
-    //     Kokkos::deep_copy(channel_area, h_channel_area);
-    // }
+    if (core.exist("channel_area")) {
+        channel_area = HDF5ToKokkosView<View4D>(core.getDataSet("channel_area"), "channel_area"); // cm^2
+    } else {
+        double default_area_cm2 = ppitch * ppitch * 1e4; // cm^2
+        channel_area = _init_default_channel_area(default_area_cm2);
+    }
 
     View4D pin_area; // cm^2
     if (core.exist("pin_surface_area")) {
@@ -647,11 +646,6 @@ void Geometry<ExecutionSpace>::build_surface_connectivity() {
 
     Kokkos::deep_copy(_surface_neighbors, h_surface_neighbors);
     Kokkos::deep_copy(_num_neighbors, h_num_neighbors);
-
-    std::cout << "Surface connectivity built:" << std::endl;
-    std::cout << "  Average neighbors per surface: "
-              << std::accumulate(h_num_neighbors.data(), h_num_neighbors.data() + nsurf, 0.0) / nsurf
-              << std::endl;
 }
 
 // Explicit template instantiations

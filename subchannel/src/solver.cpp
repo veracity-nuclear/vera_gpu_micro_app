@@ -439,13 +439,12 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
     state.max_outer_iter = max_outer_iter;
     state.max_inner_iter = max_inner_iter;
 
-    print_state_at_plane(0);
+    if (_verbose) print_state_at_plane(0);
 
     using Functor = TH::ANTSFunctor<ExecutionSpace>;
     using evap_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::solve_evaporation_term>;
     using mixing_terms_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::solve_mixing_terms>;
     using mixing_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::solve_mixing>;
-    using surf_sources_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::accumulate_surface_sources>;
     using planar_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::planar>;
 
     Functor functor(state);
@@ -468,23 +467,12 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
         state.surface_plane = k;
         functor.k = k;
 
-        if (_cf_flag) {
-            TH::solve_surface_mass_flux<ExecutionSpace>(state);
-        }
+        if (_cf_flag) TH::solve_surface_mass_flux<ExecutionSpace>(state);
 
-        // initialize source terms to 0.0
-        Kokkos::deep_copy(functor.SS_l, 0.0);
-        Kokkos::deep_copy(functor.SS_v, 0.0);
-        Kokkos::deep_copy(functor.SS_m, 0.0);
-        Kokkos::deep_copy(functor.CF_SS, 0.0);
-        Kokkos::deep_copy(functor.TM_SS, 0.0);
-        Kokkos::deep_copy(functor.VD_SS, 0.0);
-        Kokkos::parallel_for("TH::accumulate_surface_sources", surf_sources_policy(0, state.geom->nsurfaces()), functor);
+        functor.accumulate_surface_sources();
         Kokkos::parallel_for("TH::planar", planar_policy(0, state.geom->nchannels()), functor);
 
-        if (_verbose) {
-            print_state_at_plane(k);
-        }
+        if (_verbose) print_state_at_plane(k);
 
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);

@@ -14,6 +14,14 @@ template <typename ExecutionSpace>
 void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux");
 
+    using Functor = ANTSFunctor<ExecutionSpace>;
+    using planar_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::planar>;
+    using planar_perturb_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::planar_perturb>;
+    using residual_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::surface_residual>;
+    using perturbed_residual_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::perturbed_surface_residual>;
+
+    Functor functor(state);
+
     const size_t nchan = state.geom->nchannels();
     const size_t nsurf = state.geom->nsurfaces();
     const size_t k = state.surface_plane;
@@ -34,19 +42,11 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
         }
     }
     // If k_node == 0, gk is already initialized from inlet BC (should be 0)
-    Kokkos::deep_copy(state.gk, h_gk);
+    Kokkos::deep_copy(functor.gk, h_gk);
 
     // Create surface mirror once (geometry doesn't change)
     auto surfaces = Kokkos::create_mirror_view(state.geom->surface_view());
     Kokkos::deep_copy(surfaces, state.geom->surface_view());
-
-    using Functor = ANTSFunctor<ExecutionSpace>;
-    using planar_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::planar>;
-    using planar_perturb_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::planar_perturb>;
-    using residual_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::surface_residual>;
-    using perturbed_residual_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::perturbed_surface_residual>;
-
-    Functor functor(state);
 
     auto h_f0 = Kokkos::create_mirror_view(functor.f0);
     auto h_gk_pert = Kokkos::create_mirror_view(functor.gk);
@@ -57,7 +57,7 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
         Kokkos::deep_copy(functor.dfdg, 0.0);
 
         // accumulate surface sources
-        functor.accumulate_surf_sources();
+        functor.accumulate_surface_sources();
 
         // PLANAR solve
         Kokkos::parallel_for("TH::planar", planar_policy(0, nchan), functor);
