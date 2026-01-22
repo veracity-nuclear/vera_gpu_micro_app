@@ -18,19 +18,12 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     const size_t nsurf = state.geom->nsurfaces();
     const size_t k = state.surface_plane;
     const size_t k_node = state.node_plane;
-    const double gtol = 1e-3; // mass flux perturbation amount
     const double tol = 1e-8; // convergence tolerance
-    const double dz = state.geom->dz(k_node); // variable axial spacing
-    const double S_ij = state.geom->gap_width();
-    const double aspect = state.geom->aspect_ratio();
     auto num_neighbors = state.geom->num_neighbors_view();
-    auto neighbor_list = state.geom->surface_neighbors_view();
 
     // Create host mirrors for geometry data
     auto h_num_neighbors = Kokkos::create_mirror_view(num_neighbors);
     Kokkos::deep_copy(h_num_neighbors, num_neighbors);
-    auto h_neighbor_list = Kokkos::create_mirror_view(neighbor_list);
-    Kokkos::deep_copy(h_neighbor_list, neighbor_list);
 
     // Copy previous plane solution as starting guess for gk
     auto h_gk = Kokkos::create_mirror_view(state.gk);
@@ -49,6 +42,7 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
 
     using Functor = ANTSFunctor<ExecutionSpace>;
     using planar_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::planar>;
+    using planar_perturb_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::planar_perturb>;
     using residual_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::surface_residual>;
     using perturbed_residual_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::perturbed_surface_residual>;
 
@@ -98,17 +92,10 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
             const double gk0 = h_gk(ns1, k_node);
 
             // perturb the mass flux at surface ns1
-            if (h_gk_pert(ns1, k_node) >= 0) h_gk_pert(ns1, k_node) -= gtol;
-            else h_gk_pert(ns1, k_node) += gtol;
-
-            functor.current_dG = h_gk_pert(ns1, k_node) - gk0;
-
-            Kokkos::deep_copy(functor.gk, h_gk_pert);
-
-            functor.accumulate_surf_sources();
+            functor.perturb_surface(ns1);
 
             // PLANAR_PERTURB solve
-            Kokkos::parallel_for("TH::planar_perturb", planar_policy(0, nchan), functor);
+            Kokkos::parallel_for("TH::planar_perturb", planar_perturb_policy(0, nchan), functor);
 
             // now assemble f3 and dfdg(:, ns1) on device
             const size_t nneigh = h_num_neighbors(ns1);

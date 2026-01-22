@@ -482,7 +482,7 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
         Kokkos::parallel_for("TH::accumulate_surface_sources", surf_sources_policy(0, state.geom->nsurfaces()), functor);
         Kokkos::parallel_for("TH::planar", planar_policy(0, state.geom->nchannels()), functor);
 
-        if (true) {
+        if (_verbose) {
             print_state_at_plane(k);
         }
 
@@ -491,8 +491,6 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
 
         std::cout << "Completed axial plane " << std::setw(3) << k << "  / " <<  std::setw(3) << state.geom->naxial()
                   << std::setw(8) << duration.count() * 1e-3 << " s" << std::endl;
-
-        // if (k == 4) return;
     }
 
 }
@@ -500,141 +498,162 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
 template <typename ExecutionSpace>
 void Solver<ExecutionSpace>::print_state_at_plane(size_t k) {
 
-    // Create host mirrors to access data
-    auto h_h_l = Kokkos::create_mirror_view(state.h_l);
-    auto h_P = Kokkos::create_mirror_view(state.P);
-    auto h_W_l = Kokkos::create_mirror_view(state.W_l);
-    auto h_W_v = Kokkos::create_mirror_view(state.W_v);
-    auto h_alpha = Kokkos::create_mirror_view(state.alpha);
-    auto h_X = Kokkos::create_mirror_view(state.X);
-    auto h_lhr = Kokkos::create_mirror_view(state.lhr);
-    auto h_evap = Kokkos::create_mirror_view(state.evap);
-
-    Kokkos::deep_copy(h_h_l, state.h_l);
-    Kokkos::deep_copy(h_P, state.P);
-    Kokkos::deep_copy(h_W_l, state.W_l);
-    Kokkos::deep_copy(h_W_v, state.W_v);
-    Kokkos::deep_copy(h_alpha, state.alpha);
-    Kokkos::deep_copy(h_X, state.X);
-    Kokkos::deep_copy(h_lhr, state.lhr);
-    Kokkos::deep_copy(h_evap, state.evap);
-
     std::cout << "\n=== PLANE " << k << " (Surface) ===" << std::endl;
     std::cout << std::setw(25) << "Variable" << std::setw(15) << "Min" << std::setw(15) << "Max" << std::setw(15) << "Avg" << std::endl;
     std::cout << std::string(70, '-') << std::endl;
 
-    // Compute statistics for Liquid Enthalpy
+    size_t nchannels = state.geom->nchannels();
+
+    // Compute statistics for Liquid Enthalpy using parallel reduction
     double h_l_min = std::numeric_limits<double>::max();
     double h_l_max = std::numeric_limits<double>::lowest();
     double h_l_sum = 0.0;
-    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-        double val = h_h_l(i, k);
-        h_l_min = std::min(h_l_min, val);
-        h_l_max = std::max(h_l_max, val);
-        h_l_sum += val;
-    }
-    double h_l_avg = h_l_sum / state.geom->nchannels();
+    auto h_l = state.h_l;
+    Kokkos::parallel_reduce("h_l_stats", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels),
+        KOKKOS_LAMBDA(const size_t i, double& min_val, double& max_val, double& sum_val) {
+            double val = h_l(i, k);
+            if (val < min_val) min_val = val;
+            if (val > max_val) max_val = val;
+            sum_val += val;
+        },
+        Kokkos::Min<double>(h_l_min),
+        Kokkos::Max<double>(h_l_max),
+        h_l_sum
+    );
+    double h_l_avg = h_l_sum / nchannels;
     std::cout << std::setw(25) << "Enthalpy [kJ/kg]" << std::setw(15) << std::setprecision(6) << h_l_min / 1e3
               << std::setw(15) << h_l_max / 1e3 << std::setw(15) << h_l_avg / 1e3 << std::endl;
 
-    // Compute statistics for Temperature (derived from enthalpy)
-    double T_min = std::numeric_limits<double>::max();
-    double T_max = std::numeric_limits<double>::lowest();
-    double T_sum = 0.0;
-    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-        double T_val = state.fluid.T(h_h_l(i, k));
-        T_min = std::min(T_min, T_val);
-        T_max = std::max(T_max, T_val);
-        T_sum += T_val;
-    }
-    double T_avg = T_sum / state.geom->nchannels();
-    std::cout << std::setw(25) << "Temperature [K]" << std::setw(15) << T_min
-              << std::setw(15) << T_max << std::setw(15) << T_avg << std::endl;
-
-    // Compute statistics for Pressure
+    // Compute statistics for Pressure using parallel reduction
     double P_min = std::numeric_limits<double>::max();
     double P_max = std::numeric_limits<double>::lowest();
     double P_sum = 0.0;
-    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-        double val = h_P(i, k);
-        P_min = std::min(P_min, val);
-        P_max = std::max(P_max, val);
-        P_sum += val;
-    }
-    double P_avg = P_sum / state.geom->nchannels();
+    auto P = state.P;
+    Kokkos::parallel_reduce("P_stats", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels),
+        KOKKOS_LAMBDA(const size_t i, double& min_val, double& max_val, double& sum_val) {
+            double val = P(i, k);
+            if (val < min_val) min_val = val;
+            if (val > max_val) max_val = val;
+            sum_val += val;
+        },
+        Kokkos::Min<double>(P_min),
+        Kokkos::Max<double>(P_max),
+        P_sum
+    );
+    double P_avg = P_sum / nchannels;
     std::cout << std::setw(25) << "Pressure [kPa]" << std::setw(15) << std::setprecision(6) << P_min / 1e3
               << std::setw(15) << P_max / 1e3 << std::setw(15) << P_avg / 1e3 << std::endl;
 
-    // Compute statistics for Liquid Flow Rate
+    // Compute statistics for Liquid Flow Rate using parallel reduction
     double W_l_min = std::numeric_limits<double>::max();
     double W_l_max = std::numeric_limits<double>::lowest();
     double W_l_sum = 0.0;
-    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-        double val = h_W_l(i, k);
-        W_l_min = std::min(W_l_min, val);
-        W_l_max = std::max(W_l_max, val);
-        W_l_sum += val;
-    }
-    double W_l_avg = W_l_sum / state.geom->nchannels();
+    auto W_l = state.W_l;
+    Kokkos::parallel_reduce("W_l_stats", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels),
+        KOKKOS_LAMBDA(const size_t i, double& min_val, double& max_val, double& sum_val) {
+            double val = W_l(i, k);
+            if (val < min_val) min_val = val;
+            if (val > max_val) max_val = val;
+            sum_val += val;
+        },
+        Kokkos::Min<double>(W_l_min),
+        Kokkos::Max<double>(W_l_max),
+        W_l_sum
+    );
+    double W_l_avg = W_l_sum / nchannels;
     std::cout << std::setw(25) << "W_l [kg/s]" << std::setw(15) << W_l_min
               << std::setw(15) << W_l_max << std::setw(15) << W_l_avg << std::endl;
 
-    // Compute statistics for Vapor Flow Rate
+    // Compute statistics for Vapor Flow Rate using parallel reduction
     double W_v_min = std::numeric_limits<double>::max();
     double W_v_max = std::numeric_limits<double>::lowest();
     double W_v_sum = 0.0;
-    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-        double val = h_W_v(i, k);
-        W_v_min = std::min(W_v_min, val);
-        W_v_max = std::max(W_v_max, val);
-        W_v_sum += val;
-    }
-    double W_v_avg = W_v_sum / state.geom->nchannels();
+    auto W_v = state.W_v;
+    Kokkos::parallel_reduce("W_v_stats", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels),
+        KOKKOS_LAMBDA(const size_t i, double& min_val, double& max_val, double& sum_val) {
+            double val = W_v(i, k);
+            if (val < min_val) min_val = val;
+            if (val > max_val) max_val = val;
+            sum_val += val;
+        },
+        Kokkos::Min<double>(W_v_min),
+        Kokkos::Max<double>(W_v_max),
+        W_v_sum
+    );
+    double W_v_avg = W_v_sum / nchannels;
     std::cout << std::setw(25) << "W_v [kg/s]" << std::setw(15) << W_v_min
               << std::setw(15) << W_v_max << std::setw(15) << W_v_avg << std::endl;
 
-    // Compute statistics for Mass Flux (liquid + vapor)
+    // Compute statistics for Mass Flux (liquid + vapor) using parallel reduction
+    // Copy channel areas to a view in State's memory space
+    Kokkos::View<double*, MemorySpace> channel_area_k("channel_area_k", nchannels);
+    auto geom_channel_area = state.geom->channel_area_view();
+    auto channel_area_k_host = Kokkos::create_mirror_view(channel_area_k);
+    auto geom_area_host = Kokkos::create_mirror_view(geom_channel_area);
+    Kokkos::deep_copy(geom_area_host, geom_channel_area);
+    for (size_t i = 0; i < nchannels; ++i) {
+        channel_area_k_host(i) = geom_area_host(i, k);
+    }
+    Kokkos::deep_copy(channel_area_k, channel_area_k_host);
+
     double G_min = std::numeric_limits<double>::max();
     double G_max = std::numeric_limits<double>::lowest();
     double G_sum = 0.0;
-    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-        double A_f = state.geom->flow_area(i, k);
-        if (A_f > 1e-12) {
-            double val = (h_W_l(i, k) + h_W_v(i, k)) / A_f;
-            G_min = std::min(G_min, val);
-            G_max = std::max(G_max, val);
-            G_sum += val;
-        }
-    }
-    double G_avg = G_sum / state.geom->nchannels();
+    Kokkos::parallel_reduce("G_stats", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels),
+        KOKKOS_LAMBDA(const size_t i, double& min_val, double& max_val, double& sum_val) {
+            double A_f = channel_area_k(i);
+            if (A_f > 1e-12) {
+                double val = (W_l(i, k) + W_v(i, k)) / A_f;
+                if (val < min_val) min_val = val;
+                if (val > max_val) max_val = val;
+                sum_val += val;
+            }
+        },
+        Kokkos::Min<double>(G_min),
+        Kokkos::Max<double>(G_max),
+        G_sum
+    );
+    double G_avg = G_sum / nchannels;
     std::cout << std::setw(26) << "Mass Flux [kg/m²/s]" << std::setw(15) << G_min
               << std::setw(15) << G_max << std::setw(15) << G_avg << std::endl;
 
-    // Compute statistics for Void Fraction
+    // Compute statistics for Void Fraction using parallel reduction
     double alpha_min = std::numeric_limits<double>::max();
     double alpha_max = std::numeric_limits<double>::lowest();
     double alpha_sum = 0.0;
-    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-        double val = h_alpha(i, k);
-        alpha_min = std::min(alpha_min, val);
-        alpha_max = std::max(alpha_max, val);
-        alpha_sum += val;
-    }
-    double alpha_avg = alpha_sum / state.geom->nchannels();
+    auto alpha = state.alpha;
+    Kokkos::parallel_reduce("alpha_stats", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels),
+        KOKKOS_LAMBDA(const size_t i, double& min_val, double& max_val, double& sum_val) {
+            double val = alpha(i, k);
+            if (val < min_val) min_val = val;
+            if (val > max_val) max_val = val;
+            sum_val += val;
+        },
+        Kokkos::Min<double>(alpha_min),
+        Kokkos::Max<double>(alpha_max),
+        alpha_sum
+    );
+    double alpha_avg = alpha_sum / nchannels;
     std::cout << std::setw(25) << "Void Fraction [-]" << std::setw(15) << alpha_min
               << std::setw(15) << alpha_max << std::setw(15) << alpha_avg << std::endl;
 
-    // Compute statistics for Quality
+    // Compute statistics for Quality using parallel reduction
     double X_min = std::numeric_limits<double>::max();
     double X_max = std::numeric_limits<double>::lowest();
     double X_sum = 0.0;
-    for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-        double val = h_X(i, k);
-        X_min = std::min(X_min, val);
-        X_max = std::max(X_max, val);
-        X_sum += val;
-    }
-    double X_avg = X_sum / state.geom->nchannels();
+    auto X = state.X;
+    Kokkos::parallel_reduce("X_stats", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels),
+        KOKKOS_LAMBDA(const size_t i, double& min_val, double& max_val, double& sum_val) {
+            double val = X(i, k);
+            if (val < min_val) min_val = val;
+            if (val > max_val) max_val = val;
+            sum_val += val;
+        },
+        Kokkos::Min<double>(X_min),
+        Kokkos::Max<double>(X_max),
+        X_sum
+    );
+    double X_avg = X_sum / nchannels;
     std::cout << std::setw(25) << "Quality [-]" << std::setw(15) << X_min
               << std::setw(15) << X_max << std::setw(15) << X_avg << std::endl;
 
@@ -647,31 +666,43 @@ void Solver<ExecutionSpace>::print_state_at_plane(size_t k) {
         std::cout << std::setw(25) << "Variable" << std::setw(15) << "Min" << std::setw(15) << "Max" << std::setw(15) << "Avg" << std::endl;
         std::cout << std::string(70, '-') << std::endl;
 
-        // Compute statistics for Linear Heat Rate
+        // Compute statistics for Linear Heat Rate using parallel reduction
         double lhr_min = std::numeric_limits<double>::max();
         double lhr_max = std::numeric_limits<double>::lowest();
         double lhr_sum = 0.0;
-        for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-            double val = h_lhr(i, k_node);
-            lhr_min = std::min(lhr_min, val);
-            lhr_max = std::max(lhr_max, val);
-            lhr_sum += val;
-        }
-        double lhr_avg = lhr_sum / state.geom->nchannels();
+        auto lhr = state.lhr;
+        Kokkos::parallel_reduce("lhr_stats", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels),
+            KOKKOS_LAMBDA(const size_t i, double& min_val, double& max_val, double& sum_val) {
+                double val = lhr(i, k_node);
+                if (val < min_val) min_val = val;
+                if (val > max_val) max_val = val;
+                sum_val += val;
+            },
+            Kokkos::Min<double>(lhr_min),
+            Kokkos::Max<double>(lhr_max),
+            lhr_sum
+        );
+        double lhr_avg = lhr_sum / nchannels;
         std::cout << std::setw(25) << "LHR [W/cm]" << std::setw(15) << lhr_min / 1e2
                   << std::setw(15) << lhr_max / 1e2 << std::setw(15) << lhr_avg / 1e2 << std::endl;
 
-        // Compute statistics for Evaporation Rate
+        // Compute statistics for Evaporation Rate using parallel reduction
         double evap_min = std::numeric_limits<double>::max();
         double evap_max = std::numeric_limits<double>::lowest();
         double evap_sum = 0.0;
-        for (size_t i = 0; i < state.geom->nchannels(); ++i) {
-            double val = h_evap(i, k_node);
-            evap_min = std::min(evap_min, val);
-            evap_max = std::max(evap_max, val);
-            evap_sum += val;
-        }
-        double evap_avg = evap_sum / state.geom->nchannels();
+        auto evap = state.evap;
+        Kokkos::parallel_reduce("evap_stats", Kokkos::RangePolicy<ExecutionSpace>(0, nchannels),
+            KOKKOS_LAMBDA(const size_t i, double& min_val, double& max_val, double& sum_val) {
+                double val = evap(i, k_node);
+                if (val < min_val) min_val = val;
+                if (val > max_val) max_val = val;
+                sum_val += val;
+            },
+            Kokkos::Min<double>(evap_min),
+            Kokkos::Max<double>(evap_max),
+            evap_sum
+        );
+        double evap_avg = evap_sum / nchannels;
         std::cout << std::setw(25) << "Evap [kg/m/s]" << std::setw(15) << evap_min
                   << std::setw(15) << evap_max << std::setw(15) << evap_avg << std::endl;
 

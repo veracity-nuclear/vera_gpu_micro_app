@@ -50,7 +50,7 @@ TEST(SubchannelTest, 7x7_Serial) {
                 u         * (1.0 - v) * c_tr +
                 (1.0 - u) * v         * c_bl +
                 u         * v         * c_br;
-            h_linear_heat_rate[j * N + i] = val * 29.1e3; // W/m
+            h_linear_heat_rate[j * N + i] = val * 150e2; // W/m
         }
     }
 

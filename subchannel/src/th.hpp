@@ -79,7 +79,7 @@ void solve_flow_rates(
 
     // Update vapor flow rate (Eq. 62 from ANTS Theory)
     W_v(ij, k) = W_v(ij, k-1) + dz * (evap(ij, k_node) - SS_v(ij));
-    W_v(ij, k) = (W_v(ij, k) > 0.0) ? W_v(ij, k) : 1e-8; // prevent negative (making this 0.0 makes enthalpy nan)
+    W_v(ij, k) = (W_v(ij, k) > 0.0) ? W_v(ij, k) : 0.0; // prevent negative
 }
 
 template <typename ExecutionSpace>
@@ -214,7 +214,7 @@ void solve_quality(
 
 template <typename ExecutionSpace>
 KOKKOS_INLINE_FUNCTION
-void solve_pressure(
+double solve_pressure(
     size_t ij, size_t k, size_t k_node, double A_f, double D_h, double dz,
     double rho_f, double rho_g, double mu_f, double mu_g,
     Water fluid,
@@ -309,6 +309,8 @@ void solve_pressure(
     // ----- total pressure drop -----
     double dP_total = dP_accel + dP_tpfric + dP_grav + dP_momexch;
     P(ij, k) = P(ij, k-1) - dP_total;
+
+    return P(ij, k);
 }
 
 template <typename ExecutionSpace>
@@ -448,10 +450,24 @@ struct ANTSFunctor {
         Kokkos::deep_copy(TM_SS, 0.0);
         Kokkos::deep_copy(VD_SS, 0.0);
 
-        using policy_type = Kokkos::RangePolicy<ExecutionSpace, accumulate_surface_sources>;
-        const size_t nsurf = surfaces.extent(0);
+        using policy = Kokkos::RangePolicy<ExecutionSpace, accumulate_surface_sources>;
+        Kokkos::parallel_for("TH::accumulate_surface_sources", policy(0, nsurf), *this);
+    }
 
-        Kokkos::parallel_for("TH::accumulate_surface_sources", policy_type(0, nsurf), *this);
+    void accumulate_surf_sources(size_t ij) {
+
+    }
+
+    void perturb_surface(size_t ns) {
+
+        auto h_gk = Kokkos::create_mirror_view(gk);
+        double dG = (h_gk(ns, k_node) >= 0) ? -gtol : gtol;
+        h_gk(ns, k_node) += dG;
+        Kokkos::deep_copy(gk, h_gk);
+
+        current_dG = dG;
+
+        accumulate_surf_sources();
     }
 
     // --------- One operator per high-level routine ---------
@@ -471,7 +487,13 @@ struct ANTSFunctor {
     // TH::planar_perturb -> per-channel (ij)
     KOKKOS_INLINE_FUNCTION
     void operator()(planar_perturb, const size_t ij) const {
-        // Similar to planar, but with perturbation logic.
+        TH::solve_flow_rates<ExecutionSpace>(ij, k, k_node, A_f(ij, k), dz(k_node), evap, SS_l, SS_v, W_l, W_v);
+        TH::solve_enthalpy<ExecutionSpace>(ij, k, k_node, dz(k_node), gap_width, h_g, W_l, W_v, lhr, SS_m, h_l);
+        TH::solve_void_fraction<ExecutionSpace>(ij, k, k_node, A_f(ij, k), D_h(ij, k), rho_f, rho_g, h_f,
+            h_fg, mu_g, sigma, max_inner_iter, fluid, P, W_l, W_v, h_l, X, alpha);
+        TH::solve_quality<ExecutionSpace>(ij, k, k_node, A_f(ij, k), W_l, W_v, X);
+        TH::solve_pressure<ExecutionSpace>(ij, k, k_node, A_f(ij, k), D_h(ij, k), dz(k_node), rho_f, rho_g, mu_f,
+            mu_g, fluid, W_l, W_v, h_l, X, alpha, CF_SS, TM_SS, VD_SS, P);
     }
 
     // TH::accumulate_surface_sources -> per-surface (ns)

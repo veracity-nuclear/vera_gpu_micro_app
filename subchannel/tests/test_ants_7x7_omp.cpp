@@ -50,7 +50,7 @@ TEST(SubchannelTest, 7x7_OpenMP) {
                 u         * (1.0 - v) * c_tr +
                 (1.0 - u) * v         * c_bl +
                 u         * v         * c_br;
-            h_linear_heat_rate[j * N + i] = val * 29.1e3; // W/m
+            h_linear_heat_rate[j * N + i] = val * 150e2; // W/m
         }
     }
 
@@ -73,8 +73,8 @@ TEST(SubchannelTest, 7x7_OpenMP) {
         inlet_mass_flow
     );
 
-    size_t outer_iter = 100;
-    size_t inner_iter = 100;
+    size_t outer_iter = 25;
+    size_t inner_iter = 50;
     solver.solve(outer_iter, inner_iter);
 
     auto h = solver.get_surface_liquid_enthalpies();

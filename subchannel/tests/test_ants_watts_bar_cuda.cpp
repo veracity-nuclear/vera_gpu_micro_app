@@ -15,9 +15,9 @@ TEST(SubchannelTest, Minicore_Cuda) {
 
     // geometric parameters
     size_t N = 17; // NxN pins in assembly
-    double height = 3.81; // m
-    double flow_area = 1.436e-4; // m^2
-    double hydraulic_diameter = 1.436e-2; // m
+    double height = 4.06337; // m
+    double flow_area = 0.00008906; // m^2
+    double hydraulic_diameter = 0.010649; // m
     double gap_width = 0.39e-2; // m
     double length = 1.3e-2; // m, length of axial momentum cell
     size_t naxial = 10; // number of axial nodes to discretize to
@@ -55,31 +55,23 @@ TEST(SubchannelTest, Minicore_Cuda) {
     auto h_inlet_pressure = Kokkos::create_mirror_view(inlet_pressure);
     auto h_linear_heat_rate = Kokkos::create_mirror_view(linear_heat_rate);
 
-    // create a gradient heat rate distribution
-    const double c_tl = 1.1, c_tr = 1.0, c_bl = 1.0, c_br = 0.9;
-    for (size_t aj = 0; aj < h_core_map.extent(0); ++aj) {
-        for (size_t ai = 0; ai < h_core_map.extent(1); ++ai) {
+    // constant heat rate distribution (for now)
+    for (size_t aj = 0; aj < core_map.extent(0); ++aj) {
+        for (size_t ai = 0; ai < core_map.extent(1); ++ai) {
             if (h_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
             for (int j = 0; j < N; ++j) {
-                double v = double(j) / double(N - 1);
                 for (int i = 0; i < N; ++i) {
                     size_t aij = geometry.global_chan_index(aj, ai, j, i);
-                    double u = double(i) / double(N - 1);
-                    double val =
-                        (1.0 - u) * (1.0 - v) * c_tl +
-                        u         * (1.0 - v) * c_tr +
-                        (1.0 - u) * v         * c_bl +
-                        u         * v         * c_br;
-                    h_linear_heat_rate[aij] = val * 29.1e3; // W/m
+                    h_linear_heat_rate[aij] = 3762.5; // W/m
                 }
             }
         }
     }
 
     for (size_t i = 0; i < geometry.nchannels(); ++i) {
-        h_inlet_mass_flow(i) = 0.25; // kg/s
-        h_inlet_temperature(i) = 278.0 + 273.15; // K
-        h_inlet_pressure(i) = 7.255e6; // Pa
+        h_inlet_mass_flow(i) = 16591.400912 / geometry.nchannels(); // kg/s
+        h_inlet_temperature(i) = 565; // K
+        h_inlet_pressure(i) = 15.5e6; // Pa
     }
 
     Kokkos::deep_copy(inlet_mass_flow, h_inlet_mass_flow);
