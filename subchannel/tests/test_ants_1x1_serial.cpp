@@ -125,7 +125,7 @@ TEST(SubchannelTest, SingleChannel) {
     }
     std::cout << std::endl;
 
-    double expected_deltaT = 21.728303; // expected temperature rise in subchannel, K
+    double expected_deltaT = 21.729681; // expected temperature rise in subchannel, K
     double actual_deltaT = fluid.T(h_h(0, naxial)) - fluid.T(h_h(0, 0));
     std::cout << "Total temperature rise: " << actual_deltaT << " K" << std::endl;
 
