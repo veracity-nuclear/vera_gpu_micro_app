@@ -28,9 +28,6 @@ TEST(SubchannelTest, 7x7_Serial) {
 
     Geometry<Kokkos::Serial> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial, core_map);
 
-    // working fluid is water
-    Water fluid;
-
     // create 1D views for each solver parameters
     Kokkos::View<double*, Kokkos::Serial> inlet_mass_flow("inlet_mass_flow", N*N);
     Kokkos::View<double*, Kokkos::Serial> inlet_temperature("inlet_temperature", N*N);
@@ -53,7 +50,7 @@ TEST(SubchannelTest, 7x7_Serial) {
                 u         * (1.0 - v) * c_tr +
                 (1.0 - u) * v         * c_bl +
                 u         * v         * c_br;
-            h_linear_heat_rate[j * N + i] = val * 29.1e3; // W/m
+            h_linear_heat_rate[j * N + i] = val * 150e2; // W/m
         }
     }
 

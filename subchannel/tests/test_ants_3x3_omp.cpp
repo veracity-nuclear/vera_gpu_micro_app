@@ -24,9 +24,6 @@ TEST(SubchannelTest, OpenMPExecution) {
 
     Geometry<Kokkos::OpenMP> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial, core_map);
 
-    // Explicitly use OpenMP execution space
-    Water fluid;
-
     // Create views with OpenMP execution space
     Kokkos::View<double*, Kokkos::OpenMP> inlet_mass_flow("inlet_mass_flow", N*N);
     Kokkos::View<double*, Kokkos::OpenMP> inlet_temperature("inlet_temperature", N*N);

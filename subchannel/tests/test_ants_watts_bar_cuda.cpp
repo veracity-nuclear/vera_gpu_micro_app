@@ -11,68 +11,67 @@
 #include "solver.hpp"
 #include "linear_algebra.hpp"
 
-TEST(SubchannelTest, Minicore_Serial) {
+TEST(SubchannelTest, Minicore_Cuda) {
 
     // geometric parameters
-    size_t N = 10; // NxN pins in assembly
-    double height = 3.81; // m
-    double flow_area = 1.436e-4; // m^2
-    double hydraulic_diameter = 1.436e-2; // m
+    size_t N = 17; // NxN pins in assembly
+    double height = 4.06337; // m
+    double flow_area = 0.00008906; // m^2
+    double hydraulic_diameter = 0.010649; // m
     double gap_width = 0.39e-2; // m
     double length = 1.3e-2; // m, length of axial momentum cell
     size_t naxial = 10; // number of axial nodes to discretize to
 
     // Create a core map
     std::vector<std::vector<size_t>> map = {
-        {1, 1, 1},
-        {1, 1, 1},
-        {1, 1, 0}
+        {1, 1, 1, 1, 1, 1, 1, 1},
+        {1, 1, 1, 1, 1, 1, 1, 1},
+        {1, 1, 1, 1, 1, 1, 1, 1},
+        {1, 1, 1, 1, 1, 1, 1, 1},
+        {1, 1, 1, 1, 1, 1, 1, 0},
+        {1, 1, 1, 1, 1, 1, 1, 0},
+        {1, 1, 1, 1, 1, 1, 0, 0},
+        {1, 1, 1, 1, 0, 0, 0, 0}
     };
-    Kokkos::View<size_t**, Kokkos::Serial> core_map("core_map", map.size(), map[0].size());
+    Kokkos::View<size_t**, Kokkos::Cuda> core_map("core_map", map.size(), map[0].size());
+    auto h_core_map = Kokkos::create_mirror_view(core_map);
     for (size_t aj = 0; aj < map.size(); ++aj) {
         for (size_t ai = 0; ai < map[aj].size(); ++ai) {
-            core_map(aj, ai) = map[aj][ai];
+            h_core_map(aj, ai) = map[aj][ai];
         }
     }
+    Kokkos::deep_copy(core_map, h_core_map);
 
-    Geometry<Kokkos::Serial> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial, core_map);
+    Geometry<Kokkos::Cuda> geometry(height, flow_area, hydraulic_diameter, gap_width, length, N, naxial, core_map);
 
     // create 1D views for each solver parameters
-    Kokkos::View<double*, Kokkos::Serial> inlet_mass_flow("inlet_mass_flow", geometry.nchannels());
-    Kokkos::View<double*, Kokkos::Serial> inlet_temperature("inlet_temperature", geometry.nchannels());
-    Kokkos::View<double*, Kokkos::Serial> inlet_pressure("inlet_pressure", geometry.nchannels());
-    Kokkos::View<double*, Kokkos::Serial> linear_heat_rate("linear_heat_rate", geometry.nchannels());
+    Kokkos::View<double*, Kokkos::Cuda> inlet_mass_flow("inlet_mass_flow", geometry.nchannels());
+    Kokkos::View<double*, Kokkos::Cuda> inlet_temperature("inlet_temperature", geometry.nchannels());
+    Kokkos::View<double*, Kokkos::Cuda> inlet_pressure("inlet_pressure", geometry.nchannels());
+    Kokkos::View<double*, Kokkos::Cuda> linear_heat_rate("linear_heat_rate", geometry.nchannels());
 
     auto h_inlet_mass_flow = Kokkos::create_mirror_view(inlet_mass_flow);
     auto h_inlet_temperature = Kokkos::create_mirror_view(inlet_temperature);
     auto h_inlet_pressure = Kokkos::create_mirror_view(inlet_pressure);
     auto h_linear_heat_rate = Kokkos::create_mirror_view(linear_heat_rate);
 
-    // create a gradient heat rate distribution
-    const double c_tl = 1.1, c_tr = 1.0, c_bl = 1.0, c_br = 0.9;
+    // constant heat rate distribution (for now)
     for (size_t aj = 0; aj < core_map.extent(0); ++aj) {
         for (size_t ai = 0; ai < core_map.extent(1); ++ai) {
-            if (core_map(aj, ai) == 0) continue; // skip non-existent assemblies
+            if (h_core_map(aj, ai) == 0) continue; // skip non-existent assemblies
             for (int j = 0; j < N; ++j) {
-                double v = double(j) / double(N - 1);
                 for (int i = 0; i < N; ++i) {
                     size_t aij = geometry.global_chan_index(aj, ai, j, i);
-                    double u = double(i) / double(N - 1);
-                    double val =
-                        (1.0 - u) * (1.0 - v) * c_tl +
-                        u         * (1.0 - v) * c_tr +
-                        (1.0 - u) * v         * c_bl +
-                        u         * v         * c_br;
-                    h_linear_heat_rate[aij] = val * 29.1e3; // W/m
+                    h_linear_heat_rate[aij] = 3762.5; // W/m
                 }
             }
         }
     }
 
     for (size_t i = 0; i < geometry.nchannels(); ++i) {
-        h_inlet_mass_flow(i) = 0.25; // kg/s
-        h_inlet_temperature(i) = 278.0 + 273.15; // K
-        h_inlet_pressure(i) = 7.255e6; // Pa
+        h_inlet_mass_flow(i) = 16591.400912 / geometry.nchannels(); // kg/s
+        h_inlet_temperature(i) = 565; // K
+        h_inlet_pressure(i) = 15.5e6; // Pa
     }
 
     Kokkos::deep_copy(inlet_mass_flow, h_inlet_mass_flow);
@@ -80,8 +79,8 @@ TEST(SubchannelTest, Minicore_Serial) {
     Kokkos::deep_copy(inlet_pressure, h_inlet_pressure);
     Kokkos::deep_copy(linear_heat_rate, h_linear_heat_rate);
 
-    Solver<Kokkos::Serial> solver(
-        std::make_shared<Geometry<Kokkos::Serial>>(geometry),
+    Solver<Kokkos::Cuda> solver(
+        std::make_shared<Geometry<Kokkos::Cuda>>(geometry),
         inlet_temperature,
         inlet_pressure,
         linear_heat_rate,

@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <chrono>
 #include <Kokkos_Core.hpp>
 
 #include "argument_parser.hpp"
