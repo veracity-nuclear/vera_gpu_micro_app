@@ -209,6 +209,7 @@ struct ANTSFunctor {
     void perturb_surface(size_t ns) {
 
         auto h_gk = Kokkos::create_mirror_view(gk);
+        Kokkos::deep_copy(h_gk, gk);
         double dG = (h_gk(ns, k_node) >= 0) ? -gtol : gtol;
         h_gk(ns, k_node) += dG;
         Kokkos::deep_copy(gk, h_gk);

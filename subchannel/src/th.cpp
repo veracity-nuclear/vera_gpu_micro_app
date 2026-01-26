@@ -89,7 +89,7 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
 
             Kokkos::deep_copy(h_gk_pert, functor.gk);
 
-            const double gk0 = h_gk(ns1, k_node);
+            const double gk0 = h_gk_pert(ns1, k_node);
 
             // perturb the mass flux at surface ns1
             functor.perturb_surface(ns1);
@@ -104,8 +104,8 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
         Kokkos::Profiling::popRegion();
 
         // solve the system of equations (overwrites f0 as solution vector)
-        Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - solve_linear_system");
-        solve_linear_system<ExecutionSpace>(nsurf, functor.dfdg, functor.f0);
+        Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - solve_linear_system_petsc");
+        solve_linear_system_petsc<ExecutionSpace>(nsurf, functor.dfdg, functor.f0);
         Kokkos::deep_copy(h_f0, functor.f0);
         Kokkos::Profiling::popRegion();
 
