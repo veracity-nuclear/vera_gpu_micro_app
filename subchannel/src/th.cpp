@@ -94,9 +94,6 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
             // perturb the mass flux at surface ns1
             functor.perturb_surface(ns1);
 
-            // PLANAR_PERTURB solve
-            Kokkos::parallel_for("TH::planar_perturb", planar_perturb_policy(0, nchan), functor);
-
             // now assemble f3 and dfdg(:, ns1) on device
             const size_t nneigh = h_num_neighbors(ns1);
             Kokkos::parallel_for("TH::perturbed_residual", perturbed_residual_policy(0, nneigh), functor);

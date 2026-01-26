@@ -8,6 +8,7 @@
 #include <utility>
 #include <type_traits>
 #include <Kokkos_Core.hpp>
+#include <Kokkos_Pair.hpp>
 
 #include "constants.hpp"
 #include "geometry.hpp"
@@ -61,256 +62,6 @@ KOKKOS_INLINE_FUNCTION
 double __quality_avg(double G_m_i, double G_m_j) {
     double K_M = 1.4; // constant from ANTS Theory, referenced from Lahey and Moody (1977)
     return K_M * (G_m_i - G_m_j) / (G_m_i + G_m_j); // Eq. 49 from ANTS Theory
-}
-
-template <typename ExecutionSpace>
-KOKKOS_INLINE_FUNCTION
-void solve_flow_rates(
-    size_t ij, size_t k, size_t k_node, double A_f, double dz,
-    typename State<ExecutionSpace>::View2D evap,
-    typename State<ExecutionSpace>::View1D SS_l,
-    typename State<ExecutionSpace>::View1D SS_v,
-    typename State<ExecutionSpace>::View2D W_l,
-    typename State<ExecutionSpace>::View2D W_v
-) {
-    // Update liquid flow rate (Eq. 61 from ANTS Theory)
-    W_l(ij, k) = W_l(ij, k-1) - dz * (evap(ij, k_node) + SS_l(ij));
-    W_l(ij, k) = (W_l(ij, k) > 0.0) ? W_l(ij, k) : 1e-8; // prevent negative (making this 0.0 makes enthalpy nan)
-
-    // Update vapor flow rate (Eq. 62 from ANTS Theory)
-    W_v(ij, k) = W_v(ij, k-1) + dz * (evap(ij, k_node) - SS_v(ij));
-    W_v(ij, k) = (W_v(ij, k) > 0.0) ? W_v(ij, k) : 0.0; // prevent negative
-}
-
-template <typename ExecutionSpace>
-KOKKOS_INLINE_FUNCTION
-void solve_enthalpy(
-    size_t ij, size_t k, size_t k_node, double dz, double gap_width, double h_g,
-    typename State<ExecutionSpace>::View2D W_l,
-    typename State<ExecutionSpace>::View2D W_v,
-    typename State<ExecutionSpace>::View2D lhr,
-    typename State<ExecutionSpace>::View1D SS_m,
-    typename State<ExecutionSpace>::View2D h_l
-) {
-    // Eq. 63 from ANTS Theory
-    h_l(ij, k) = (
-        (W_v(ij, k-1) - W_v(ij, k)) * h_g
-        + W_l(ij, k-1) * h_l(ij, k-1) + dz * lhr(ij, k_node)
-        - dz * SS_m(ij)
-    ) / W_l(ij, k);
-}
-
-template <typename ExecutionSpace>
-KOKKOS_INLINE_FUNCTION
-void solve_void_fraction(
-    size_t ij, size_t k, size_t k_node, double A_f, double D_h, double rho_f, double rho_g,
-    double h_f, double h_fg, double mu_v, double sigma, size_t max_inner_iter,
-    Water fluid,
-    typename State<ExecutionSpace>::View2D P,
-    typename State<ExecutionSpace>::View2D W_l,
-    typename State<ExecutionSpace>::View2D W_v,
-    typename State<ExecutionSpace>::View2D h_l,
-    typename State<ExecutionSpace>::View2D X,
-    typename State<ExecutionSpace>::View2D alpha
-) {
-    const double tol = 1e-8;
-    const double eps = 1e-12; // small number to prevent division by zero
-
-    // based on the Chexal-Lellouche drift flux model
-    double pressure = P(0, 0); // assuming constant pressure for simplicity
-
-    double Gv = W_v(ij, k) / A_f; // vapor mass flux
-    double Gl = W_l(ij, k) / A_f; // liquid mass flux
-
-    if (Gv < eps) {
-        alpha(ij, k) = 0.0;
-        return;
-    }
-
-    double h_v = h_f + X(ij, k) * h_fg;
-    double rho_l = fluid.rho(h_l(ij, k));
-    double mu_l = fluid.mu(h_l(ij, k));
-
-    double Re_g = __Reynolds(W_v(ij, k) / A_f, D_h, mu_v); // local vapor Reynolds number
-    double Re_f = __Reynolds(W_l(ij, k) / A_f, D_h, mu_l); // local liquid Reynolds number
-    double Re = (Re_g > Re_f) ? Re_g : Re_f;
-    double A1 = 1 / (1 + Kokkos::exp(-Re / 60000));
-    double B1 = (0.8 < A1) ? 0.8 : A1; // from Zuber correlation
-    double B2 = 1.41;
-
-    // Inline bisection method - cannot use lambda functions inside KOKKOS_LAMBDA
-    double a = 0.0;
-    double b = 1.0;
-
-    // Helper lambda-like evaluation using direct computation
-    auto evaluate_f = [&](double alpha_val) {
-        // calculate distribution parameter, C_0
-        double C1 = 4.0 * P_crit * P_crit / (pressure * (P_crit - pressure)); // Eq. 24 from ANTS Theory
-        double L = (1.0 - Kokkos::exp(-C1 * alpha_val)) / (1.0 - Kokkos::exp(-C1)); // Eq. 23 from ANTS Theory
-        double K0 = B1 + (1 - B1) * Kokkos::pow(rho_g / rho_f, 0.25); // Eq. 25 from ANTS Theory
-        double r = (1 + 1.57 * (rho_g / rho_f)) / (1 - B1); // Eq. 26 from ANTS Theory
-        double C0 = L / (K0 + (1 - K0) * Kokkos::pow(alpha_val, r)); // Eq. 22 from ANTS Theory
-
-        // calculate drift velocity, V_gj
-        double Vgj0 = B2 * Kokkos::pow(((rho_f - rho_g) * g * sigma) / (rho_f * rho_f), 0.25); // Eq. 28 from ANTS Theory
-        double Vgj = Vgj0 * Kokkos::pow(1.0 - alpha_val, B1); // Eq. 27 from ANTS Theory
-
-        return (alpha_val * C0 - 1.0) * Gv + alpha_val * C0 * (rho_g / rho_l) * Gl + alpha_val * rho_g * Vgj;
-    };
-
-    // Bisection implementation
-    double fa = evaluate_f(a);
-    double fb = evaluate_f(b);
-
-    if (Kokkos::fabs(fa) < tol) {
-        alpha(ij, k) = a;
-        return;
-    }
-    if (Kokkos::fabs(fb) < tol) {
-        alpha(ij, k) = b;
-        return;
-    }
-
-    // Root must be bracketed for bisection
-    if (fa * fb > 0) {
-        // If not bracketed, use safer default
-        alpha(ij, k) = 0.0;
-        return;
-    }
-
-    for (int i = 0; i < (int)max_inner_iter; i++) {
-        double c = 0.5 * (a + b);
-        double fc = evaluate_f(c);
-
-        if (Kokkos::fabs(fc) < tol || (b - a) < tol) {
-            alpha(ij, k) = c;
-            return;
-        }
-
-        if (fa * fc < 0) {
-            b = c;
-            fb = fc;
-        } else {
-            a = c;
-            fa = fc;
-        }
-    }
-
-    alpha(ij, k) = 0.5 * (a + b);
-}
-
-template <typename ExecutionSpace>
-KOKKOS_INLINE_FUNCTION
-void solve_quality(
-    size_t ij, size_t k, size_t k_node, double A_f,
-    typename State<ExecutionSpace>::View2D W_l,
-    typename State<ExecutionSpace>::View2D W_v,
-    typename State<ExecutionSpace>::View2D X
-) {
-    double G_v = W_v(ij, k) / A_f; // vapor mass flux (Eq. 8 from ANTS Theory)
-    double G_l = W_l(ij, k) / A_f; // liquid mass flux (Eq. 9 from ANTS Theory)
-    X(ij, k) = G_v / (G_v + G_l); // Eq. 17 from ANTS Theory
-}
-
-template <typename ExecutionSpace>
-KOKKOS_INLINE_FUNCTION
-double solve_pressure(
-    size_t ij, size_t k, size_t k_node, double A_f, double D_h, double dz,
-    double rho_f, double rho_g, double mu_f, double mu_g,
-    Water fluid,
-    typename State<ExecutionSpace>::View2D W_l,
-    typename State<ExecutionSpace>::View2D W_v,
-    typename State<ExecutionSpace>::View2D h_l,
-    typename State<ExecutionSpace>::View2D X,
-    typename State<ExecutionSpace>::View2D alpha,
-    typename State<ExecutionSpace>::View1D CF_SS,
-    typename State<ExecutionSpace>::View1D TM_SS,
-    typename State<ExecutionSpace>::View1D VD_SS,
-    typename State<ExecutionSpace>::View2D P
-) {
-    // coefficients for Adams correlation from ANTS Theory
-    const double a_1 = 0.1892;
-    const double n = -0.2;
-
-    // mass flux (liq. only)
-    double G_l = W_l(ij, k) / A_f;
-
-    // mass flux (mixture)
-    double G = (W_l(ij, k) + W_v(ij, k)) / A_f;
-
-    // ----- two-phase acceleration pressure drop -----
-    double nu_m_k, nu_m_km1;
-    if (alpha(ij, k) < 1e-6) {
-        nu_m_k = 1.0 / rho_f;
-    } else if (alpha(ij, k) > 1.0 - 1e-6) {
-        nu_m_k = 1.0 / rho_g;
-    } else {
-        nu_m_k = (1.0 - X(ij, k)) * (1.0 - X(ij, k)) / ((1.0 - alpha(ij, k)) * fluid.rho(h_l(ij, k))) +
-                    X(ij, k) * X(ij, k) / (alpha(ij, k) * rho_g);
-    }
-
-    if (alpha(ij, k-1) < 1e-6) {
-        nu_m_km1 = 1.0 / rho_f;
-    } else if (alpha(ij, k-1) > 1.0 - 1e-6) {
-        nu_m_km1 = 1.0 / rho_g;
-    } else {
-        nu_m_km1 = (1.0 - X(ij, k-1)) * (1.0 - X(ij, k-1)) / ((1.0 - alpha(ij, k-1)) * fluid.rho(h_l(ij, k-1))) +
-                    X(ij, k-1) * X(ij, k-1) / (alpha(ij, k-1) * rho_g);
-    }
-
-    double dP_accel = G * G * (nu_m_k - nu_m_km1);
-
-    // ----- two-phase frictional pressure drop -----
-    // Reynolds number (liq. only)
-    double Re = G_l * D_h / fluid.mu(h_l(ij, k));
-
-    // frictional pressure drop from wall shear
-    double f = a_1 * Kokkos::pow(Re, n);
-    double K = f * dz / D_h;
-    double gamma = Kokkos::pow(rho_f / rho_g, 0.5) * Kokkos::pow(mu_g / mu_f, 0.2);
-
-    // parameter b for two-phase multiplier (Chisholm)
-    double b;
-    if (gamma <= 9.5) {
-        b = 55.0 / Kokkos::sqrt(G);
-    } else if (gamma < 28) {
-        b = 520.0 / (gamma * Kokkos::sqrt(G));
-    } else {
-        b = 15000.0 / (gamma * gamma * Kokkos::sqrt(G));
-    }
-
-    // two-phase multiplier for wall shear (Chisholm)
-    double phi2_ch = 1.0 + (gamma * gamma - 1.0) * (b * Kokkos::pow(X(ij, k), 0.9) * Kokkos::pow((1.0 - X(ij, k)), 0.9) + Kokkos::pow(X(ij, k), 1.8));
-
-    // two-phase wall shear pressure drop
-    double dP_wall_shear = K * G * G / (2.0 * rho_f) * phi2_ch;
-
-    // form loss coefficient (no form losses in this simple model)
-    double K_loss = 0.0;
-
-    // two-phase multiplier for form losses (homogeneous), Eq. 35 from ANTS Theory
-    double phi2_hom = 1.0 + X(ij, k) * (rho_f / rho_g - 1.0);
-
-    // two-phase geometry form loss pressure drop, Eq. 36 from ANTS Theory
-    double dP_form = K_loss * G * G / (2.0 * rho_f) * phi2_hom;
-
-    // two-phase frictional pressure drop, Eq. 36 from ANTS Theory
-    double dP_tpfric = dP_wall_shear + dP_form;
-
-    // ----- two-phase gravitational pressure drop -----
-    double dP_grav = fluid.rho(h_l(ij, k)) * g * dz;
-
-    // ----- momentum exchange -----
-    double dP_CF = dz * CF_SS(ij);
-    double dP_TM = dz * TM_SS(ij);
-    double dP_VD = dz * VD_SS(ij);
-    double dP_momexch = dP_CF + dP_TM + dP_VD;
-
-    // ----- total pressure drop -----
-    double dP_total = dP_accel + dP_tpfric + dP_grav + dP_momexch;
-    P(ij, k) = P(ij, k-1) - dP_total;
-
-    return P(ij, k);
 }
 
 template <typename ExecutionSpace>
@@ -472,25 +223,21 @@ struct ANTSFunctor {
     // TH::planar -> per-channel (ij)
     KOKKOS_INLINE_FUNCTION
     void operator()(planar, const size_t ij) const {
-        TH::solve_flow_rates<ExecutionSpace>(ij, k, k_node, A_f(ij, k), dz(k_node), evap, SS_l, SS_v, W_l, W_v);
-        TH::solve_enthalpy<ExecutionSpace>(ij, k, k_node, dz(k_node), gap_width, h_g, W_l, W_v, lhr, SS_m, h_l);
-        TH::solve_void_fraction<ExecutionSpace>(ij, k, k_node, A_f(ij, k), D_h(ij, k), rho_f, rho_g, h_f,
-            h_fg, mu_g, sigma, max_inner_iter, fluid, P, W_l, W_v, h_l, X, alpha);
-        TH::solve_quality<ExecutionSpace>(ij, k, k_node, A_f(ij, k), W_l, W_v, X);
-        TH::solve_pressure<ExecutionSpace>(ij, k, k_node, A_f(ij, k), D_h(ij, k), dz(k_node), rho_f, rho_g, mu_f,
-            mu_g, fluid, W_l, W_v, h_l, X, alpha, CF_SS, TM_SS, VD_SS, P);
+        solve_flow_rates(ij, W_l(ij, k), W_v(ij, k));
+        solve_enthalpy(ij, W_l(ij, k), W_v(ij, k), h_l(ij, k));
+        solve_void_fraction(ij, W_l(ij, k), W_v(ij, k), h_l(ij, k), alpha(ij, k));
+        solve_quality(ij, W_l(ij, k), W_v(ij, k), h_l(ij, k), X(ij, k));
+        solve_pressure(ij, W_l(ij, k), W_v(ij, k), h_l(ij, k), alpha(ij, k), X(ij, k), P(ij, k));
     }
 
     // TH::planar_perturb -> per-channel (ij)
     KOKKOS_INLINE_FUNCTION
     void operator()(planar_perturb, const size_t ij) const {
-        TH::solve_flow_rates<ExecutionSpace>(ij, k, k_node, A_f(ij, k), dz(k_node), evap, SS_l, SS_v, W_l, W_v);
-        TH::solve_enthalpy<ExecutionSpace>(ij, k, k_node, dz(k_node), gap_width, h_g, W_l, W_v, lhr, SS_m, h_l);
-        TH::solve_void_fraction<ExecutionSpace>(ij, k, k_node, A_f(ij, k), D_h(ij, k), rho_f, rho_g, h_f,
-            h_fg, mu_g, sigma, max_inner_iter, fluid, P, W_l, W_v, h_l, X, alpha);
-        TH::solve_quality<ExecutionSpace>(ij, k, k_node, A_f(ij, k), W_l, W_v, X);
-        TH::solve_pressure<ExecutionSpace>(ij, k, k_node, A_f(ij, k), D_h(ij, k), dz(k_node), rho_f, rho_g, mu_f,
-            mu_g, fluid, W_l, W_v, h_l, X, alpha, CF_SS, TM_SS, VD_SS, P);
+        solve_flow_rates(ij, W_l(ij, k), W_v(ij, k));
+        solve_enthalpy(ij, W_l(ij, k), W_v(ij, k), h_l(ij, k));
+        solve_void_fraction(ij, W_l(ij, k), W_v(ij, k), h_l(ij, k), alpha(ij, k));
+        solve_quality(ij, W_l(ij, k), W_v(ij, k), h_l(ij, k), X(ij, k));
+        solve_pressure(ij, W_l(ij, k), W_v(ij, k), h_l(ij, k), alpha(ij, k), X(ij, k), P(ij, k));
     }
 
     // TH::accumulate_surface_sources -> per-surface (ns)
@@ -757,13 +504,26 @@ struct ANTSFunctor {
         const size_t ns  = neighbor_list(ns1, n);
 
         const size_t i = surfaces(ns).from_node;
-        const size_t j = surfaces(ns).to_node;
-        const size_t i_donor = (gk(ns, k_node) >= 0.0) ? i : j;
+        double Wl_i, Wv_i, hl_i, alpha_i, X_i, P_i;
+        solve_flow_rates(i, Wl_i, Wv_i);
+        solve_enthalpy(i, Wl_i, Wv_i, hl_i);
+        solve_void_fraction(i, Wl_i, Wv_i, hl_i, alpha_i);
+        solve_quality(i, Wl_i, Wv_i, hl_i, X_i);
+        solve_pressure(i, Wl_i, Wv_i, hl_i, alpha_i, X_i, P_i);
 
-        const double rho_m  = fluid.rho_m(X(i_donor, k));
-        const double deltaP = P(i, k) - P(j, k);
-        const double Gj     = gk(ns, k_node);
-        const double Fns    = 0.5 * K_ns * Gj * Kokkos::abs(Gj) / rho_m;
+        const size_t j = surfaces(ns).to_node;
+        double Wl_j, Wv_j, hl_j, alpha_j, X_j, P_j;
+        solve_flow_rates(j, Wl_j, Wv_j);
+        solve_enthalpy(j, Wl_j, Wv_j, hl_j);
+        solve_void_fraction(j, Wl_j, Wv_j, hl_j, alpha_j);
+        solve_quality(j, Wl_j, Wv_j, hl_j, X_j);
+        solve_pressure(j, Wl_j, Wv_j, hl_j, alpha_j, X_j, P_j);
+
+        const double X_donor = (gk(ns, k_node) >= 0.0) ? X_i : X_j;
+        const double rho_m  = fluid.rho_m(X_donor);
+        const double deltaP = P_i - P_j;
+        const double G_cf = gk(ns, k_node);
+        const double Fns = 0.5 * K_ns * G_cf * Kokkos::abs(G_cf) / rho_m;
 
         f3(ns) = -dz(k_node) * aspect * (deltaP - Fns);
         dfdg(ns, ns1) = (f3(ns) - f0(ns)) / current_dG;
@@ -833,6 +593,212 @@ struct ANTSFunctor {
             team.team_barrier();
         }
     }
+
+    // TH::solve_flow_rates -> per-channel (ij)
+    KOKKOS_INLINE_FUNCTION
+    void solve_flow_rates(size_t ij, double& Wl, double& Wv) const {
+
+        // Update liquid flow rate (Eq. 61 from ANTS Theory)
+        Wl = W_l(ij, k-1) - dz(k_node) * (evap(ij, k_node) + SS_l(ij));
+        Wl = (Wl > 0.0) ? Wl : 1e-8; // prevent negative (making this 0.0 makes enthalpy nan)
+
+        // Update vapor flow rate (Eq. 62 from ANTS Theory)
+        Wv = W_v(ij, k-1) + dz(k_node) * (evap(ij, k_node) - SS_v(ij));
+        Wv = (Wv > 0.0) ? Wv : 0.0; // prevent negative
+    }
+
+    // TH::solve_enthalpy -> per-channel (ij)
+    KOKKOS_INLINE_FUNCTION
+    void solve_enthalpy(size_t ij, double Wl, double Wv, double& hl) const {
+
+        // Eq. 63 from ANTS Theory
+        hl = (
+            (W_v(ij, k-1) - Wv) * h_g
+            + W_l(ij, k-1) * h_l(ij, k-1) + dz(k_node) * lhr(ij, k_node)
+            - dz(k_node) * SS_m(ij)
+        ) / Wl;
+    }
+
+    // TH::solve_void_fraction -> per-channel (ij)
+    KOKKOS_INLINE_FUNCTION
+    void solve_void_fraction(size_t ij, double Wl, double Wv, double hl, double& alpha) const {
+        const double tol_local = 1e-8;
+        const double eps = 1e-12; // small number to prevent division by zero
+
+        // based on the Chexal-Lellouche drift flux model
+        double pressure = P(0, 0); // assuming constant pressure for simplicity
+
+        double Gv = Wv / A_f(ij, k); // vapor mass flux
+        double Gl = Wl / A_f(ij, k); // liquid mass flux
+
+        if (Gv < eps) {
+            alpha = 0.0;
+        }
+
+        double h_v = h_f + X(ij, k) * h_fg;
+        double rho_l = fluid.rho(hl);
+        double mu_l = fluid.mu(hl);
+
+        double Re_g = __Reynolds(Wv / A_f(ij, k), D_h(ij, k), mu_g); // local vapor Reynolds number
+        double Re_f = __Reynolds(Wl / A_f(ij, k), D_h(ij, k), mu_l); // local liquid Reynolds number
+        double Re = (Re_g > Re_f) ? Re_g : Re_f;
+        double A1 = 1 / (1 + Kokkos::exp(-Re / 60000));
+        double B1 = (0.8 < A1) ? 0.8 : A1; // from Zuber correlation
+        double B2 = 1.41;
+
+        // Inline bisection method - cannot use lambda functions inside KOKKOS_LAMBDA
+        double a = 0.0;
+        double b = 1.0;
+
+        // Helper lambda-like evaluation using direct computation
+        auto evaluate_f = [&](double alpha_val) {
+            // calculate distribution parameter, C_0
+            double C1 = 4.0 * P_crit * P_crit / (pressure * (P_crit - pressure)); // Eq. 24 from ANTS Theory
+            double L = (1.0 - Kokkos::exp(-C1 * alpha_val)) / (1.0 - Kokkos::exp(-C1)); // Eq. 23 from ANTS Theory
+            double K0 = B1 + (1 - B1) * Kokkos::pow(rho_g / rho_f, 0.25); // Eq. 25 from ANTS Theory
+            double r = (1 + 1.57 * (rho_g / rho_f)) / (1 - B1); // Eq. 26 from ANTS Theory
+            double C0 = L / (K0 + (1 - K0) * Kokkos::pow(alpha_val, r)); // Eq. 22 from ANTS Theory
+
+            // calculate drift velocity, V_gj
+            double Vgj0 = B2 * Kokkos::pow(((rho_f - rho_g) * g * sigma) / (rho_f * rho_f), 0.25); // Eq. 28 from ANTS Theory
+            double Vgj = Vgj0 * Kokkos::pow(1.0 - alpha_val, B1); // Eq. 27 from ANTS Theory
+
+            return (alpha_val * C0 - 1.0) * Gv + alpha_val * C0 * (rho_g / rho_l) * Gl + alpha_val * rho_g * Vgj;
+        };
+
+        // Bisection implementation
+        double fa = evaluate_f(a);
+        double fb = evaluate_f(b);
+
+        if (Kokkos::fabs(fa) < tol_local) {
+            alpha = a;
+            return;
+        }
+        if (Kokkos::fabs(fb) < tol_local) {
+            alpha = b;
+            return;
+        }
+
+        // Root must be bracketed for bisection
+        if (fa * fb > 0) {
+            // If not bracketed, use safer default
+            return;
+        }
+
+        for (int i = 0; i < (int)max_inner_iter; i++) {
+            double c = 0.5 * (a + b);
+            double fc = evaluate_f(c);
+
+            if (Kokkos::fabs(fc) < tol_local || (b - a) < tol_local) {
+                alpha = c;
+                return;
+            }
+
+            if (fa * fc < 0) {
+                b = c;
+                fb = fc;
+            } else {
+                a = c;
+                fa = fc;
+            }
+        }
+
+        alpha = 0.5 * (a + b);
+    }
+
+    // TH::solve_quality -> per-channel (ij)
+    KOKKOS_INLINE_FUNCTION
+    void solve_quality(size_t ij, double Wl, double Wv, double hl, double& X) const {
+        double G_v = W_v(ij, k) / A_f(ij, k); // vapor mass flux (Eq. 8 from ANTS Theory)
+        double G_l = W_l(ij, k) / A_f(ij, k); // liquid mass flux (Eq. 9 from ANTS Theory)
+        X = G_v / (G_v + G_l); // Eq. 17 from ANTS Theory
+    }
+
+    // TH::solve_pressure -> per-channel (ij)
+    KOKKOS_INLINE_FUNCTION
+    void solve_pressure(size_t ij, double Wl, double Wv, double hl, double alpha_ijk, double X_ijk, double& P_ijk) const {
+        // coefficients for Adams correlation from ANTS Theory
+        const double a_1 = 0.1892;
+        const double n = -0.2;
+
+        // mass flux (liq. only)
+        double G_l = Wl / A_f(ij, k);
+
+        // mass flux (mixture)
+        double G = (Wl + Wv) / A_f(ij, k);
+
+        // ----- two-phase acceleration pressure drop -----
+        double nu_m_k, nu_m_km1;
+        if (alpha_ijk < 1e-6) {
+            nu_m_k = 1.0 / rho_f;
+        } else if (alpha_ijk > 1.0 - 1e-6) {
+            nu_m_k = 1.0 / rho_g;
+        } else {
+            nu_m_k = (1.0 - X_ijk) * (1.0 - X_ijk) / ((1.0 - alpha_ijk) * fluid.rho(hl)) + X_ijk * X_ijk / (alpha_ijk * rho_g);
+        }
+
+        if (alpha(ij, k-1) < 1e-6) {
+            nu_m_km1 = 1.0 / rho_f;
+        } else if (alpha(ij, k-1) > 1.0 - 1e-6) {
+            nu_m_km1 = 1.0 / rho_g;
+        } else {
+            nu_m_km1 = (1.0 - X(ij, k-1)) * (1.0 - X(ij, k-1)) / ((1.0 - alpha(ij, k-1)) * fluid.rho(h_l(ij, k-1))) +
+                        X(ij, k-1) * X(ij, k-1) / (alpha(ij, k-1) * rho_g);
+        }
+
+        double dP_accel = G * G * (nu_m_k - nu_m_km1);
+
+        // ----- two-phase frictional pressure drop -----
+        // Reynolds number (liq. only)
+        double Re = G_l * D_h(ij, k) / fluid.mu(hl);
+
+        // frictional pressure drop from wall shear
+        double f = a_1 * Kokkos::pow(Re, n);
+        double K = f * dz(k_node) / D_h(ij, k);
+        double gamma = Kokkos::pow(rho_f / rho_g, 0.5) * Kokkos::pow(mu_g / mu_f, 0.2);
+
+        // parameter b for two-phase multiplier (Chisholm)
+        double b;
+        if (gamma <= 9.5) {
+            b = 55.0 / Kokkos::sqrt(G);
+        } else if (gamma < 28) {
+            b = 520.0 / (gamma * Kokkos::sqrt(G));
+        } else {
+            b = 15000.0 / (gamma * gamma * Kokkos::sqrt(G));
+        }
+
+        // two-phase multiplier for wall shear (Chisholm)
+        double phi2_ch = 1.0 + (gamma * gamma - 1.0) * (b * Kokkos::pow(X_ijk, 0.9) * Kokkos::pow((1.0 - X_ijk), 0.9) + Kokkos::pow(X_ijk, 1.8));
+
+        // two-phase wall shear pressure drop
+        double dP_wall_shear = K * G * G / (2.0 * rho_f) * phi2_ch;
+
+        // form loss coefficient (no form losses in this simple model)
+        double K_loss = 0.0;
+
+        // two-phase multiplier for form losses (homogeneous), Eq. 35 from ANTS Theory
+        double phi2_hom = 1.0 + X_ijk * (rho_f / rho_g - 1.0);
+
+        // two-phase geometry form loss pressure drop, Eq. 36 from ANTS Theory
+        double dP_form = K_loss * G * G / (2.0 * rho_f) * phi2_hom;
+
+        // two-phase frictional pressure drop, Eq. 36 from ANTS Theory
+        double dP_tpfric = dP_wall_shear + dP_form;
+
+        // ----- two-phase gravitational pressure drop -----
+        double dP_grav = fluid.rho(hl) * g * dz(k_node);
+
+        // ----- momentum exchange -----
+        double dP_CF = dz(k_node) * CF_SS(ij);
+        double dP_TM = dz(k_node) * TM_SS(ij);
+        double dP_VD = dz(k_node) * VD_SS(ij);
+        double dP_momexch = dP_CF + dP_TM + dP_VD;
+
+        // ----- total pressure drop -----
+        double dP_total = dP_accel + dP_tpfric + dP_grav + dP_momexch;
+        P_ijk = P(ij, k-1) - dP_total;
+    }
+
 };
 
 } // namespace TH
