@@ -26,7 +26,6 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     const size_t nsurf = state.geom->nsurfaces();
     const size_t k = state.surface_plane;
     const size_t k_node = state.node_plane;
-    const double tol = 1e-8; // convergence tolerance
     auto num_neighbors = state.geom->num_neighbors_view();
 
     // Create host mirrors for geometry data
@@ -34,14 +33,13 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     Kokkos::deep_copy(h_num_neighbors, num_neighbors);
 
     // Copy previous plane solution as starting guess for gk
-    auto h_gk = Kokkos::create_mirror_view(state.gk);
-    Kokkos::deep_copy(h_gk, state.gk);
+    auto h_gk = Kokkos::create_mirror_view(functor.gk);
+    Kokkos::deep_copy(h_gk, functor.gk);
     if (k_node > 0) {
         for (size_t ns = 0; ns < nsurf; ++ns) {
             h_gk(ns, k_node) = h_gk(ns, k_node - 1);
         }
     }
-    // If k_node == 0, gk is already initialized from inlet BC (should be 0)
     Kokkos::deep_copy(functor.gk, h_gk);
 
     // Create surface mirror once (geometry doesn't change)
@@ -52,7 +50,7 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     auto h_gk_pert = Kokkos::create_mirror_view(functor.gk);
 
     // outer loop for newton iteration convergence
-    for (size_t outer_iter = 0; outer_iter < state.max_outer_iter; ++outer_iter) {
+    for (size_t outer_iter = 0; outer_iter < functor.max_outer_iter; ++outer_iter) {
 
         Kokkos::deep_copy(functor.dfdg, 0.0);
 
@@ -71,15 +69,16 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
         for (size_t ns = 0; ns < nsurf; ++ns) {
             max_res = std::max(max_res, std::abs(h_f0(ns)));
         }
+        std::cout << "Outer Iteration: " << std::setw(3) << outer_iter + 1 << ", Max Residual: " << std::scientific << max_res << std::defaultfloat << std::endl;
 
-        if (max_res < tol) {
+        if (max_res < functor.tol) {
             std::cout << "Converged plane " << k << " in " << outer_iter + 1 << " iterations." << std::endl;
             break;
         }
 
         // Check if max iterations reached
-        if (outer_iter == state.max_outer_iter - 1) {
-            std::cout << "WARNING: Plane " << k << " reached max outer iterations (" << state.max_outer_iter
+        if (outer_iter == functor.max_outer_iter - 1) {
+            std::cout << "WARNING: Plane " << k << " reached max outer iterations (" << functor.max_outer_iter
                       << ") with residual = " << std::scientific << max_res << std::defaultfloat << std::endl;
         }
 
@@ -110,9 +109,8 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
         Kokkos::Profiling::popRegion();
 
         // update mass fluxes from solution
-        std::cout << "Outer Iteration: " << std::setw(3) << outer_iter + 1 << ", Max Residual: " << std::scientific << max_res << std::defaultfloat << std::endl;
         for (size_t ns = 0; ns < nsurf; ++ns) {
-            h_gk(ns, k_node) -= h_f0(ns);
+            h_gk(ns, k_node) -= 0.5 * h_f0(ns);
         }
         Kokkos::deep_copy(functor.gk, h_gk);
 

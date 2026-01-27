@@ -39,11 +39,11 @@ PetscErrorCode PetscLinearSolver<ExecutionSpace>::initialize() {
 
     PetscCall(KSPGetPC(ksp, &pc));
     // Use simple Jacobi preconditioner (diagonal scaling) - always works, no fill
-    PetscCall(PCSetType(pc, PCJACOBI));
+    PetscCall(PCSetType(pc, PCLU));
 
     // Relaxed tolerances for nonlinear iteration: rtol=1e-2, atol=1e-4, max_iter=1000
     // These are sufficient since we're inside an outer Newton loop
-    PetscCall(KSPSetTolerances(ksp, 1e-2, 1e-4, PETSC_DEFAULT, 1000));
+    PetscCall(KSPSetTolerances(ksp, 1e-8, 1e-12, PETSC_DEFAULT, 10000));
 
     // Allow command line options to override defaults
     PetscCall(KSPSetFromOptions(ksp));
