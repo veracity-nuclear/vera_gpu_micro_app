@@ -16,7 +16,6 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
 
     using Functor = ANTSFunctor<ExecutionSpace>;
     using planar_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::planar>;
-    using planar_perturb_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::planar_perturb>;
     using residual_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::surface_residual>;
     using perturbed_residual_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::perturbed_surface_residual>;
 
@@ -110,7 +109,7 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
 
         // update mass fluxes from solution
         for (size_t ns = 0; ns < nsurf; ++ns) {
-            h_gk(ns, k_node) -= 0.5 * h_f0(ns);
+            h_gk(ns, k_node) -= h_f0(ns);
         }
         Kokkos::deep_copy(functor.gk, h_gk);
 

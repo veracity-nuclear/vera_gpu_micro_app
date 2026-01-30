@@ -14,7 +14,7 @@
 TEST(SubchannelTest, Minicore_OpenMP) {
 
     // geometric parameters
-    size_t N = 10; // NxN pins in assembly
+    size_t N = 17; // NxN pins in assembly
     double height = 4.06337; // m
     double flow_area = 0.00008906; // m^2
     double hydraulic_diameter = 0.010649; // m
@@ -54,7 +54,7 @@ TEST(SubchannelTest, Minicore_OpenMP) {
     auto h_linear_heat_rate = Kokkos::create_mirror_view(linear_heat_rate);
 
     // create a gradient heat rate distribution
-    const double c_tl = 1.1, c_tr = 1.0, c_bl = 1.0, c_br = 0.9;
+    const double c_tl = 1.01, c_tr = 1.0, c_bl = 1.0, c_br = 0.99;
     for (size_t aj = 0; aj < core_map.extent(0); ++aj) {
         for (size_t ai = 0; ai < core_map.extent(1); ++ai) {
             if (core_map(aj, ai) == 0) continue; // skip non-existent assemblies

@@ -163,9 +163,8 @@ inline static int solve_linear_system(int n, Vector2D& A, Vector1D& b) {
 // PETSc-Kokkos based linear solver
 template<typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
 inline static int solve_linear_system_petsc(int n, Kokkos::View<double**, ExecutionSpace>& A, Kokkos::View<double*, ExecutionSpace>& b) {
-    // Create PETSc solver with relaxed tolerance
-    // Using 1e-4 is appropriate for nonlinear iteration inner solves
-    PetscLinearSolver<ExecutionSpace> solver(n, 1.0e-4);
+    // Create PETSc solver
+    PetscLinearSolver<ExecutionSpace> solver(n, 1.0e-8);
 
     // Solve the system (overwrites b with solution)
     PetscErrorCode ierr = solver.solve(A, b);

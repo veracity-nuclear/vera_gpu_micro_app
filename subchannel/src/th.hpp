@@ -118,7 +118,7 @@ struct ANTSFunctor {
     const double gtol = 1e-3;
     const double tol = 1e-8;
     size_t max_inner_iter = 50;
-    size_t max_outer_iter = 50;
+    size_t max_outer_iter = 25;
     mutable size_t current_ns1;
     mutable double current_dG;
 
