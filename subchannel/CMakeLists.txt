@@ -2,6 +2,7 @@ add_library(subchannel_lib
     src/geometry.cpp
     src/solver.cpp
     src/th.cpp
+    src/petsc_linear_solver.cpp
 )
 
 target_link_libraries(subchannel_lib

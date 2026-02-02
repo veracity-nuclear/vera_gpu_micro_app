@@ -53,14 +53,22 @@ TEST(SubchannelTest, Minicore_OpenMP) {
     auto h_inlet_pressure = Kokkos::create_mirror_view(inlet_pressure);
     auto h_linear_heat_rate = Kokkos::create_mirror_view(linear_heat_rate);
 
-    // constant heat rate distribution (for now)
+    // create a gradient heat rate distribution
+    const double c_tl = 1.01, c_tr = 1.0, c_bl = 1.0, c_br = 0.99;
     for (size_t aj = 0; aj < core_map.extent(0); ++aj) {
         for (size_t ai = 0; ai < core_map.extent(1); ++ai) {
             if (core_map(aj, ai) == 0) continue; // skip non-existent assemblies
             for (int j = 0; j < N; ++j) {
+                double v = double(j) / double(N - 1);
                 for (int i = 0; i < N; ++i) {
                     size_t aij = geometry.global_chan_index(aj, ai, j, i);
-                    h_linear_heat_rate[aij] = 3762.5; // W/m
+                    double u = double(i) / double(N - 1);
+                    double val =
+                        (1.0 - u) * (1.0 - v) * c_tl +
+                        u         * (1.0 - v) * c_tr +
+                        (1.0 - u) * v         * c_bl +
+                        u         * v         * c_br;
+                    h_linear_heat_rate[aij] = val * 20e3; // W/m
                 }
             }
         }

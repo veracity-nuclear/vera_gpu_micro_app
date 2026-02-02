@@ -16,7 +16,6 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
 
     using Functor = ANTSFunctor<ExecutionSpace>;
     using planar_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::planar>;
-    using planar_perturb_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::planar_perturb>;
     using residual_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::surface_residual>;
     using perturbed_residual_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::perturbed_surface_residual>;
 
@@ -26,7 +25,6 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     const size_t nsurf = state.geom->nsurfaces();
     const size_t k = state.surface_plane;
     const size_t k_node = state.node_plane;
-    const double tol = 1e-8; // convergence tolerance
     auto num_neighbors = state.geom->num_neighbors_view();
 
     // Create host mirrors for geometry data
@@ -34,14 +32,13 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     Kokkos::deep_copy(h_num_neighbors, num_neighbors);
 
     // Copy previous plane solution as starting guess for gk
-    auto h_gk = Kokkos::create_mirror_view(state.gk);
-    Kokkos::deep_copy(h_gk, state.gk);
+    auto h_gk = Kokkos::create_mirror_view(functor.gk);
+    Kokkos::deep_copy(h_gk, functor.gk);
     if (k_node > 0) {
         for (size_t ns = 0; ns < nsurf; ++ns) {
             h_gk(ns, k_node) = h_gk(ns, k_node - 1);
         }
     }
-    // If k_node == 0, gk is already initialized from inlet BC (should be 0)
     Kokkos::deep_copy(functor.gk, h_gk);
 
     // Create surface mirror once (geometry doesn't change)
@@ -52,7 +49,7 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     auto h_gk_pert = Kokkos::create_mirror_view(functor.gk);
 
     // outer loop for newton iteration convergence
-    for (size_t outer_iter = 0; outer_iter < state.max_outer_iter; ++outer_iter) {
+    for (size_t outer_iter = 0; outer_iter < functor.max_outer_iter; ++outer_iter) {
 
         Kokkos::deep_copy(functor.dfdg, 0.0);
 
@@ -71,15 +68,16 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
         for (size_t ns = 0; ns < nsurf; ++ns) {
             max_res = std::max(max_res, std::abs(h_f0(ns)));
         }
+        std::cout << "Outer Iteration: " << std::setw(3) << outer_iter + 1 << ", Max Residual: " << std::scientific << max_res << std::defaultfloat << std::endl;
 
-        if (max_res < tol) {
+        if (max_res < functor.tol) {
             std::cout << "Converged plane " << k << " in " << outer_iter + 1 << " iterations." << std::endl;
             break;
         }
 
         // Check if max iterations reached
-        if (outer_iter == state.max_outer_iter - 1) {
-            std::cout << "WARNING: Plane " << k << " reached max outer iterations (" << state.max_outer_iter
+        if (outer_iter == functor.max_outer_iter - 1) {
+            std::cout << "WARNING: Plane " << k << " reached max outer iterations (" << functor.max_outer_iter
                       << ") with residual = " << std::scientific << max_res << std::defaultfloat << std::endl;
         }
 
@@ -89,13 +87,10 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
 
             Kokkos::deep_copy(h_gk_pert, functor.gk);
 
-            const double gk0 = h_gk(ns1, k_node);
+            const double gk0 = h_gk_pert(ns1, k_node);
 
             // perturb the mass flux at surface ns1
             functor.perturb_surface(ns1);
-
-            // PLANAR_PERTURB solve
-            Kokkos::parallel_for("TH::planar_perturb", planar_perturb_policy(0, nchan), functor);
 
             // now assemble f3 and dfdg(:, ns1) on device
             const size_t nneigh = h_num_neighbors(ns1);
@@ -107,13 +102,12 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
         Kokkos::Profiling::popRegion();
 
         // solve the system of equations (overwrites f0 as solution vector)
-        Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - solve_linear_system");
-        solve_linear_system<ExecutionSpace>(nsurf, functor.dfdg, functor.f0);
+        Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - solve_linear_system_petsc");
+        solve_linear_system_petsc<ExecutionSpace>(nsurf, functor.dfdg, functor.f0);
         Kokkos::deep_copy(h_f0, functor.f0);
         Kokkos::Profiling::popRegion();
 
         // update mass fluxes from solution
-        std::cout << "Outer Iteration: " << std::setw(3) << outer_iter + 1 << ", Max Residual: " << std::scientific << max_res << std::defaultfloat << std::endl;
         for (size_t ns = 0; ns < nsurf; ++ns) {
             h_gk(ns, k_node) -= h_f0(ns);
         }

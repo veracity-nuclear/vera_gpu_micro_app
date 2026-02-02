@@ -5,6 +5,7 @@
 #include <Kokkos_Core.hpp>
 
 #include "vectors.hpp"
+#include "petsc_linear_solver.hpp"
 
 // Templated overload for Kokkos Views with execution space
 template<typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
@@ -154,6 +155,23 @@ inline static int solve_linear_system(int n, Vector2D& A, Vector1D& b) {
             sum -= A[i][j] * b[j];
         }
         b[i] = sum / A[i][i];
+    }
+
+    return 0; // Success
+}
+
+// PETSc-Kokkos based linear solver
+template<typename ExecutionSpace = Kokkos::DefaultExecutionSpace>
+inline static int solve_linear_system_petsc(int n, Kokkos::View<double**, ExecutionSpace>& A, Kokkos::View<double*, ExecutionSpace>& b) {
+    // Create PETSc solver
+    PetscLinearSolver<ExecutionSpace> solver(n, 1.0e-8);
+
+    // Solve the system (overwrites b with solution)
+    PetscErrorCode ierr = solver.solve(A, b);
+
+    if (ierr != 0) {
+        std::cerr << "PETSc linear solver failed with error code: " << ierr << std::endl;
+        return -1;
     }
 
     return 0; // Success
