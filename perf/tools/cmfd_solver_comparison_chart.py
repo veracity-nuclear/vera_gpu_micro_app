@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 INK, INK2, SURF, GRID = "#0b0b0b", "#52514e", "#fcfcfb", "#e4e3df"
 COLS = ["#2a78d6", "#eb6834", "#1baf7a"]
-versions = ["original\n(master)", "branch 1\nGMRES + Jacobi,\nfixed kernels", "branch 2\nGMRES + 2 CCSI block\nRB-GS sweeps (Kokkos)"]
+versions = ["original\n(master)", "branch 1\nGMRES+Jacobi\nfixed kernels", "branch 2\nGMRES+2 CCSI\nRB-GS sweeps"]
 # best of 3 runs, 8 threads, same machine/session
 data = {
  "mini-core (13 power iterations)": {
@@ -20,7 +20,7 @@ data = {
    "wall time (s)\nincl. ~1.5 s MPI startup": [1.57, 1.58, 1.52],
  },
 }
-fig, axes = plt.subplots(2, 4, figsize=(15, 8.2), facecolor=SURF)
+fig, axes = plt.subplots(2, 4, figsize=(16, 8.4), facecolor=SURF)
 fig.suptitle("CMFD: original vs first optimization branch vs Kokkos block red-black SOR (CCSI) branch",
              fontsize=14, color=INK, fontweight="bold", x=0.02, ha="left", y=0.99)
 for r, (case, metrics) in enumerate(data.items()):
@@ -37,7 +37,7 @@ for r, (case, metrics) in enumerate(data.items()):
         for i in (1, 2):
             if vals[i] > 0 and vals[0] > 0:
                 ax.text(x[i], top*1.17, f"×{vals[0]/vals[i]:.1f}", ha="center", fontsize=9, color=INK2, style="italic")
-        ax.set_xticks(x); ax.set_xticklabels(versions if r == 1 else ["", "", ""], fontsize=8.5, color=INK2)
+        ax.set_xticks(x); ax.set_xticklabels(versions if r == 1 else ["", "", ""], fontsize=8.2, color=INK2)
         ax.set_title(metric, fontsize=10, color=INK, loc="left")
         ax.yaxis.grid(True, color=GRID); ax.set_axisbelow(True)
         for s in ["top", "right"]: ax.spines[s].set_visible(False)
