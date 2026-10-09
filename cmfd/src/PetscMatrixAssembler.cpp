@@ -530,6 +530,8 @@ PetscErrorCode CSRMatrixAssembler::_assembleM()
     Kokkos::View<PetscInt *> rowIndices("rowIndicesKokkos", matSize + 1);
     Kokkos::View<PetscInt *> colIndices("colIndicesKokkos", numNonZero);
     Kokkos::View<PetscScalar *> values("valuesCOO", numNonZero);
+    // Leakage slots that no surface claims (boundary cells) stay at -1 and are compacted away below
+    Kokkos::deep_copy(colIndices, -1);
 
     // Scatter XS and Removal XS won't conflict
     // Leakage terms will conflict on the ++ and -- terms.
@@ -668,9 +670,65 @@ PetscErrorCode CSRMatrixAssembler::_assembleM()
 
     } // Kokkos scope ends
 
-    // Actually put the values into the matrix
     Kokkos::fence();
-    PetscCall(MatCreateSeqAIJKokkosWithKokkosViews(PETSC_COMM_SELF, matSize, matSize, rowIndices, colIndices, values, &MMat));
+
+    // Compact the fixed-width rows into a proper CSR matrix: drop the unused (col = -1) leakage slots of
+    // boundary cells and sort each row's columns. PETSc's AIJ kernels tolerate padding and unsorted rows
+    // only partially (ILU and point-block Jacobi misbehave on them), and a well-formed CSR is also what the
+    // block solvers in KokkosBlockGS.cpp expect.
+    Kokkos::View<PetscInt *> rowPtr("csrRowPtr", matSize + 1);
+    {
+        Kokkos::View<PetscInt *> rowCount("csrRowCount", matSize);
+        Kokkos::parallel_for("CSRMatrixAssembler: count", Kokkos::RangePolicy<AssemblySpace>(0, matSize),
+            KOKKOS_LAMBDA(const PetscInt row)
+        {
+            PetscInt count = 0;
+            for (PetscInt k = row * maxNNZInRow; k < (row + 1) * maxNNZInRow; ++k) {
+                if (colIndices(k) >= 0) ++count;
+            }
+            rowCount(row) = count;
+        });
+        Kokkos::parallel_scan("CSRMatrixAssembler: row offsets", Kokkos::RangePolicy<AssemblySpace>(0, matSize),
+            KOKKOS_LAMBDA(const PetscInt row, PetscInt &partial, const bool final)
+        {
+            if (final) rowPtr(row) = partial;
+            partial += rowCount(row);
+            if (final && row == matSize - 1) rowPtr(matSize) = partial;
+        });
+    }
+    Kokkos::fence();
+    PetscInt nnzCompact = 0;
+    Kokkos::deep_copy(nnzCompact, Kokkos::subview(rowPtr, matSize));
+
+    Kokkos::View<PetscInt *> colCompact("csrColIdx", nnzCompact);
+    Kokkos::View<PetscScalar *> valCompact("csrValues", nnzCompact);
+    Kokkos::parallel_for("CSRMatrixAssembler: compact and sort rows", Kokkos::RangePolicy<AssemblySpace>(0, matSize),
+        KOKKOS_LAMBDA(const PetscInt row)
+    {
+        PetscInt out = rowPtr(row);
+        const PetscInt begin = out;
+        for (PetscInt k = row * maxNNZInRow; k < (row + 1) * maxNNZInRow; ++k) {
+            const PetscInt col = colIndices(k);
+            if (col < 0) continue;
+            // insertion sort by column (rows hold at most nGroups + 6 entries)
+            PetscInt pos = out;
+            while (pos > begin && colCompact(pos - 1) > col) {
+                colCompact(pos) = colCompact(pos - 1);
+                valCompact(pos) = valCompact(pos - 1);
+                --pos;
+            }
+            colCompact(pos) = col;
+            valCompact(pos) = values(k);
+            ++out;
+        }
+    });
+    Kokkos::fence();
+
+    // Actually put the values into the matrix
+    PetscCall(MatCreateSeqAIJKokkosWithKokkosViews(PETSC_COMM_SELF, matSize, matSize, rowPtr, colCompact, valCompact, &MMat));
+    // Rows are grouped by cell with nGroups consecutive rows per cell: expose that as the block size so
+    // block preconditioners (-pc_type pbjacobi, kokkosbgs) can use it.
+    PetscCall(MatSetBlockSize(MMat, cmfdData.nGroups));
 
     PetscFunctionReturn(PETSC_SUCCESS);
 }

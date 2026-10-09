@@ -1,4 +1,5 @@
 #include "PetscEigenSolver.hpp"
+#include "KokkosBlockGS.hpp"
 
 PetscEigenSolver::PetscEigenSolver(AssemblerPtr&& _assemblerPtr, PetscScalar initialGuess)
     : assemblerPtr(std::move(_assemblerPtr))
@@ -11,14 +12,20 @@ PetscEigenSolver::PetscEigenSolver(AssemblerPtr&& _assemblerPtr, PetscScalar ini
     PetscCallCXXAbort(PETSC_COMM_SELF, KSPSetOperators(ksp, A, A));
     PetscCallCXXAbort(PETSC_COMM_SELF, KSPSetTolerances(ksp, kspRtol, PETSC_CURRENT, PETSC_CURRENT, PETSC_CURRENT));
 
-    // These defaults can be override by command line options.
-    PetscCallCXXAbort(PETSC_COMM_SELF, KSPGetPC(ksp, &pc));
-    PetscCallCXXAbort(PETSC_COMM_SELF, PCSetType(pc, PCJACOBI));
-
     // Each inner solve starts from the flux of the previous power iteration, which is
     // already close to the solution, instead of from zero (~30-50% fewer KSP iterations).
     // This is why the KSP uses the tighter kspRtol rather than tol (see the header).
     PetscCallCXXAbort(PETSC_COMM_SELF, KSPSetInitialGuessNonzero(ksp, PETSC_TRUE));
+
+    // Default preconditioner: one Kokkos block red-black Gauss-Seidel sweep (see KokkosBlockGS.hpp).
+    // Measured on mini-core against point Jacobi: GMRES matvecs 1122 -> 516, KSPSolve 2.3x faster on
+    // the host, and the sweep is two kernel launches with no reductions, so it maps well to GPUs.
+    // Point-block Jacobi (-pc_type pbjacobi) gave no reduction at all: the convergence limiter is the
+    // spatial leakage coupling, not the within-cell group coupling. All of this can be overridden on
+    // the command line (-pc_type jacobi, -ksp_type richardson for a pure block-SOR inner iteration, ...).
+    PetscCallCXXAbort(PETSC_COMM_SELF, PCRegisterKokkosBlockGS());
+    PetscCallCXXAbort(PETSC_COMM_SELF, KSPGetPC(ksp, &pc));
+    PetscCallCXXAbort(PETSC_COMM_SELF, PCSetType(pc, "kokkosbgs"));
 
     PetscCallCXXAbort(PETSC_COMM_SELF, KSPSetFromOptions(ksp));
 

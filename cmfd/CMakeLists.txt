@@ -2,6 +2,7 @@ add_library(cmfd_lib
     src/main.cpp
     src/PetscMatrixAssembler.cpp
     src/PetscEigenSolver.cpp
+    src/KokkosBlockGS.cpp
 )
 
 target_link_libraries(cmfd_lib
