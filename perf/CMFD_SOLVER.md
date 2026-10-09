@@ -82,3 +82,10 @@ iteration using the existing fission-source kernel, (c) N block-SOR sweeps per o
 from a few Jacobi iterations or fixed at ~1.7, and (d) a fission-source-norm convergence test (or Wielandt
 shift, which also cuts the outer count). Expect ~200 sweeps for mini-core. Keep the PETSc path behind the
 same interface for the multi-rank case; the assembler and fission-source kernels are shared either way.
+
+## Figure
+
+`cmfd_solver_comparison.png` compares original master, the first optimization branch (GMRES + Jacobi with the
+fixed fission kernel and nonzero initial guess) and this branch, best of 3 runs each. Sub-0.1 s timings on this
+WSL machine jitter by 2-10x between runs (OpenMP wake-up latency), so treat the matvec counts as the reliable
+column and the small-case times as indicative only.
