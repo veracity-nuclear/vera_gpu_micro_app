@@ -292,6 +292,8 @@ ArgumentParser ArgumentParser::vera_gpu_subchannel_parser(const std::string& pro
     parser.add_flag("no-crossflow", "Disable crossflow calculations");
     parser.add_option("threads", "Number of threads to use", "0");
     parser.add_option("device", "Device to use", "serial", {"serial", "openmp"});
+    parser.add_option("jacobian", "Crossflow Jacobian: analytic (chain rule), fd (finite difference), check (both, report difference)", "analytic", {"analytic", "fd", "check"});
+    parser.add_option("void_solver", "Drift-flux void fraction root solver (newton, bisection)", "newton", {"newton", "bisection"});
     parser.add_option("max_outer_iter", "Maximum number of outer loop iterations", "100");
     parser.add_option("max_inner_iter", "Maximum number of inner loop iterations", "100");
 

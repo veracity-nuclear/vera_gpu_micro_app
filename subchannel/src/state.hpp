@@ -11,6 +11,8 @@ struct State {
     size_t node_plane = 0;          // current node axial plane being solved
     size_t max_outer_iter;          // maximum outer iterations
     size_t max_inner_iter;          // maximum inner iterations
+    int jacobian_mode = 0;          // crossflow Jacobian: 0 analytic, 1 finite difference, 2 both (check)
+    bool void_bisection = false;    // drift-flux root: false Newton (safeguarded), true original bisection
 
     Water fluid;
     std::shared_ptr<Geometry<ExecutionSpace>> geom; // reference to geometry
@@ -54,6 +56,8 @@ struct State {
           node_plane(other.node_plane),
           max_outer_iter(other.max_outer_iter),
           max_inner_iter(other.max_inner_iter),
+          jacobian_mode(other.jacobian_mode),
+          void_bisection(other.void_bisection),
           fluid(other.fluid),
           geom(other.geom),   // shared_ptr copy — shares ownership
           h_l("h_l", other.h_l.extent(0), other.h_l.extent(1)),
@@ -111,6 +115,8 @@ struct State {
             node_plane = other.node_plane;
             max_outer_iter = other.max_outer_iter;
             max_inner_iter = other.max_inner_iter;
+            jacobian_mode = other.jacobian_mode;
+            void_bisection = other.void_bisection;
             fluid = other.fluid;
             geom = other.geom;
 

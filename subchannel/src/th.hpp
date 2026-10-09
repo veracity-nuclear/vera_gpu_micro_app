@@ -86,6 +86,8 @@ struct ANTSFunctor {
     struct solve_mixing                 {};
     struct surface_residual             {};
     struct jacobian_columns             {};
+    struct jacobian_columns_analytic    {};
+    struct channel_partials             {};
     struct copy_gk_from_previous_plane  {};
     struct apply_gk_update              {};
 
@@ -129,6 +131,18 @@ struct ANTSFunctor {
     // Residual vector and sparse (CSR) Jacobian values; the CSR structure lives in Geometry
     View1D f0;
     View1D jac_values;
+    View1D jac_values_fd;   // finite-difference Jacobian, only filled in "check" mode
+
+    // Per-channel partial derivatives of the planar map with respect to the channel's accumulated
+    // sources, filled by the channel_partials kernel and consumed by jacobian_columns_analytic:
+    //   dchan(ij, 0) = dP/dSS_l, dchan(ij, 1) = dP/dSS_v, dchan(ij, 2) = dP/dCF_SS,
+    //   dchan(ij, 3) = dX/dSS_l, dchan(ij, 4) = dX/dSS_v
+    // (dP/dSS_m and dX/dSS_m vanish because the fluid properties here do not depend on enthalpy.)
+    View2D dchan;
+    int debug_channel = -1;      // if >= 0, channel_partials prints an FD check of dP/dWl, dP/dWv for this channel
+    int jacobian_mode = 0;       // 0 analytic, 1 finite difference, 2 both
+    bool void_bisection = false; // original bisection instead of safeguarded Newton for the void fraction
+    bool fd_consistent_X = false; // FD columns recompute X from the perturbed flow rates (true planar map) instead of the stored X
 
     ANTSFunctor(StateType& state)
         : surfaces(state.geom->surface_view())
@@ -187,6 +201,10 @@ struct ANTSFunctor {
 
         f0   = View1D("f0", nsurf);
         jac_values = View1D("jac_values", state.geom->jacobian_nnz());
+        jacobian_mode = state.jacobian_mode;
+        void_bisection = state.void_bisection;
+        if (jacobian_mode == 2) jac_values_fd = View1D("jac_values_fd", state.geom->jacobian_nnz());
+        dchan = View2D("dchan", nchan, 5);
     }
 
     // helper functions to execute operator kernels
@@ -487,7 +505,11 @@ struct ANTSFunctor {
         solve_flow_rates(ij, SS_l(ij) + dSS[0], SS_v(ij) + dSS[1], Wl, Wv);
         solve_enthalpy(ij, Wl, Wv, SS_m(ij) + dSS[2], hl);
         solve_void_fraction(ij, Wl, Wv, hl, alpha_ij);
-        solve_quality(ij, Wl, Wv, hl, X_ij);
+        if (fd_consistent_X) {
+            X_ij = Wv / (Wv + Wl);
+        } else {
+            solve_quality(ij, Wl, Wv, hl, X_ij);
+        }
         solve_pressure(ij, Wl, Wv, hl, alpha_ij, X_ij, CF_SS(ij) + dSS[3], TM_SS(ij) + dSS[4], VD_SS(ij) + dSS[5], P_ij);
     }
 
@@ -591,53 +613,109 @@ struct ANTSFunctor {
     // TH::solve_void_fraction -> per-channel (ij)
     KOKKOS_INLINE_FUNCTION
     void solve_void_fraction(size_t ij, double Wl, double Wv, double hl, double& alpha) const {
+        solve_void_fraction_impl(ij, Wl, Wv, hl, alpha, nullptr, nullptr);
+    }
+
+    // Drift-flux (Chexal-Lellouche form) void fraction: root of
+    //   f(alpha) = (alpha C0 - 1) Gv + alpha C0 (rho_g/rho_l) Gl + alpha rho_g Vgj(alpha)
+    // Solved with a bracketed Newton iteration (bisection step whenever Newton leaves the bracket or f' is
+    // tiny); f'(alpha) is closed-form, so this converges in a handful of iterations instead of the ~50 of
+    // the original pure bisection, to the same |f| < tol / bracket < tol criteria. With void_bisection set
+    // the original bisection is used instead.
+    // Optionally returns d alpha / d Wl and d alpha / d Wv by implicit differentiation at the root
+    // (d alpha / d G = -f_G / f_alpha), including the dependence of B1 on the Reynolds number.
+    KOKKOS_INLINE_FUNCTION
+    void solve_void_fraction_impl(size_t ij, double Wl, double Wv, double hl, double& alpha,
+                                  double* dalpha_dWl, double* dalpha_dWv) const {
         const double tol_local = 1e-8;
         const double eps = 1e-12; // small number to prevent division by zero
+        if (dalpha_dWl) *dalpha_dWl = 0.0;
+        if (dalpha_dWv) *dalpha_dWv = 0.0;
 
         // based on the Chexal-Lellouche drift flux model
         double pressure = P(0, 0); // assuming constant pressure for simplicity
 
-        double Gv = Wv / A_f(ij, k); // vapor mass flux
-        double Gl = Wl / A_f(ij, k); // liquid mass flux
+        const double Af = A_f(ij, k);
+        double Gv = Wv / Af; // vapor mass flux
+        double Gl = Wl / Af; // liquid mass flux
 
         if (Gv < eps) {
             alpha = 0.0;
         }
 
-        double h_v = h_f + X(ij, k) * h_fg;
         double rho_l = fluid.rho(hl);
         double mu_l = fluid.mu(hl);
 
-        double Re_g = __Reynolds(Wv / A_f(ij, k), D_h(ij, k), mu_g); // local vapor Reynolds number
-        double Re_f = __Reynolds(Wl / A_f(ij, k), D_h(ij, k), mu_l); // local liquid Reynolds number
+        double Re_g = __Reynolds(Wv / Af, D_h(ij, k), mu_g); // local vapor Reynolds number
+        double Re_f = __Reynolds(Wl / Af, D_h(ij, k), mu_l); // local liquid Reynolds number
         double Re = (Re_g > Re_f) ? Re_g : Re_f;
         double A1 = 1 / (1 + Kokkos::exp(-Re / 60000));
         double B1 = (0.8 < A1) ? 0.8 : A1; // from Zuber correlation
         double B2 = 1.41;
 
-        // Inline bisection method - cannot use lambda functions inside KOKKOS_LAMBDA
-        double a = 0.0;
-        double b = 1.0;
+        // alpha-independent pieces of C0 and Vgj
+        const double C1 = 4.0 * P_crit * P_crit / (pressure * (P_crit - pressure)); // Eq. 24 from ANTS Theory
+        const double Lden = 1.0 - Kokkos::exp(-C1);
+        const double K0 = B1 + (1 - B1) * Kokkos::pow(rho_g / rho_f, 0.25); // Eq. 25 from ANTS Theory
+        const double r = (1 + 1.57 * (rho_g / rho_f)) / (1 - B1); // Eq. 26 from ANTS Theory
+        const double Vgj0 = B2 * Kokkos::pow(((rho_f - rho_g) * g * sigma) / (rho_f * rho_f), 0.25); // Eq. 28 from ANTS Theory
+        const double Gsum = Gv + (rho_g / rho_l) * Gl;
 
-        // Helper lambda-like evaluation using direct computation
-        auto evaluate_f = [&](double alpha_val) {
-            // calculate distribution parameter, C_0
-            double C1 = 4.0 * P_crit * P_crit / (pressure * (P_crit - pressure)); // Eq. 24 from ANTS Theory
-            double L = (1.0 - Kokkos::exp(-C1 * alpha_val)) / (1.0 - Kokkos::exp(-C1)); // Eq. 23 from ANTS Theory
-            double K0 = B1 + (1 - B1) * Kokkos::pow(rho_g / rho_f, 0.25); // Eq. 25 from ANTS Theory
-            double r = (1 + 1.57 * (rho_g / rho_f)) / (1 - B1); // Eq. 26 from ANTS Theory
-            double C0 = L / (K0 + (1 - K0) * Kokkos::pow(alpha_val, r)); // Eq. 22 from ANTS Theory
-
-            // calculate drift velocity, V_gj
-            double Vgj0 = B2 * Kokkos::pow(((rho_f - rho_g) * g * sigma) / (rho_f * rho_f), 0.25); // Eq. 28 from ANTS Theory
-            double Vgj = Vgj0 * Kokkos::pow(1.0 - alpha_val, B1); // Eq. 27 from ANTS Theory
-
+        // f and f' at alpha_val (f' only when requested)
+        auto evaluate = [&](double alpha_val, double* fprime) {
+            const double e = Kokkos::exp(-C1 * alpha_val);
+            const double L = (1.0 - e) / Lden; // Eq. 23 from ANTS Theory
+            const double ar = Kokkos::pow(alpha_val, r);
+            const double D = K0 + (1 - K0) * ar;
+            const double C0 = L / D; // Eq. 22 from ANTS Theory
+            const double om = 1.0 - alpha_val;
+            const double Vgj = Vgj0 * Kokkos::pow(om, B1); // Eq. 27 from ANTS Theory
+            if (fprime) {
+                const double Lp = C1 * e / Lden;
+                const double Dp = (alpha_val > 0.0) ? (1 - K0) * r * ar / alpha_val : 0.0;
+                const double C0p = (Lp * D - L * Dp) / (D * D);
+                const double Vgjp = (om > 0.0) ? -B1 * Vgj / om : 0.0;
+                *fprime = (C0 + alpha_val * C0p) * Gsum + rho_g * (Vgj + alpha_val * Vgjp);
+            }
             return (alpha_val * C0 - 1.0) * Gv + alpha_val * C0 * (rho_g / rho_l) * Gl + alpha_val * rho_g * Vgj;
         };
+        auto implicit_derivatives = [&](double alpha_val) {
+            if (!dalpha_dWl && !dalpha_dWv) return;
+            double fa_alpha;
+            const double e = Kokkos::exp(-C1 * alpha_val);
+            const double L = (1.0 - e) / Lden;
+            const double ar = Kokkos::pow(alpha_val, r);
+            const double D = K0 + (1 - K0) * ar;
+            const double C0 = L / D;
+            evaluate(alpha_val, &fa_alpha);
+            if (Kokkos::fabs(fa_alpha) < 1e-300) return;
+            // explicit dependence on the mass fluxes
+            double f_Gv = alpha_val * C0 - 1.0;
+            double f_Gl = alpha_val * C0 * (rho_g / rho_l);
+            // dependence through B1(Re) when the Zuber limiter is not active (A1 < 0.8): K0, r and the
+            // Vgj exponent all depend on B1
+            if (A1 < 0.8) {
+                const double dB1_dRe = A1 * (1.0 - A1) / 60000.0;
+                const double dK0_dB1 = 1.0 - Kokkos::pow(rho_g / rho_f, 0.25);
+                const double dr_dB1 = r / (1 - B1);
+                const double lna = (alpha_val > 0.0) ? Kokkos::log(alpha_val) : 0.0;
+                const double dD_dB1 = dK0_dB1 * (1.0 - ar) + (1 - K0) * ar * lna * dr_dB1;
+                const double dC0_dB1 = -L * dD_dB1 / (D * D);
+                const double Vgj = Vgj0 * Kokkos::pow(1.0 - alpha_val, B1);
+                const double dVgj_dB1 = (alpha_val < 1.0) ? Vgj * Kokkos::log(1.0 - alpha_val) : 0.0;
+                const double f_B1 = alpha_val * dC0_dB1 * Gsum + alpha_val * rho_g * dVgj_dB1;
+                // Re = max(Re_g, Re_f)
+                if (Re_g > Re_f) f_Gv += f_B1 * dB1_dRe * D_h(ij, k) / mu_g;
+                else             f_Gl += f_B1 * dB1_dRe * D_h(ij, k) / mu_l;
+            }
+            if (dalpha_dWv) *dalpha_dWv = -(f_Gv / fa_alpha) / Af;
+            if (dalpha_dWl) *dalpha_dWl = -(f_Gl / fa_alpha) / Af;
+        };
 
-        // Bisection implementation
-        double fa = evaluate_f(a);
-        double fb = evaluate_f(b);
+        double a = 0.0;
+        double b = 1.0;
+        double fa = evaluate(a, nullptr);
+        double fb = evaluate(b, nullptr);
 
         if (Kokkos::fabs(fa) < tol_local) {
             alpha = a;
@@ -648,31 +726,49 @@ struct ANTSFunctor {
             return;
         }
 
-        // Root must be bracketed for bisection
+        // Root must be bracketed
         if (fa * fb > 0) {
-            // If not bracketed, use safer default
+            // If not bracketed, use safer default (leave alpha unchanged)
             return;
         }
 
-        for (int i = 0; i < (int)max_inner_iter; i++) {
-            double c = 0.5 * (a + b);
-            double fc = evaluate_f(c);
+        if (void_bisection) {
+            for (int i = 0; i < (int)max_inner_iter; i++) {
+                double c = 0.5 * (a + b);
+                double fc = evaluate(c, nullptr);
+                if (Kokkos::fabs(fc) < tol_local || (b - a) < tol_local) {
+                    alpha = c;
+                    implicit_derivatives(c);
+                    return;
+                }
+                if (fa * fc < 0) { b = c; fb = fc; } else { a = c; fa = fc; }
+            }
+            alpha = 0.5 * (a + b);
+            implicit_derivatives(alpha);
+            return;
+        }
 
+        // Safeguarded Newton. Start from the homogeneous estimate (C0 = 1, Vgj = 0), clipped into the bracket.
+        double c = (Gsum > 0.0) ? Gv / Gsum : 0.5;
+        if (!(c > a && c < b)) c = 0.5 * (a + b);
+        for (int i = 0; i < (int)max_inner_iter; i++) {
+            double fpc;
+            const double fc = evaluate(c, &fpc);
             if (Kokkos::fabs(fc) < tol_local || (b - a) < tol_local) {
                 alpha = c;
+                implicit_derivatives(c);
                 return;
             }
-
-            if (fa * fc < 0) {
-                b = c;
-                fb = fc;
-            } else {
-                a = c;
-                fa = fc;
-            }
+            // shrink the bracket around the root
+            if (fa * fc < 0) { b = c; fb = fc; } else { a = c; fa = fc; }
+            // Newton step, falling back to bisection if it leaves the bracket or the slope is unusable
+            double cn = (Kokkos::fabs(fpc) > 1e-300) ? c - fc / fpc : 0.5 * (a + b);
+            if (!(cn > a && cn < b)) cn = 0.5 * (a + b);
+            c = cn;
         }
 
         alpha = 0.5 * (a + b);
+        implicit_derivatives(alpha);
     }
 
     // TH::solve_quality -> per-channel (ij)
@@ -681,6 +777,209 @@ struct ANTSFunctor {
         double G_v = W_v(ij, k) / A_f(ij, k); // vapor mass flux (Eq. 8 from ANTS Theory)
         double G_l = W_l(ij, k) / A_f(ij, k); // liquid mass flux (Eq. 9 from ANTS Theory)
         X = G_v / (G_v + G_l); // Eq. 17 from ANTS Theory
+    }
+
+    // Partial derivatives of the plane-k pressure (as computed by solve_pressure) with respect to the
+    // channel flow rates Wl and Wv, given the derivatives of alpha and X with respect to them. Mirrors
+    // solve_pressure term by term; the gravity term and all property evaluations have zero derivative
+    // because the fluid properties here are independent of enthalpy. Form losses are zero (K_loss = 0).
+    KOKKOS_INLINE_FUNCTION
+    void pressure_partials(size_t ij, double Wl, double Wv, double alpha_ijk, double X_ijk,
+                           double dalpha_dWl, double dalpha_dWv, double dX_dWl, double dX_dWv,
+                           double& dP_dWl, double& dP_dWv) const {
+        const double a_1 = 0.1892;
+        const double n = -0.2;
+        const double Af = A_f(ij, k);
+        const double Dh = D_h(ij, k);
+        const double dzk = dz(k_node);
+
+        const double G_l = Wl / Af;
+        const double G = (Wl + Wv) / Af;
+        const double dG = 1.0 / Af; // dG/dWl = dG/dWv
+
+        // ----- acceleration: G^2 (nu_m(k) - nu_m(k-1)) -----
+        double nu_m_k, dnu_dalpha = 0.0, dnu_dX = 0.0;
+        if (alpha_ijk < 1e-6) {
+            nu_m_k = 1.0 / rho_f;
+        } else if (alpha_ijk > 1.0 - 1e-6) {
+            nu_m_k = 1.0 / rho_g;
+        } else {
+            const double om = 1.0 - alpha_ijk, omX = 1.0 - X_ijk;
+            const double rho_l = fluid.rho(0.0);
+            nu_m_k = omX * omX / (om * rho_l) + X_ijk * X_ijk / (alpha_ijk * rho_g);
+            dnu_dalpha = omX * omX / (om * om * rho_l) - X_ijk * X_ijk / (alpha_ijk * alpha_ijk * rho_g);
+            dnu_dX = -2.0 * omX / (om * rho_l) + 2.0 * X_ijk / (alpha_ijk * rho_g);
+        }
+        double nu_m_km1;
+        if (alpha(ij, k-1) < 1e-6) {
+            nu_m_km1 = 1.0 / rho_f;
+        } else if (alpha(ij, k-1) > 1.0 - 1e-6) {
+            nu_m_km1 = 1.0 / rho_g;
+        } else {
+            nu_m_km1 = (1.0 - X(ij, k-1)) * (1.0 - X(ij, k-1)) / ((1.0 - alpha(ij, k-1)) * fluid.rho(h_l(ij, k-1))) +
+                        X(ij, k-1) * X(ij, k-1) / (alpha(ij, k-1) * rho_g);
+        }
+        const double dnu_dWl = dnu_dalpha * dalpha_dWl + dnu_dX * dX_dWl;
+        const double dnu_dWv = dnu_dalpha * dalpha_dWv + dnu_dX * dX_dWv;
+        const double daccel_dWl = 2.0 * G * dG * (nu_m_k - nu_m_km1) + G * G * dnu_dWl;
+        const double daccel_dWv = 2.0 * G * dG * (nu_m_k - nu_m_km1) + G * G * dnu_dWv;
+
+        // ----- wall friction: K G^2 / (2 rho_f) phi2_ch -----
+        const double mu_l = fluid.mu(0.0);
+        const double Re = G_l * Dh / mu_l;
+        const double f = a_1 * Kokkos::pow(Re, n);
+        const double K = f * dzk / Dh;
+        const double dK_dWl = (Re > 0.0) ? (n * f / Re) * (Dh / mu_l) * dG * dzk / Dh : 0.0;
+        const double gamma = Kokkos::pow(rho_f / rho_g, 0.5) * Kokkos::pow(mu_g / mu_f, 0.2);
+        double b;
+        if (gamma <= 9.5) {
+            b = 55.0 / Kokkos::sqrt(G);
+        } else if (gamma < 28) {
+            b = 520.0 / (gamma * Kokkos::sqrt(G));
+        } else {
+            b = 15000.0 / (gamma * gamma * Kokkos::sqrt(G));
+        }
+        const double db_dG = (G > 0.0) ? -0.5 * b / G : 0.0; // all branches scale as G^-1/2
+        const double g2m1 = gamma * gamma - 1.0;
+        double phi2, dphi2_db, dphi2_dX;
+        if (X_ijk > 0.0 && X_ijk < 1.0) {
+            const double x9 = Kokkos::pow(X_ijk, 0.9), y9 = Kokkos::pow(1.0 - X_ijk, 0.9);
+            phi2 = 1.0 + g2m1 * (b * x9 * y9 + Kokkos::pow(X_ijk, 1.8));
+            dphi2_db = g2m1 * x9 * y9;
+            dphi2_dX = g2m1 * (b * 0.9 * (x9 * y9 / X_ijk - x9 * y9 / (1.0 - X_ijk)) + 1.8 * Kokkos::pow(X_ijk, 0.8));
+        } else {
+            // single phase (or all vapor): X is pinned, the X^0.9 slope is singular there, treat as constant
+            phi2 = 1.0 + g2m1 * ((X_ijk >= 1.0) ? 1.0 : 0.0);
+            dphi2_db = 0.0;
+            dphi2_dX = 0.0;
+        }
+        const double dwall_dWl = (dK_dWl * G * G * phi2 + K * 2.0 * G * dG * phi2 + K * G * G * (dphi2_db * db_dG * dG + dphi2_dX * dX_dWl)) / (2.0 * rho_f);
+        const double dwall_dWv = (K * 2.0 * G * dG * phi2 + K * G * G * (dphi2_db * db_dG * dG + dphi2_dX * dX_dWv)) / (2.0 * rho_f);
+
+        // gravity and momentum-exchange terms do not depend on Wl, Wv
+        dP_dWl = -(daccel_dWl + dwall_dWl);
+        dP_dWv = -(daccel_dWv + dwall_dWv);
+    }
+
+    // TH::channel_partials -> per-channel (ij): derivatives of the planar map (P, X at plane k) with
+    // respect to the channel's accumulated sources, evaluated at the current sources. One pass per
+    // channel replaces the 14 re-evaluations per Jacobian column of the finite-difference scheme.
+    KOKKOS_INLINE_FUNCTION
+    void operator()(channel_partials, const size_t ij) const {
+        const double dzk = dz(k_node);
+        const double Af = A_f(ij, k);
+
+        // flow rates and the clamps (a clamped rate has zero derivative)
+        double Wl_raw = W_l(ij, k-1) - dzk * (evap(ij, k_node) + SS_l(ij));
+        double Wv_raw = W_v(ij, k-1) + dzk * (evap(ij, k_node) - SS_v(ij));
+        const double Wl = (Wl_raw > 0.0) ? Wl_raw : 1e-8;
+        const double Wv = (Wv_raw > 0.0) ? Wv_raw : 0.0;
+        const double dWl_dsl = (Wl_raw > 0.0) ? -dzk : 0.0;
+        const double dWv_dsv = (Wv_raw > 0.0) ? -dzk : 0.0;
+
+        double hl;
+        solve_enthalpy(ij, Wl, Wv, SS_m(ij), hl);
+
+        double alpha_ij = alpha(ij, k), dalpha_dWl, dalpha_dWv;
+        solve_void_fraction_impl(ij, Wl, Wv, hl, alpha_ij, &dalpha_dWl, &dalpha_dWv);
+
+        // quality X = Gv / (Gv + Gl) evaluated with the plane-k flow rates
+        const double Gv = Wv / Af, Gl = Wl / Af, Gs = Gv + Gl;
+        const double X_ij = Gv / Gs;
+        const double dX_dWv = (Wv > 0.0) ? Gl / (Af * Gs * Gs) : 0.0;
+        const double dX_dWl = (Wv > 0.0) ? -Gv / (Af * Gs * Gs) : 0.0;
+
+        double dP_dWl, dP_dWv;
+        pressure_partials(ij, Wl, Wv, alpha_ij, X_ij, dalpha_dWl, dalpha_dWv, dX_dWl, dX_dWv, dP_dWl, dP_dWv);
+
+        if ((int)ij == debug_channel) {
+            // finite-difference check of the pressure partials through the full planar chain (alpha, X, P)
+            auto P_of = [&](double wl, double wv) {
+                double a_ = alpha(ij, k), x_ = (wv + wl > 0.0) ? wv / (wv + wl) : 0.0, p_;
+                solve_void_fraction_impl(ij, wl, wv, hl, a_, nullptr, nullptr);
+                solve_pressure(ij, wl, wv, hl, a_, x_, CF_SS(ij), TM_SS(ij), VD_SS(ij), p_);
+                return p_;
+            };
+            const double hwl = 1e-6 * (Kokkos::abs(Wl) + 1e-3), hwv = 1e-6 * (Kokkos::abs(Wv) + 1e-3);
+            const double fd_l = (P_of(Wl + hwl, Wv) - P_of(Wl - hwl, Wv)) / (2 * hwl);
+            const double fd_v = (P_of(Wl, Wv + hwv) - P_of(Wl, Wv - hwv)) / (2 * hwv);
+            printf("  [channel %d] Wl=%.6e Wv=%.6e alpha=%.4e X=%.4e | dP/dWl an=%.6e fd=%.6e | dP/dWv an=%.6e fd=%.6e | dalpha/dWv=%.3e dX/dWv=%.3e\n",
+                   (int)ij, Wl, Wv, alpha_ij, X_ij, dP_dWl, fd_l, dP_dWv, fd_v, dalpha_dWv, dX_dWv);
+        }
+
+        dchan(ij, 0) = dP_dWl * dWl_dsl;   // dP/dSS_l
+        dchan(ij, 1) = dP_dWv * dWv_dsv;   // dP/dSS_v
+        dchan(ij, 2) = -dzk;               // dP/dCF_SS
+        dchan(ij, 3) = dX_dWl * dWl_dsl;   // dX/dSS_l
+        dchan(ij, 4) = dX_dWv * dWv_dsv;   // dX/dSS_v
+    }
+
+    // Derivatives of the surface-ns source terms (surface_source_terms order) with respect to gk(ns):
+    // sl = gap (gk (1 - X_d) + ...), sv = gap (gk X_d + ...), sm = gap (gk h_d + ...), cf = gap gk V_m,d
+    // where the donor cell d is fixed by the sign of gk.
+    KOKKOS_INLINE_FUNCTION
+    void surface_source_derivatives(const size_t ns, const double gk_ns, double& dsl, double& dsv, double& dcf) const {
+        auto surf = surfaces(ns);
+        const size_t i_donor = (gk_ns >= 0) ? surf.from_node : surf.to_node;
+        const double Xd = X(i_donor, k-1);
+        dsl = gap_width * (1.0 - Xd);
+        dsv = gap_width * Xd;
+        double v_m_donor;
+        if (alpha(i_donor, k-1) < 1e-6) {
+            v_m_donor = 1.0 / rho_f;
+        } else if (alpha(i_donor, k-1) > 1.0 - 1e-6) {
+            v_m_donor = 1.0 / rho_g;
+        } else {
+            v_m_donor = (1.0 - Xd) * (1.0 - Xd) / ((1.0 - alpha(i_donor, k-1)) * fluid.rho(h_l(i_donor, k-1))) +
+                        Xd * Xd / (alpha(i_donor, k-1) * rho_g);
+        }
+        const double V_m_donor = v_m_donor * (W_l(i_donor, k-1) + W_v(i_donor, k-1)) / A_f(i_donor, k-1);
+        dcf = gap_width * V_m_donor;
+    }
+
+    // TH::solve_surface_mass_flux - jacobian_columns_analytic -> per-surface (ns1)
+    //
+    // Exact derivative of the planar residual map (chain rule through surface sources -> channel flow
+    // rates -> void fraction (implicit) and quality -> pressure), using the per-channel partials from
+    // channel_partials. Unlike the finite-difference column, this includes the response of the quality
+    // in the Fns term, so the Newton path differs slightly while the converged solution does not.
+    KOKKOS_INLINE_FUNCTION
+    void operator()(jacobian_columns_analytic, const size_t ns1) const {
+        const double gk0 = gk(ns1, k_node);
+        const size_t i1 = surfaces(ns1).from_node;
+        const size_t j1 = surfaces(ns1).to_node;
+        double dsl, dsv, dcf;
+        surface_source_derivatives(ns1, gk0, dsl, dsv, dcf);
+
+        const size_t nneigh = num_neighbors(ns1);
+        for (size_t n = 0; n < nneigh; ++n) {
+            const size_t ns = neighbor_list(ns1, n);
+            const size_t i = surfaces(ns).from_node;
+            const size_t j = surfaces(ns).to_node;
+            const double si = (i == i1) ? 1.0 : ((i == j1) ? -1.0 : 0.0);
+            const double sj = (j == i1) ? 1.0 : ((j == j1) ? -1.0 : 0.0);
+
+            const double dP_i = si * (dchan(i, 0) * dsl + dchan(i, 1) * dsv + dchan(i, 2) * dcf);
+            const double dP_j = sj * (dchan(j, 0) * dsl + dchan(j, 1) * dsv + dchan(j, 2) * dcf);
+            const double dX_i = si * (dchan(i, 3) * dsl + dchan(i, 4) * dsv);
+            const double dX_j = sj * (dchan(j, 3) * dsl + dchan(j, 4) * dsv);
+
+            const double G_cf = gk(ns, k_node);
+            const bool donor_i = (G_cf >= 0.0);
+            const double X_d = donor_i ? X(i, k) : X(j, k);
+            const double dX_d = donor_i ? dX_i : dX_j;
+            const double rho_m = fluid.rho_m(X_d);
+            // Fns = 0.5 K gk |gk| / rho_m = 0.5 K gk |gk| (X v_g + (1 - X) v_f)
+            double dFns = 0.5 * K_ns * G_cf * Kokkos::abs(G_cf) * (v_g - v_f) * dX_d;
+            // d Fns / d gk = K |gk| / rho_m vanishes at zero crossflow, and without it the Jacobian is the
+            // incidence form B^T D B whose null space is the cycle space of the surface graph (singular LU
+            // at the first Newton step of every plane). The finite-difference column is implicitly
+            // regularized by its secant slope 0.5 K (|gk + dG| |gk + dG| - gk |gk|) / dG ~ K (|gk| + dG/2);
+            // use that same secant slope here so the exact Jacobian is invertible for the same reason.
+            if (ns == ns1) dFns += K_ns * (Kokkos::abs(G_cf) + 0.5 * gtol) / rho_m;
+
+            jac_values(jac_pos(ns1, n)) = -dz(k_node) * aspect * (dP_i - dP_j - dFns);
+        }
     }
 
     // TH::solve_pressure -> per-channel (ij)

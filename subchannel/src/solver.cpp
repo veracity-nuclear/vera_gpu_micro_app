@@ -1,4 +1,5 @@
 #include "solver.hpp"
+#include <cstdlib>
 
 template <typename ExecutionSpace>
 Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
@@ -12,6 +13,13 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
 
     if (args.get_flag("verbose")) {
         _verbose = true;
+    }
+
+    // Crossflow Jacobian and void-fraction root-solver selection
+    {
+        const std::string jac = args.get_option("jacobian");
+        state.jacobian_mode = (jac == "fd") ? 1 : (jac == "check") ? 2 : 0;
+        state.void_bisection = (args.get_option("void_solver") == "bisection");
     }
 
     // Extract parameters from ArgumentParser and initialize Solver
@@ -256,6 +264,16 @@ Solver<ExecutionSpace>::Solver(
 ) {
     state.geom = geometry;
 
+    // Testing/benchmarking hook for the programmatic constructor (no ArgumentParser): the same choices as
+    // --jacobian / --void_solver, from the environment.
+    if (const char* env = std::getenv("SUBCHANNEL_JACOBIAN")) {
+        const std::string jac(env);
+        state.jacobian_mode = (jac == "fd") ? 1 : (jac == "check") ? 2 : 0;
+    }
+    if (const char* env = std::getenv("SUBCHANNEL_VOID_SOLVER")) {
+        state.void_bisection = (std::string(env) == "bisection");
+    }
+
     size_t nz = state.geom->naxial() + 1;
     size_t nchan = state.geom->nchannels();
     size_t nsurf = state.geom->nsurfaces();
@@ -440,6 +458,18 @@ void Solver<ExecutionSpace>::solve(size_t max_outer_iter, size_t max_inner_iter)
     state.max_inner_iter = max_inner_iter;
 
     if (_verbose) print_state_at_plane(0);
+
+    // Initialize PETSc (and MPI) up front rather than lazily inside the first crossflow solve, so the
+    // per-plane timings below measure the solve and not a ~1 s one-time MPI/UCX startup.
+    if (_cf_flag) {
+        PetscBool petsc_initialized;
+        PetscInitialized(&petsc_initialized);
+        if (!petsc_initialized) {
+            int argc = 0;
+            char** argv = nullptr;
+            PetscInitialize(&argc, &argv, nullptr, nullptr);
+        }
+    }
 
     using Functor = TH::ANTSFunctor<ExecutionSpace>;
     using evap_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::solve_evaporation_term>;
