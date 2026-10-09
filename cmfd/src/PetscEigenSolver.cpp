@@ -26,6 +26,9 @@ PetscEigenSolver::PetscEigenSolver(AssemblerPtr&& _assemblerPtr, PetscScalar ini
     PetscCallCXXAbort(PETSC_COMM_SELF, PCRegisterKokkosBlockGS());
     PetscCallCXXAbort(PETSC_COMM_SELF, KSPGetPC(ksp, &pc));
     PetscCallCXXAbort(PETSC_COMM_SELF, PCSetType(pc, "kokkosbgs"));
+    // Two CCSI-relaxed sweeps per application: same total sweeps as one sweep per GMRES iteration but
+    // half the Krylov iterations (mini-core: 241 vs 516 matvecs), i.e. half the reductions on a GPU.
+    PetscCallCXXAbort(PETSC_COMM_SELF, PetscOptionsSetValue(nullptr, "-pc_kokkosbgs_sweeps", "2"));
 
     PetscCallCXXAbort(PETSC_COMM_SELF, KSPSetFromOptions(ksp));
 

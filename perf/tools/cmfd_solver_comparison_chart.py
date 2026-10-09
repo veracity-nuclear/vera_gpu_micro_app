@@ -4,24 +4,24 @@ import matplotlib.pyplot as plt
 import numpy as np
 INK, INK2, SURF, GRID = "#0b0b0b", "#52514e", "#fcfcfb", "#e4e3df"
 COLS = ["#2a78d6", "#eb6834", "#1baf7a"]
-versions = ["original\n(master)", "branch 1\nGMRES + Jacobi,\nfixed kernels", "branch 2\nGMRES + block\nRB-GS (Kokkos)"]
+versions = ["original\n(master)", "branch 1\nGMRES + Jacobi,\nfixed kernels", "branch 2\nGMRES + 2 CCSI block\nRB-GS sweeps (Kokkos)"]
 # best of 3 runs, 8 threads, same machine/session
 data = {
  "mini-core (13 power iterations)": {
-   "inner matvecs":                 [1585, 1122, 516],
-   "KSPSolve (s)":                  [0.257, 0.092, 0.062],
-   "PETSc-logged time (s)\nsolve + fission source + assembly": [1.754, 0.115, 0.151],
-   "wall time (s)\nincl. ~1.5 s MPI startup": [3.25, 1.63, 1.67],
+   "inner matvecs":                 [1585, 1122, 241],
+   "KSPSolve (s)":                  [0.257, 0.092, 0.050],
+   "PETSc-logged time (s)\nsolve + fission source + assembly": [1.754, 0.115, 0.085],
+   "wall time (s)\nincl. ~1.5 s MPI startup": [3.25, 1.63, 1.58],
  },
  "7x7 (4 power iterations)": {
-   "inner matvecs":                 [549, 282, 93],
-   "KSPSolve (s)":                  [0.0257, 0.054, 0.0039],
-   "PETSc-logged time (s)\nsolve + fission source + assembly": [0.082, 0.057, 0.0067],
-   "wall time (s)\nincl. ~1.5 s MPI startup": [1.57, 1.58, 1.50],
+   "inner matvecs":                 [549, 282, 62],
+   "KSPSolve (s)":                  [0.0257, 0.054, 0.0215],
+   "PETSc-logged time (s)\nsolve + fission source + assembly": [0.082, 0.057, 0.027],
+   "wall time (s)\nincl. ~1.5 s MPI startup": [1.57, 1.58, 1.52],
  },
 }
 fig, axes = plt.subplots(2, 4, figsize=(15, 8.2), facecolor=SURF)
-fig.suptitle("CMFD: original vs first optimization branch vs Kokkos block red-black Gauss-Seidel branch",
+fig.suptitle("CMFD: original vs first optimization branch vs Kokkos block red-black SOR (CCSI) branch",
              fontsize=14, color=INK, fontweight="bold", x=0.02, ha="left", y=0.99)
 for r, (case, metrics) in enumerate(data.items()):
     for c, (metric, vals) in enumerate(metrics.items()):

@@ -6,6 +6,7 @@
 #include <petscmat.h>
 #include <Kokkos_Core.hpp>
 #include <vector>
+#include <cmath>
 #include <queue>
 #include <algorithm>
 
@@ -21,7 +22,11 @@ using Scalar2DView = Kokkos::View<PetscScalar **, Kokkos::LayoutRight, MemSpace>
 
 struct PC_KokkosBGS {
     PetscInt sweeps = 1;
-    PetscReal omega = 1.0;
+    PetscReal omega = 1.0;       // fixed relaxation factor (used when adaptive is off or ncolors != 2)
+    PetscBool adaptive = PETSC_TRUE; // CCSI red/black relaxation factors (Stimpson & Collins, ANS Trans. 115, 2016)
+    PetscInt rhoSweeps = 10;     // unrelaxed GS sweeps used to estimate the spectral radius
+    PetscReal rhoJ = 0.0;        // estimated Jacobi spectral radius
+    std::vector<PetscReal> omegaRed, omegaBlack; // CCSI schedule, one pair per sweep
 
     PetscInt n = 0, bs = 0, nblocks = 0, ncolors = 0;
     IntView rowPtr, colIdx;      // CSR structure (device copy)
@@ -30,6 +35,60 @@ struct PC_KokkosBGS {
     IntView colorBlocks;         // block indices grouped by color
     std::vector<PetscInt> colorPtr; // host offsets into colorBlocks, size ncolors + 1
 };
+
+// One relaxed block Gauss-Seidel update of all blocks of one color: y_block <- (1-w) y_block + w D^-1 (x - offblock(A) y)
+template <class XView, class YView>
+void color_sweep(const PC_KokkosBGS &ctx, PetscInt color, PetscReal omega, const XView &xv, const YView &yv)
+{
+    const PetscInt bs = ctx.bs;
+    auto rowPtr = ctx.rowPtr; auto colIdx = ctx.colIdx; auto vals = ctx.vals; auto dinv = ctx.dinv;
+    auto colorBlocks = ctx.colorBlocks;
+    const PetscInt begin = ctx.colorPtr[color], end = ctx.colorPtr[color + 1];
+    Kokkos::parallel_for("kokkosbgs: color sweep", Kokkos::RangePolicy<ExecSpace>(begin, end),
+        KOKKOS_LAMBDA(const PetscInt idx)
+    {
+        const PetscInt b = colorBlocks(idx);
+        PetscScalar rhs[MAX_BS];
+        for (int r = 0; r < bs; ++r) {
+            const PetscInt row = b * bs + r;
+            PetscScalar acc = xv(row);
+            for (PetscInt k = rowPtr(row); k < rowPtr(row + 1); ++k) {
+                const PetscInt col = colIdx(k);
+                if (col / bs != b) acc -= vals(k) * yv(col);
+            }
+            rhs[r] = acc;
+        }
+        for (int r = 0; r < bs; ++r) {
+            PetscScalar ynew = 0.0;
+            for (int cc = 0; cc < bs; ++cc) ynew += dinv(b, r * bs + cc) * rhs[cc];
+            const PetscInt row = b * bs + r;
+            yv(row) = (1.0 - omega) * yv(row) + omega * ynew;
+        }
+    });
+}
+
+// Relaxation factors for sweep s (0-based) of an application, per color. With CCSI (two colors) the red
+// and black half-sweeps get the cyclic Chebyshev factors of Eqs. 2-3 in Stimpson & Collins (2016):
+//   w_R^1 = 1, w_B^1 = 1 / (1 - rho_J^2 / 2),
+//   w_R^{i+1} = 1 / (1 - rho_J^2 w_B^i / 4), w_B^{i+1} = 1 / (1 - rho_J^2 w_R^{i+1} / 4),
+// which converge to the optimal SOR factor 2 / (1 + sqrt(1 - rho_J^2)).
+void ensure_omega_schedule(PC_KokkosBGS &ctx, PetscInt sweeps)
+{
+    if ((PetscInt)ctx.omegaRed.size() >= sweeps) return;
+    const PetscReal r2 = ctx.rhoJ * ctx.rhoJ;
+    if (ctx.omegaRed.empty()) {
+        ctx.omegaRed.push_back(1.0);
+        ctx.omegaBlack.push_back(1.0 / (1.0 - 0.5 * r2));
+    }
+    while ((PetscInt)ctx.omegaRed.size() < sweeps) {
+        const PetscReal wR = 1.0 / (1.0 - 0.25 * r2 * ctx.omegaBlack.back());
+        const PetscReal wB = 1.0 / (1.0 - 0.25 * r2 * wR);
+        ctx.omegaRed.push_back(wR);
+        ctx.omegaBlack.push_back(wB);
+    }
+}
+
+inline bool use_ccsi(const PC_KokkosBGS &ctx) { return ctx.adaptive && ctx.ncolors == 2; }
 
 PetscErrorCode PCSetUp_KokkosBGS(PC pc)
 {
@@ -153,6 +212,36 @@ PetscErrorCode PCSetUp_KokkosBGS(PC pc)
         });
         Kokkos::fence();
     }
+
+    // Estimate the Jacobi spectral radius for the CCSI relaxation factors. Unrelaxed red-black block GS on
+    // the homogeneous system A e = 0 from a constant start decays like rho_GS^k, and for a two-color
+    // (consistently ordered) system rho_J = sqrt(rho_GS). As in MPACT the estimate uses the ratio of the
+    // last two correction norms after `rhoSweeps` sweeps. Done once per matrix; only setup needs reductions.
+    ctx->omegaRed.clear();
+    ctx->omegaBlack.clear();
+    ctx->rhoJ = 0.0;
+    if (use_ccsi(*ctx)) {
+        ScalarView e("kokkosbgs rho estimate", ctx->n), zero("kokkosbgs zero rhs", ctx->n);
+        Kokkos::deep_copy(e, 1.0);
+        Kokkos::deep_copy(zero, 0.0);
+        auto norm2 = [&](const ScalarView &v) {
+            PetscReal sum = 0.0;
+            Kokkos::parallel_reduce("kokkosbgs: norm", Kokkos::RangePolicy<ExecSpace>(0, ctx->n),
+                KOKKOS_LAMBDA(const PetscInt i, PetscReal &acc) { acc += v(i) * v(i); }, sum);
+            return std::sqrt(sum);
+        };
+        PetscReal prev = norm2(e), rhoGS = 0.0;
+        for (PetscInt s = 0; s < ctx->rhoSweeps; ++s) {
+            for (PetscInt c = 0; c < ctx->ncolors; ++c) color_sweep(*ctx, c, 1.0, zero, e);
+            const PetscReal cur = norm2(e);
+            if (prev > 0.0) rhoGS = cur / prev;
+            prev = cur;
+        }
+        rhoGS = std::min(std::max(rhoGS, 0.0), 0.999999);
+        ctx->rhoJ = std::sqrt(rhoGS);
+        PetscCall(PetscInfo(pc, "kokkosbgs: estimated rho_GS = %g, rho_J = %g, asymptotic omega = %g\n",
+                            (double)rhoGS, (double)ctx->rhoJ, (double)(2.0 / (1.0 + std::sqrt(1.0 - rhoGS)))));
+    }
     PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -166,37 +255,17 @@ PetscErrorCode PCApply_KokkosBGS(PC pc, Vec x, Vec y)
     PetscCall(VecGetKokkosView(x, &xv));
     PetscCall(VecGetKokkosViewWrite(y, &yv));
 
-    // y = 0; then `sweeps` block-SOR sweeps on A y = x. A fixed number of sweeps from zero is a fixed
-    // linear operator, so this is a valid (non-symmetric) preconditioner for GMRES/BiCGStab.
+    // y = 0; then `sweeps` block-SOR sweeps on A y = x. A fixed number of sweeps from zero (with a
+    // predetermined relaxation schedule) is a fixed linear operator, so this is a valid (non-symmetric)
+    // preconditioner for GMRES/BiCGStab. With -ksp_type richardson -ksp_max_it 1 it is the whole inner
+    // solve, and the CCSI schedule then runs over all `sweeps` half-sweep pairs as in MPACT.
     Kokkos::deep_copy(yv, 0.0);
-    const PetscInt bs = ctx->bs;
-    const PetscReal omega = ctx->omega;
-    auto rowPtr = ctx->rowPtr; auto colIdx = ctx->colIdx; auto vals = ctx->vals; auto dinv = ctx->dinv;
-    auto colorBlocks = ctx->colorBlocks;
+    const bool ccsi = use_ccsi(*ctx);
+    if (ccsi) ensure_omega_schedule(*ctx, ctx->sweeps);
     for (PetscInt s = 0; s < ctx->sweeps; ++s) {
         for (PetscInt c = 0; c < ctx->ncolors; ++c) {
-            const PetscInt begin = ctx->colorPtr[c], end = ctx->colorPtr[c + 1];
-            Kokkos::parallel_for("kokkosbgs: color sweep", Kokkos::RangePolicy<ExecSpace>(begin, end),
-                KOKKOS_LAMBDA(const PetscInt idx)
-            {
-                const PetscInt b = colorBlocks(idx);
-                PetscScalar rhs[MAX_BS];
-                for (int r = 0; r < bs; ++r) {
-                    const PetscInt row = b * bs + r;
-                    PetscScalar acc = xv(row);
-                    for (PetscInt k = rowPtr(row); k < rowPtr(row + 1); ++k) {
-                        const PetscInt col = colIdx(k);
-                        if (col / bs != b) acc -= vals(k) * yv(col);
-                    }
-                    rhs[r] = acc;
-                }
-                for (int r = 0; r < bs; ++r) {
-                    PetscScalar ynew = 0.0;
-                    for (int cc = 0; cc < bs; ++cc) ynew += dinv(b, r * bs + cc) * rhs[cc];
-                    const PetscInt row = b * bs + r;
-                    yv(row) = (1.0 - omega) * yv(row) + omega * ynew;
-                }
-            });
+            const PetscReal omega = ccsi ? (c == 0 ? ctx->omegaRed[s] : ctx->omegaBlack[s]) : ctx->omega;
+            color_sweep(*ctx, c, omega, xv, yv);
         }
     }
     Kokkos::fence();
@@ -212,7 +281,9 @@ PetscErrorCode PCSetFromOptions_KokkosBGS(PC pc, PetscOptionItems PetscOptionsOb
     PetscFunctionBeginUser;
     PetscOptionsHeadBegin(PetscOptionsObject, "Kokkos block red-black Gauss-Seidel options");
     PetscCall(PetscOptionsInt("-pc_kokkosbgs_sweeps", "Number of block SOR sweeps per application", "", ctx->sweeps, &ctx->sweeps, nullptr));
-    PetscCall(PetscOptionsReal("-pc_kokkosbgs_omega", "SOR relaxation factor", "", ctx->omega, &ctx->omega, nullptr));
+    PetscCall(PetscOptionsBool("-pc_kokkosbgs_adaptive", "Use CCSI red/black relaxation factors from an estimated spectral radius", "", ctx->adaptive, &ctx->adaptive, nullptr));
+    PetscCall(PetscOptionsReal("-pc_kokkosbgs_omega", "Fixed SOR relaxation factor (when adaptive is off)", "", ctx->omega, &ctx->omega, nullptr));
+    PetscCall(PetscOptionsInt("-pc_kokkosbgs_rho_sweeps", "Unrelaxed sweeps used to estimate the spectral radius", "", ctx->rhoSweeps, &ctx->rhoSweeps, nullptr));
     PetscOptionsHeadEnd();
     PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -224,8 +295,14 @@ PetscErrorCode PCView_KokkosBGS(PC pc, PetscViewer viewer)
     PetscFunctionBeginUser;
     PetscCall(PetscObjectTypeCompare((PetscObject)viewer, PETSCVIEWERASCII, &isascii));
     if (isascii) {
-        PetscCall(PetscViewerASCIIPrintf(viewer, "  Kokkos block red-black Gauss-Seidel: block size %d, %d colors, %d sweeps, omega %g\n",
-                                         (int)ctx->bs, (int)ctx->ncolors, (int)ctx->sweeps, (double)ctx->omega));
+        if (use_ccsi(*ctx)) {
+            ensure_omega_schedule(*ctx, ctx->sweeps);
+            PetscCall(PetscViewerASCIIPrintf(viewer, "  Kokkos block red-black Gauss-Seidel: block size %d, %d colors, %d sweeps, CCSI relaxation (rho_J = %g, omega_B^1 = %g, omega_R^%d = %g)\n",
+                                             (int)ctx->bs, (int)ctx->ncolors, (int)ctx->sweeps, (double)ctx->rhoJ, (double)ctx->omegaBlack[0], (int)ctx->sweeps, (double)ctx->omegaRed.back()));
+        } else {
+            PetscCall(PetscViewerASCIIPrintf(viewer, "  Kokkos block red-black Gauss-Seidel: block size %d, %d colors, %d sweeps, fixed omega %g\n",
+                                             (int)ctx->bs, (int)ctx->ncolors, (int)ctx->sweeps, (double)ctx->omega));
+        }
     }
     PetscFunctionReturn(PETSC_SUCCESS);
 }

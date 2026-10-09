@@ -19,8 +19,8 @@ each cell's group-by-group block solved directly?
      `-ksp_norm_type none -ksp_max_it N` it is "N sweeps per outer iteration with no residual check",
      i.e. exactly what a standalone Kokkos inner solver would do. That is how the PETSc-free variant was
      measured without writing a second driver.
-3. **New default**: GMRES + one `kokkosbgs` sweep (`PetscEigenSolver.cpp`). Everything else is unchanged
-   and every variant below is selectable from the command line (`PETSC_OPTIONS=...`).
+3. **New default**: GMRES + two CCSI-relaxed `kokkosbgs` sweeps (`PetscEigenSolver.cpp`). Everything else is
+   unchanged and every variant below is selectable from the command line (`PETSC_OPTIONS=...`).
 
 ## Measurements
 
@@ -57,6 +57,40 @@ and 68 (2 sweeps), Richardson block SOR 247 at omega 1.7 / 279 at 1.8, 10 fixed 
 
 CMFD test suite with the new default: 10/10 pass in 17 s (37 s with Jacobi, 498 s originally).
 
+## Adaptive relaxation (CCSI), after Stimpson & Collins 2016
+
+`doc/trans_v115_n1_pp1252-1255.pdf` describes MPACT's RBSOR: red and black half-sweeps with different
+relaxation factors from the cyclic Chebyshev semi-iterative scheme (w_R^1 = 1, w_B^1 = 1/(1 - rho_J^2/2),
+then w_R^{i+1} = 1/(1 - rho_J^2 w_B^i/4), w_B^{i+1} = 1/(1 - rho_J^2 w_R^{i+1}/4)), with the Jacobi spectral
+radius estimated from the first 10 unrelaxed inner iterations, and a fixed cap of 50-150 inner iterations per
+eigenvalue update. `kokkosbgs` now does the same (`-pc_kokkosbgs_adaptive`, default on): rho_GS is estimated
+at setup from 10 unrelaxed sweeps on A e = 0, rho_J = sqrt(rho_GS), and the CCSI schedule is applied across
+the sweeps of each application. Estimated rho_J: 0.9765 (mini-core), 0.9795 (7x7); the asymptotic optimal
+omega 2/(1 + sqrt(1 - rho_J^2)) = 1.65 agrees with the manual scan above (best between 1.7 and 1.8). The
+scheme is only valid for two colors; with more colors the fixed omega is used (the paper notes the same
+restriction for rotationally symmetric boundaries).
+
+mini-core, total work for the whole eigenvalue solve:
+
+| Inner solver | outer its | matvecs | sweeps | KSPSolve (s) | gold tests |
+|---|---|---|---|---|---|
+| GMRES + 1 block RB-GS sweep, omega 1 | 13 | 516 | 530 | 0.089 | pass |
+| GMRES + 1 CCSI sweep | 13 | 520 | 534 | - | pass |
+| **GMRES + 2 CCSI sweeps (new branch default)** | 13 | **241** | 510 | **0.050** | pass |
+| Richardson, fixed omega 1.8, to tolerance | 13 | 940 | 954 | 0.120 | pass |
+| MPACT-style: 10 CCSI sweeps per eigenvalue update | 17 | - | **180** | 0.058 | **fail** (false convergence, all 3) |
+| MPACT-style: 20 CCSI sweeps per eigenvalue update | 14 | - | 300 | 0.040 | pass |
+| MPACT-style: 30 CCSI sweeps per eigenvalue update | 13 | - | 420 | 0.022 | pass |
+| MPACT-style: 10 sweeps, fixed omega 1.8 | 18 | - | 190 | 0.017 | fail (1 of 3) |
+
+7x7 shows the same pattern (GMRES + 2 CCSI sweeps: 62 matvecs; MPACT-style 10/20/30 sweeps: 130/160/180
+sweeps, 20 sweeps needed for the gold test). CCSI buys nothing when the preconditioner is a single sweep (GMRES
+absorbs the relaxation), and roughly matches a hand-tuned fixed omega in the MPACT-style mode, but it needs
+no tuning, which is the point. The paper's observation about the inner-iteration cap reproduces exactly: too
+few sweeps per update makes consecutive keff iterates agree before keff is right (their 25-iteration case was
+150 pcm off at a 1e-6 criterion; here 10 sweeps fail the 1e-7 gold tests, 20 pass), so a standalone solver
+needs either enough sweeps or a convergence test on the fission source / residual rather than on dk alone.
+
 ## Conclusions
 
 - **The block structure alone is not the lever.** Point-block Jacobi, i.e. exactly inverting each cell's 7x7
@@ -86,6 +120,7 @@ same interface for the multi-rank case; the assembler and fission-source kernels
 ## Figure
 
 `cmfd_solver_comparison.png` compares original master, the first optimization branch (GMRES + Jacobi with the
-fixed fission kernel and nonzero initial guess) and this branch, best of 3 runs each. Sub-0.1 s timings on this
+fixed fission kernel and nonzero initial guess) and this branch's default (GMRES + 2 CCSI block RB-GS sweeps),
+best of 3 runs each. Sub-0.1 s timings on this
 WSL machine jitter by 2-10x between runs (OpenMP wake-up latency), so treat the matvec counts as the reliable
 column and the small-case times as indicative only.
