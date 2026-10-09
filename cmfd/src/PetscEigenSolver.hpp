@@ -44,4 +44,7 @@ struct PetscEigenSolver
     ~PetscEigenSolver();
 
     PetscErrorCode solve(size_t maxIterations = 100);
+
+    // Relative residual ||M phi - F phi / keff|| / ||M phi|| of the current eigenpair
+    PetscErrorCode eigenResidual(PetscReal &relres);
 };

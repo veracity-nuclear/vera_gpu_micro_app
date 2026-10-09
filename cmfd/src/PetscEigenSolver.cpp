@@ -104,3 +104,23 @@ PetscErrorCode PetscEigenSolver::solve(size_t maxIterations) {
 
     PetscFunctionReturn(PETSC_SUCCESS);
 }
+
+// Relative eigen-residual ||M phi - F phi / keff|| / ||M phi|| of the current (keff, flux) pair: an
+// a-posteriori check of how converged the eigenpair really is, independent of the iteration's own test.
+PetscErrorCode PetscEigenSolver::eigenResidual(PetscReal &relres)
+{
+    PetscFunctionBeginUser;
+    Vec Mphi, r;
+    PetscCall(VecDuplicate(currentFlux, &Mphi));
+    PetscCall(VecDuplicate(currentFlux, &r));
+    PetscCall(MatMult(assemblerPtr->getM(), currentFlux, Mphi));
+    Vec Fphi = assemblerPtr->getFissionSource(currentFlux);
+    PetscCall(VecWAXPY(r, -1.0 / keff, Fphi, Mphi));
+    PetscReal rn, mn;
+    PetscCall(VecNorm(r, NORM_2, &rn));
+    PetscCall(VecNorm(Mphi, NORM_2, &mn));
+    relres = rn / mn;
+    PetscCall(VecDestroy(&Mphi));
+    PetscCall(VecDestroy(&r));
+    PetscFunctionReturn(PETSC_SUCCESS);
+}

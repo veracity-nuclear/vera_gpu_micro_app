@@ -181,6 +181,8 @@ PetscErrorCode SimpleMatrixAssembler::_assembleM()
     // Actually put the values into the matrix
     PetscCall(MatAssemblyBegin(MMat, MAT_FINAL_ASSEMBLY));
     PetscCall(MatAssemblyEnd(MMat, MAT_FINAL_ASSEMBLY));
+    // Rows are grouped by cell (nGroups per cell); expose that for block preconditioners
+    PetscCall(MatSetBlockSize(MMat, cmfdData.nGroups));
 
     PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -193,6 +195,10 @@ PetscErrorCode SimpleMatrixAssembler::_assembleFission(const FluxView& flux)
     vecValues.reserve(nRows);
 
     PetscFunctionBeginUser;
+    // Entries below machine epsilon are not set below, so clear the vector first; otherwise values from
+    // the previous application survive and F stops being a linear operator (the Davidson solver applies
+    // F to correction vectors with tiny components and exposed this).
+    PetscCall(VecZeroEntries(fissionVec));
 
     for (PetscInt cellIdx = 0; cellIdx < cmfdData.nCells; ++cellIdx)
     {
@@ -417,6 +423,7 @@ PetscErrorCode COOMatrixAssembler::_assembleM()
         Kokkos::fence();
         PetscCall(MatSetPreallocationCOO(MMat, maxNNZEntries, rowIndices.data(), colIndices.data()));
         PetscCall(MatSetValuesCOO(MMat, values.data(), ADD_VALUES));
+        PetscCall(MatSetBlockSize(MMat, cmfdData.nGroups));
     }
 
     PetscFunctionReturn(PETSC_SUCCESS);
