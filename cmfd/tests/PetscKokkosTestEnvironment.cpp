@@ -25,7 +25,7 @@ void compare2DHostAndDevice(
   ASSERT_EQ(h_view.extent(0), d_view.extent(0)) << message;
   ASSERT_EQ(h_view.extent(1), d_view.extent(1)) << message;
 
-  Kokkos::View<PetscScalar **>::HostMirror h_viewCheck = Kokkos::create_mirror_view(d_view);
+  auto h_viewCheck = Kokkos::create_mirror_view(d_view);
   Kokkos::deep_copy(h_viewCheck, d_view);
 
   for (size_t i = 0; i < h_view.extent(0); ++i)
@@ -141,16 +141,16 @@ DummyMatrixAssembler::DummyMatrixAssembler(const HighFive::File &file)
 
   size_t firstCell, lastCell;
   HighFive::DataSet firstCellH5 = file.getDataSet("CMFD_CoarseMesh/first cell");
-  firstCellH5.read(&firstCell);
+  firstCellH5.read(firstCell);
   HighFive::DataSet lastCellH5 = file.getDataSet("CMFD_CoarseMesh/last cell");
-  lastCellH5.read(&lastCell);
+  lastCellH5.read(lastCell);
   nCells = lastCell - firstCell + 1;
 
   HighFive::DataSet nGroupsH5 = file.getDataSet("CMFD_CoarseMesh/energy groups");
-  nGroupsH5.read(&nGroups);
+  nGroupsH5.read(nGroups);
 
   HighFive::DataSet kGoldH5 = file.getDataSet("STATE_0001/keff");
-  kGoldH5.read(&kGold);
+  kGoldH5.read(kGold);
 
   PetscInt nRows = AMatVecOfVec.size();
 

@@ -210,7 +210,7 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
 
     // Print solver initialization statistics
     std::cout << "\n=== SOLVER INITIALIZATION SUMMARY ===" << std::endl;
-    std::cout << "Execution resources: " << ExecutionSpace::concurrency() << std::endl;
+    std::cout << "Execution resources: " << ExecutionSpace().concurrency() << std::endl;
     std::cout << "Verbose mode: " << (_verbose ? "ON" : "OFF") << std::endl;
     std::cout << "Crossflow: " << (_cf_flag ? "ENABLED" : "DISABLED") << std::endl;
 
@@ -329,7 +329,7 @@ Solver<ExecutionSpace>::Solver(
 
     // Print solver initialization statistics
     std::cout << "\n=== SOLVER INITIALIZATION SUMMARY ===" << std::endl;
-    std::cout << "Execution resources: " << ExecutionSpace::concurrency() << std::endl;
+    std::cout << "Execution resources: " << ExecutionSpace().concurrency() << std::endl;
     std::cout << "Verbose mode: " << (_verbose ? "ON" : "OFF") << std::endl;
     std::cout << "Crossflow: " << (_cf_flag ? "ENABLED" : "DISABLED") << std::endl;
 

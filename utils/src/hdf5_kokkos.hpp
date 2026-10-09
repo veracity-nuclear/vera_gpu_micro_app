@@ -51,7 +51,7 @@ ViewType HDF5ToKokkosView(const HighFive::DataSet &dataset, const std::string &l
         static_assert(ViewType::rank <= 4, "Only up to 4D Kokkos::View is supported");
     }
 
-    dataset.read(h5View.data());
+    dataset.read_raw(h5View.data());
 
     // Only adjust for surf2Cell if the view is 2D and integer type
     if constexpr (ViewType::rank == 2 && std::is_integral_v<typename ViewType::value_type>) {
@@ -63,7 +63,7 @@ ViewType HDF5ToKokkosView(const HighFive::DataSet &dataset, const std::string &l
         }
     }
 
-    typename ViewType::HostMirror h_view = Kokkos::create_mirror_view(d_view);
+    auto h_view = Kokkos::create_mirror_view(d_view);
 
     // These copies are no-op if the memory spaces are the same
     Kokkos::deep_copy(h_view, h5View); // Changes the layout to the host layout

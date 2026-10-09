@@ -2,6 +2,13 @@ cmake_minimum_required(VERSION 3.16)
 project(VERA_GPU_MicroApps C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
+
+# Default to an optimized build; the micro-apps exist to measure performance,
+# and an unspecified build type produces unoptimized (-O0) binaries.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (Release, RelWithDebInfo, Debug)" FORCE)
+    message(STATUS "CMAKE_BUILD_TYPE not set; defaulting to Release")
+endif()
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 
 # Allow setting default search paths for find_package()

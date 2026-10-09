@@ -17,7 +17,7 @@ TEST(readData, testHDF5ToKokkosView)
     auto d_view = HDF5ToKokkosView<Kokkos::View<double**>>(H5Dataset, "flux");
 
     // Check if the data is correctly copied to the device
-    Kokkos::View<double**>::HostMirror h_view = Kokkos::create_mirror_view(d_view);
+    auto h_view = Kokkos::create_mirror_view(d_view);
     Kokkos::deep_copy(h_view, d_view);
     for (size_t i = 0; i < h_view.extent(0); ++i) {
         for (size_t j = 0; j < h_view.extent(1); ++j) {

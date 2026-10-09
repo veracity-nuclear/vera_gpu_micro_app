@@ -303,7 +303,7 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
 
 #ifdef KOKKOS_ENABLE_OPENMP
     if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
-        _d_thread_scalar_flux = DViewReal3D("thread_scalar_flux", ExecutionSpace::concurrency(), _nfsr, _ng);
+        _d_thread_scalar_flux = DViewReal3D("thread_scalar_flux", ExecutionSpace().concurrency(), _nfsr, _ng);
     }
 #endif
     Kokkos::Profiling::popRegion();
@@ -711,7 +711,7 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
     // Reduction for OpenMP
 #ifdef KOKKOS_ENABLE_OPENMP
     if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
-        for (int k = 0; k < ExecutionSpace::concurrency(); k++) {
+        for (int k = 0; k < ExecutionSpace().concurrency(); k++) {
             for (int i = 0; i < _nfsr; i++) {
                 for (int g = 0; g < _ng; g++) {
                     scalar_flux(i, g) += static_cast<double>(thread_scalar_flux(k, i, g));

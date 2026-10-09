@@ -203,11 +203,11 @@ TEST(s01_hdf5, hdf5ToKokkosView)
 
   // You can't read H5 into a Host mirror as the layout may be different
   Kokkos::View<PetscScalar **, Kokkos::HostSpace> h_data(Kokkos::ViewAllocateWithoutInitializing("dataKokkos"), dims[0], dims[1]);
-  dataH5.read(h_data.data());
+  dataH5.read_raw(h_data.data());
 
   // Can only read views from HDF5 to Kokkos on the host space
   Kokkos::View<PetscScalar**> d_data(Kokkos::ViewAllocateWithoutInitializing("device data"), dims[0], dims[1]);
-  Kokkos::View<PetscScalar**>::HostMirror h_mirrorData = Kokkos::create_mirror_view(d_data);
+  auto h_mirrorData = Kokkos::create_mirror_view(d_data);
   Kokkos::deep_copy(h_mirrorData, h_data); // Changes the layout to the device layout
   // At this point we can deallocate h_data (Kokkos uses RAII)
 
@@ -224,7 +224,7 @@ TEST(s01_hdf5, hdf5ToKokkosView)
   // See if we can copy the data to the device and back
   Kokkos::deep_copy(d_data, h_mirrorData);
 
-  Kokkos::View<PetscScalar**>::HostMirror h_dataCheck = Kokkos::create_mirror_view(d_data);
+  auto h_dataCheck = Kokkos::create_mirror_view(d_data);
   Kokkos::deep_copy(h_dataCheck, d_data);
 
   for (size_t i = 0; i < dims[0]; ++i)
@@ -254,7 +254,7 @@ TEST(s01_hdf5, hdf5ToKokkosView)
   dualData.template sync<typename Kokkos::DefaultExecutionSpace>();
   DualView::t_dev d_dualData = dualData.view_device();
 
-  Kokkos::View<PetscScalar**>::HostMirror h_dualDataCheck = Kokkos::create_mirror_view(h_dualData);
+  auto h_dualDataCheck = Kokkos::create_mirror_view(h_dualData);
   Kokkos::deep_copy(h_dualDataCheck, d_dualData);
   for (size_t i = 0; i < dims[0]; ++i)
   {
@@ -526,7 +526,7 @@ TEST(s03_kokkos, kokkosViewToPetscVec)
 
   // Copy the values to the host from the device so we can inspect it
   // Kokkos::View<PetscScalar*, Kokkos::HostSpace::memory_space> h_values("bVecHost", vectorLength);
-  Kokkos::View<PetscScalar *, Kokkos::HostSpace::memory_space>::HostMirror h_values = Kokkos::create_mirror_view(d_values);
+  auto h_values = Kokkos::create_mirror_view(d_values);
 
   Kokkos::deep_copy(h_values, d_values);
   Kokkos::fence(); // Ensure the copy is complete before accessing
