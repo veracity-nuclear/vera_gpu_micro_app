@@ -20,7 +20,9 @@ class KokkosMOC : public BaseMOC {
     using HViewReal2D = Kokkos::View<RealType**, layout, Kokkos::HostSpace>;
     using HViewReal3D = Kokkos::View<RealType***, layout, Kokkos::HostSpace>;
     using DViewInt1D = Kokkos::View<int*, layout, MemorySpace>;
+    using DViewDouble1D = Kokkos::View<double*, layout, MemorySpace>;
     using DViewDouble2D = Kokkos::View<double**, layout, MemorySpace>;
+    using DViewDouble3D = Kokkos::View<double***, layout, MemorySpace>;
     using DViewReal1D = Kokkos::View<RealType*, layout, MemorySpace>;
     using DViewReal2D = Kokkos::View<RealType**, layout, MemorySpace>;
     using DViewReal3D = Kokkos::View<RealType***, layout, MemorySpace>;
@@ -32,6 +34,18 @@ class KokkosMOC : public BaseMOC {
     // Friend declaration for googletest
     friend class BasicTest_test_kokkos_exp_table_Test;
 
+    // Host execution spaces (Serial, OpenMP) use a cache-friendly sweep in which each work item is a
+    // (ray, polar angle) pair and the energy-group loop is innermost; GPU spaces use one work item per
+    // (ray, polar, group) so that enough fine-grained parallelism is exposed.
+    static constexpr bool host_sweep =
+#ifdef KOKKOS_ENABLE_SERIAL
+        std::is_same_v<ExecutionSpace, Kokkos::Serial> ||
+#endif
+#ifdef KOKKOS_ENABLE_OPENMP
+        std::is_same_v<ExecutionSpace, Kokkos::OpenMP> ||
+#endif
+        false;
+
     public:
         // Constructor
         KokkosMOC(const ArgumentParser& args);
@@ -39,8 +53,9 @@ class KokkosMOC : public BaseMOC {
         // Run the MOC sweep
         void sweep() override;
 
-        // Unified implementation of MOC sweep for any execution space
-        void _impl_sweep();
+        // Sweep implementations (see host_sweep above)
+        void _sweep_host();
+        void _sweep_device();
 
         // Get the FSR volumes
         std::vector<double> fsr_vol() const override {
@@ -76,14 +91,15 @@ class KokkosMOC : public BaseMOC {
             int nsegs;
             int plane_index;
             HighFive::Group ray_group;
+            std::vector<int> fsrs;  // FSR indices, read once and reused when building the segment list
 
-            RayInfo(const std::string& ang_name, const std::string& r_name, int ang_idx, int nseg, int p_idx, HighFive::Group group)
-                : angle_name(ang_name), ray_name(r_name), angle_index(ang_idx), nsegs(nseg), plane_index(p_idx), ray_group(group) {}
+            RayInfo(const std::string& ang_name, const std::string& r_name, int ang_idx, int p_idx, HighFive::Group group, std::vector<int>&& fsr_list)
+                : angle_name(ang_name), ray_name(r_name), angle_index(ang_idx), nsegs(fsr_list.size()), plane_index(p_idx), ray_group(group), fsrs(std::move(fsr_list)) {}
         };
 
         std::vector<RayInfo> _read_ray_infos();
-        HViewKokkosLongRay1D _read_rays(std::vector<RayInfo> ray_infos);  // Read rays from the HDF5 file
-        HViewKokkosRaySegment1D _read_segments(std::vector<RayInfo> ray_infos);  // Read rays from the HDF5 file
+        HViewKokkosLongRay1D _read_rays(const std::vector<RayInfo>& ray_infos);  // Read rays from the HDF5 file
+        HViewKokkosRaySegment1D _read_segments(const std::vector<RayInfo>& ray_infos);  // Read rays from the HDF5 file
         void _get_xstr(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xstr from XS library
         void _get_xsnf(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xsnf from XS library
         void _get_xsch(const int num_fsr, const std::vector<int>& fsr_mat_id, const c5g7_library& library);  // Read xsch from XS library
@@ -142,5 +158,7 @@ class KokkosMOC : public BaseMOC {
         DViewReal2D _d_source;
         DViewReal3D _d_angflux;
         DViewReal3D _d_old_angflux;
-        DViewReal3D _d_thread_scalar_flux;
+        DViewDouble3D _d_thread_scalar_flux; // Per-thread scalar flux tallies (host sweep only)
+        DViewReal2D _d_thread_exparg;       // Per-thread workspace for exp arguments and ray fluxes (host sweep only)
+        DViewDouble1D _d_fissrc;            // Device fission source scratch (nfsr)
 };

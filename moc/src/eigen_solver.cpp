@@ -17,9 +17,6 @@ EigenSolver::EigenSolver(const ArgumentParser& args, std::shared_ptr<BaseMOC> sw
     _sweeper(sweeper),
     _fsr_vol(sweeper->fsr_vol())
   {
-  _scalar_flux = _sweeper->scalar_flux();
-  _old_scalar_flux = _scalar_flux;
-
   _keff = 1.0;
   _old_keff = 1.0;
   _fissrc = _sweeper->fission_source(_keff);
@@ -44,7 +41,6 @@ void EigenSolver::solve() {
 
       Kokkos::Profiling::pushRegion("EigenSolver fissrc and keff update");
       // Update fission source and keff
-      _scalar_flux = _sweeper->scalar_flux();
       _fissrc = _sweeper->fission_source(_keff);
       double numerator = 0.0;
       double denominator = 0.0;
@@ -78,14 +74,13 @@ void EigenSolver::solve() {
                 << "   " << fnorm
                 << "   " << std::fixed << std::setprecision(4) << elapsed_seconds << std::endl;
 
-      // Save the old values
+      // Rescale the fission source to the updated keff (fission_source(k) is proportional to 1/k),
+      // which avoids a second pass over the flux, and save the old values
+      const double rescale = _old_keff / _keff;
       for (size_t i = 0; i < _fissrc.size(); ++i) {
-          for (size_t g = 0; g < _scalar_flux[i].size(); ++g) {
-              _old_scalar_flux[i][g] = _relaxation * _scalar_flux[i][g] + (1.0 - _relaxation) * _old_scalar_flux[i][g];
-          }
+          _fissrc[i] *= rescale;
       }
       _old_keff = _keff;
-      _fissrc = _sweeper->fission_source(_keff);
       _old_fissrc = _fissrc;
       Kokkos::Profiling::popRegion();
 

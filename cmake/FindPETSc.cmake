@@ -26,9 +26,11 @@ if(NOT PETSc_FOUND)
         message(FATAL_ERROR "PETSc could not be found in either flat or arch-specific layout under: ${PETSC_DIR}")
     endif()
 
-    # Locate PETSc library and header
-    find_path(PETSC_INCLUDE_DIR_FINAL petsc.h PATHS "${PETSC_INCLUDE_DIR}")
-    find_library(PETSC_LIBRARY petsc PATHS "${PETSC_LIBRARY_DIR}")
+    # Locate PETSc library and header. In the arch-specific layout petsc.h lives in ${PETSC_DIR}/include
+    # while petscconf.h lives in ${PETSC_DIR}/${PETSC_ARCH}/include, so search both and nowhere else
+    # (a petsc.h from an unrelated installation on CMAKE_PREFIX_PATH must not be picked up).
+    find_path(PETSC_INCLUDE_DIR_FINAL petsc.h PATHS "${PETSC_INCLUDE_DIR}" "${PETSC_DIR}/include" NO_DEFAULT_PATH)
+    find_library(PETSC_LIBRARY petsc PATHS "${PETSC_LIBRARY_DIR}" NO_DEFAULT_PATH)
 
     if(PETSC_INCLUDE_DIR_FINAL AND PETSC_LIBRARY)
         set(PETSc_FOUND TRUE)

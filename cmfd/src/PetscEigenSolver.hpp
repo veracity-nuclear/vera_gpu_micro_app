@@ -13,8 +13,14 @@ struct PetscEigenSolver
     KSP ksp; // Linear solver context
     PC pc;   // Preconditioner context
 
-    // tol is both the tol of the KSP (linear) solver and the convergence tolerance for the eigenvalue problem.
+    // tol is the convergence tolerance for the eigenvalue problem (|delta keff| < tol).
     static constexpr double tol = 1.e-7;
+    // Relative tolerance of the KSP (linear) solver. Because each inner solve starts from the previous
+    // flux (nonzero initial guess), an inner tolerance equal to tol lets the inner solve stop after
+    // ~0 iterations once the flux stops changing by more than tol, which stalls the power iteration
+    // short of the true keff (7x7 case: |keff - gold| = 1.2e-7). Solving 10x tighter than the outer
+    // tolerance avoids that and still needs fewer total inner iterations than zero-guess solves at tol.
+    static constexpr double kspRtol = tol / 10;
     double keff;
     std::vector<double> keffHistory;
 

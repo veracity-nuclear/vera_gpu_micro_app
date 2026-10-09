@@ -15,9 +15,12 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux");
 
     using Functor = ANTSFunctor<ExecutionSpace>;
+    using surface_policy = Kokkos::RangePolicy<ExecutionSpace>;
     using planar_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::planar>;
     using residual_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::surface_residual>;
-    using perturbed_residual_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::perturbed_surface_residual>;
+    using jacobian_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::jacobian_columns>;
+    using copy_gk_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::copy_gk_from_previous_plane>;
+    using update_gk_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::apply_gk_update>;
 
     Functor functor(state);
 
@@ -25,33 +28,20 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     const size_t nsurf = state.geom->nsurfaces();
     const size_t k = state.surface_plane;
     const size_t k_node = state.node_plane;
-    auto num_neighbors = state.geom->num_neighbors_view();
-
-    // Create host mirrors for geometry data
-    auto h_num_neighbors = Kokkos::create_mirror_view(num_neighbors);
-    Kokkos::deep_copy(h_num_neighbors, num_neighbors);
 
     // Copy previous plane solution as starting guess for gk
-    auto h_gk = Kokkos::create_mirror_view(functor.gk);
-    Kokkos::deep_copy(h_gk, functor.gk);
     if (k_node > 0) {
-        for (size_t ns = 0; ns < nsurf; ++ns) {
-            h_gk(ns, k_node) = h_gk(ns, k_node - 1);
-        }
+        Kokkos::parallel_for("TH::gk initial guess", copy_gk_policy(0, nsurf), functor);
     }
-    Kokkos::deep_copy(functor.gk, h_gk);
 
-    // Create surface mirror once (geometry doesn't change)
-    auto surfaces = Kokkos::create_mirror_view(state.geom->surface_view());
-    Kokkos::deep_copy(surfaces, state.geom->surface_view());
-
-    auto h_f0 = Kokkos::create_mirror_view(functor.f0);
-    auto h_gk_pert = Kokkos::create_mirror_view(functor.gk);
+    // Sparse Jacobian structure (fixed by the geometry) and a linear solver reused across Newton iterations
+    auto jac_row_ptr = state.geom->jacobian_row_ptr_view();
+    auto jac_col_idx = state.geom->jacobian_col_idx_view();
+    PetscLinearSolver<ExecutionSpace> linear_solver(nsurf, 1.0e-8);
+    auto f0 = functor.f0;
 
     // outer loop for newton iteration convergence
     for (size_t outer_iter = 0; outer_iter < functor.max_outer_iter; ++outer_iter) {
-
-        Kokkos::deep_copy(functor.dfdg, 0.0);
 
         // accumulate surface sources
         functor.accumulate_surface_sources();
@@ -63,11 +53,12 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
         Kokkos::parallel_for("TH::solve_surface_mass_flux - calculate residuals f0", residual_policy(0, nsurf), functor);
 
         // calculate max residual
-        Kokkos::deep_copy(h_f0, functor.f0);
         double max_res = 0.0;
-        for (size_t ns = 0; ns < nsurf; ++ns) {
-            max_res = std::max(max_res, std::abs(h_f0(ns)));
-        }
+        Kokkos::parallel_reduce("TH::solve_surface_mass_flux - max residual", surface_policy(0, nsurf),
+            KOKKOS_LAMBDA(const size_t ns, double& lmax) {
+                const double r = Kokkos::abs(f0(ns));
+                if (r > lmax) lmax = r;
+            }, Kokkos::Max<double>(max_res));
         std::cout << "Outer Iteration: " << std::setw(3) << outer_iter + 1 << ", Max Residual: " << std::scientific << max_res << std::defaultfloat << std::endl;
 
         if (max_res < functor.tol) {
@@ -81,37 +72,22 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
                       << ") with residual = " << std::scientific << max_res << std::defaultfloat << std::endl;
         }
 
-        Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - perturbation loop");
-        for (size_t ns1 = 0; ns1 < nsurf; ++ns1) {
-            functor.current_ns1 = ns1;
-
-            Kokkos::deep_copy(h_gk_pert, functor.gk);
-
-            const double gk0 = h_gk_pert(ns1, k_node);
-
-            // perturb the mass flux at surface ns1
-            functor.perturb_surface(ns1);
-
-            // now assemble f3 and dfdg(:, ns1) on device
-            const size_t nneigh = h_num_neighbors(ns1);
-            Kokkos::parallel_for("TH::perturbed_residual", perturbed_residual_policy(0, nneigh), functor);
-
-            h_gk_pert(ns1, k_node) = gk0; // restore original value
-            Kokkos::deep_copy(functor.gk, h_gk_pert);
-        }
+        // Finite-difference Jacobian, one column per surface, all columns in parallel
+        Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - jacobian");
+        Kokkos::parallel_for("TH::jacobian_columns", jacobian_policy(0, nsurf), functor);
+        Kokkos::fence();
         Kokkos::Profiling::popRegion();
 
-        // solve the system of equations (overwrites f0 as solution vector)
+        // solve the system of equations (overwrites f0 with the solution vector)
         Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - solve_linear_system_petsc");
-        solve_linear_system_petsc<ExecutionSpace>(nsurf, functor.dfdg, functor.f0);
-        Kokkos::deep_copy(h_f0, functor.f0);
+        PetscErrorCode ierr = linear_solver.solve_csr(jac_row_ptr, jac_col_idx, functor.jac_values, functor.f0);
+        if (ierr != 0) {
+            std::cerr << "PETSc linear solver failed with error code: " << ierr << std::endl;
+        }
         Kokkos::Profiling::popRegion();
 
         // update mass fluxes from solution
-        for (size_t ns = 0; ns < nsurf; ++ns) {
-            h_gk(ns, k_node) -= h_f0(ns);
-        }
-        Kokkos::deep_copy(functor.gk, h_gk);
+        Kokkos::parallel_for("TH::gk update", update_gk_policy(0, nsurf), functor);
 
     } // end outer iteration loop
 

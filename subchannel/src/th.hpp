@@ -74,20 +74,20 @@ struct ANTSFunctor {
     using SurfaceView = decltype(std::declval<Geometry<ExecutionSpace>>().surface_view());
     using IndexView1D = decltype(std::declval<Geometry<ExecutionSpace>>().num_neighbors_view());
     using IndexView2D = decltype(std::declval<Geometry<ExecutionSpace>>().surface_neighbors_view());
+    using JacPosView  = decltype(std::declval<Geometry<ExecutionSpace>>().jacobian_position_view());
 
     using team_member = typename Kokkos::TeamPolicy<ExecutionSpace>::member_type;
 
     // -------- Tags for different kernels --------
     struct planar                       {};
-    struct planar_perturb               {};
     struct accumulate_surf_sources      {};
     struct solve_evaporation_term       {};
     struct solve_mixing_terms           {};
     struct solve_mixing                 {};
-    struct solve_surface_mass_flux      {};
     struct surface_residual             {};
-    struct perturbed_surface_residual   {};
-    struct perturbation_team            {};
+    struct jacobian_columns             {};
+    struct copy_gk_from_previous_plane  {};
+    struct apply_gk_update              {};
 
     // -------- Stored views / data --------
     // Geometry-derived views
@@ -97,6 +97,7 @@ struct ANTSFunctor {
     View1D      dz;
     IndexView1D num_neighbors;
     IndexView2D neighbor_list;
+    JacPosView  jac_pos;        // (ns1, n) -> CSR position of Jacobian entry (row neighbor(ns1,n), col ns1)
 
     // State views
     View2D P, X, W_l, W_v, h_l, evap, alpha, lhr, gk;
@@ -119,18 +120,15 @@ struct ANTSFunctor {
     const double tol = 1e-8;
     size_t max_inner_iter = 50;
     size_t max_outer_iter = 25;
-    mutable size_t current_ns1;
-    mutable double current_dG;
 
     // Views for mixing terms
     View1D gbar0;
     View1D reyn0;
     View1D Theta;
 
-    // Views for perturbation loop residuals and Jacobian
+    // Residual vector and sparse (CSR) Jacobian values; the CSR structure lives in Geometry
     View1D f0;
-    View1D f3;
-    View2D dfdg;
+    View1D jac_values;
 
     ANTSFunctor(StateType& state)
         : surfaces(state.geom->surface_view())
@@ -139,6 +137,7 @@ struct ANTSFunctor {
         , dz(state.geom->dz_view())
         , num_neighbors(state.geom->num_neighbors_view())
         , neighbor_list(state.geom->surface_neighbors_view())
+        , jac_pos(state.geom->jacobian_position_view())
         , P(state.P)
         , X(state.X)
         , W_l(state.W_l)
@@ -187,8 +186,7 @@ struct ANTSFunctor {
         Theta = View1D("Theta", nchan);
 
         f0   = View1D("f0", nsurf);
-        f3   = View1D("f3", nsurf);
-        dfdg = View2D("dfdg", nsurf, nsurf);
+        jac_values = View1D("jac_values", state.geom->jacobian_nnz());
     }
 
     // helper functions to execute operator kernels
@@ -206,19 +204,6 @@ struct ANTSFunctor {
         Kokkos::parallel_for("TH::accumulate_surface_sources", policy(0, nsurf), *this);
     }
 
-    void perturb_surface(size_t ns) {
-
-        auto h_gk = Kokkos::create_mirror_view(gk);
-        Kokkos::deep_copy(h_gk, gk);
-        double dG = (h_gk(ns, k_node) >= 0) ? -gtol : gtol;
-        h_gk(ns, k_node) += dG;
-        Kokkos::deep_copy(gk, h_gk);
-
-        current_dG = dG;
-
-        accumulate_surface_sources();
-    }
-
     // --------- One operator per high-level routine ---------
 
     // TH::planar -> per-channel (ij)
@@ -231,42 +216,27 @@ struct ANTSFunctor {
         solve_pressure(ij, W_l(ij, k), W_v(ij, k), h_l(ij, k), alpha(ij, k), X(ij, k), P(ij, k));
     }
 
-    // TH::planar_perturb -> per-channel (ij)
+    // Source contributions of surface ns for a given crossflow value gk_ns: the six terms that are added
+    // to the from-node and subtracted from the to-node (liquid mass, vapor mass, energy, crossflow
+    // momentum, turbulent-mixing momentum, void-drift momentum). Shared by the source accumulation
+    // and by the Jacobian kernel, which evaluates it at the perturbed gk.
     KOKKOS_INLINE_FUNCTION
-    void operator()(planar_perturb, const size_t ij) const {
-        solve_flow_rates(ij, W_l(ij, k), W_v(ij, k));
-        solve_enthalpy(ij, W_l(ij, k), W_v(ij, k), h_l(ij, k));
-        solve_void_fraction(ij, W_l(ij, k), W_v(ij, k), h_l(ij, k), alpha(ij, k));
-        solve_quality(ij, W_l(ij, k), W_v(ij, k), h_l(ij, k), X(ij, k));
-        solve_pressure(ij, W_l(ij, k), W_v(ij, k), h_l(ij, k), alpha(ij, k), X(ij, k), P(ij, k));
-    }
-
-    // TH::accumulate_surface_sources -> per-surface (ns)
-    KOKKOS_INLINE_FUNCTION
-    void operator()(accumulate_surf_sources, const size_t ns) const {
+    void surface_source_terms(const size_t ns, const double gk_ns, double terms[6]) const {
         auto surf = surfaces(ns);
         size_t i = surf.from_node;
         size_t j = surf.to_node;
-        size_t i_donor = (gk(ns, k_node) >= 0) ? i : j;
+        size_t i_donor = (gk_ns >= 0) ? i : j;
 
-        double A_f_i = A_f(i, k);
-        double A_f_j = A_f(j, k);
         double A_f_donor = A_f(i_donor, k-1);
 
-        double sl = gk(ns, k_node) * (1.0 - X(i_donor, k-1)) + G_l_tm(ns) + G_l_vd(ns);
-        double sl_term = gap_width * sl;
-        Kokkos::atomic_add(&SS_l(i), sl_term);
-        Kokkos::atomic_add(&SS_l(j), -sl_term);
+        double sl = gk_ns * (1.0 - X(i_donor, k-1)) + G_l_tm(ns) + G_l_vd(ns);
+        terms[0] = gap_width * sl;
 
-        double sv = gk(ns, k_node) * X(i_donor, k-1) + G_v_tm(ns) + G_v_vd(ns);
-        double sv_term = gap_width * sv;
-        Kokkos::atomic_add(&SS_v(i), sv_term);
-        Kokkos::atomic_add(&SS_v(j), -sv_term);
+        double sv = gk_ns * X(i_donor, k-1) + G_v_tm(ns) + G_v_vd(ns);
+        terms[1] = gap_width * sv;
 
         double h_l_donor = h_l(i_donor, k-1);
-        double term = gap_width * (gk(ns, k_node) * h_l_donor + Q_m_tm(ns) + Q_m_vd(ns));
-        Kokkos::atomic_add(&SS_m(i), term);
-        Kokkos::atomic_add(&SS_m(j), -term);
+        terms[2] = gap_width * (gk_ns * h_l_donor + Q_m_tm(ns) + Q_m_vd(ns));
 
         // Compute V_m for donor channel inline
         double v_m_donor;
@@ -283,17 +253,33 @@ struct ANTSFunctor {
         double W_m_donor = W_l(i_donor, k-1) + W_v(i_donor, k-1);
         double V_m_donor = v_m_donor * W_m_donor / A_f_donor;
 
-        double cf_term = gap_width * gk(ns, k_node) * V_m_donor;
-        Kokkos::atomic_add(&CF_SS(i), cf_term);
-        Kokkos::atomic_add(&CF_SS(j), -cf_term);
+        terms[3] = gap_width * gk_ns * V_m_donor;
+        terms[4] = gap_width * M_m_tm(ns);
+        terms[5] = gap_width * M_m_vd(ns);
+    }
 
-        double tm_term = gap_width * M_m_tm(ns);
-        Kokkos::atomic_add(&TM_SS(i), tm_term);
-        Kokkos::atomic_add(&TM_SS(j), -tm_term);
+    // TH::accumulate_surface_sources -> per-surface (ns)
+    KOKKOS_INLINE_FUNCTION
+    void operator()(accumulate_surf_sources, const size_t ns) const {
+        auto surf = surfaces(ns);
+        size_t i = surf.from_node;
+        size_t j = surf.to_node;
 
-        double vd_term = gap_width * M_m_vd(ns);
-        Kokkos::atomic_add(&VD_SS(i), vd_term);
-        Kokkos::atomic_add(&VD_SS(j), -vd_term);
+        double t[6];
+        surface_source_terms(ns, gk(ns, k_node), t);
+
+        Kokkos::atomic_add(&SS_l(i), t[0]);
+        Kokkos::atomic_add(&SS_l(j), -t[0]);
+        Kokkos::atomic_add(&SS_v(i), t[1]);
+        Kokkos::atomic_add(&SS_v(j), -t[1]);
+        Kokkos::atomic_add(&SS_m(i), t[2]);
+        Kokkos::atomic_add(&SS_m(j), -t[2]);
+        Kokkos::atomic_add(&CF_SS(i), t[3]);
+        Kokkos::atomic_add(&CF_SS(j), -t[3]);
+        Kokkos::atomic_add(&TM_SS(i), t[4]);
+        Kokkos::atomic_add(&TM_SS(j), -t[4]);
+        Kokkos::atomic_add(&VD_SS(i), t[5]);
+        Kokkos::atomic_add(&VD_SS(j), -t[5]);
     }
 
     // TH::solve_evaporation_term -> per-channel (ij)
@@ -480,13 +466,6 @@ struct ANTSFunctor {
 
     }
 
-    // TH::solve_surface_mass_flux -> per-surface (ns)
-    KOKKOS_INLINE_FUNCTION
-    void operator()(solve_surface_mass_flux, const size_t ns) const {
-        // Use P, X, gk, surfaces, num_neighbors, neighbor_list, etc.
-        // to compute/update crossflow gk(ns,k_node).
-    }
-
     // TH::solve_surface_mass_flux - surface_residual -> per-surface (ns)
     KOKKOS_INLINE_FUNCTION
     void operator()(surface_residual, const size_t ns) const {
@@ -499,125 +478,114 @@ struct ANTSFunctor {
         f0(ns) = -dz(k_node) * aspect * (deltaP - Fns); // Eq. 55 from ANTS Theory
     }
 
+    // Planar solution of channel ij with the accumulated sources shifted by dSS (same six-term order as
+    // surface_source_terms). Used by the Jacobian kernel; with dSS = 0 it reproduces TH::planar.
     KOKKOS_INLINE_FUNCTION
-    void operator()(perturbed_surface_residual, const size_t n) const {
-        const size_t ns1 = current_ns1;         // constant for this kernel launch
-        const size_t ns  = neighbor_list(ns1, n);
-
-        const size_t i = surfaces(ns).from_node;
-        double Wl_i, Wv_i, hl_i, alpha_i, X_i, P_i;
-        solve_flow_rates(i, Wl_i, Wv_i);
-        solve_enthalpy(i, Wl_i, Wv_i, hl_i);
-        solve_void_fraction(i, Wl_i, Wv_i, hl_i, alpha_i);
-        solve_quality(i, Wl_i, Wv_i, hl_i, X_i);
-        solve_pressure(i, Wl_i, Wv_i, hl_i, alpha_i, X_i, P_i);
-
-        const size_t j = surfaces(ns).to_node;
-        double Wl_j, Wv_j, hl_j, alpha_j, X_j, P_j;
-        solve_flow_rates(j, Wl_j, Wv_j);
-        solve_enthalpy(j, Wl_j, Wv_j, hl_j);
-        solve_void_fraction(j, Wl_j, Wv_j, hl_j, alpha_j);
-        solve_quality(j, Wl_j, Wv_j, hl_j, X_j);
-        solve_pressure(j, Wl_j, Wv_j, hl_j, alpha_j, X_j, P_j);
-
-        const double X_donor = (gk(ns, k_node) >= 0.0) ? X_i : X_j;
-        const double rho_m  = fluid.rho_m(X_donor);
-        const double deltaP = P_i - P_j;
-        const double G_cf = gk(ns, k_node);
-        const double Fns = 0.5 * K_ns * G_cf * Kokkos::abs(G_cf) / rho_m;
-
-        f3(ns) = -dz(k_node) * aspect * (deltaP - Fns);
-        dfdg(ns, ns1) = (f3(ns) - f0(ns)) / current_dG;
+    void channel_state_with_source_shift(const size_t ij, const double dSS[6], double& X_ij, double& P_ij) const {
+        double Wl, Wv, hl;
+        double alpha_ij = alpha(ij, k); // keep the stored value when the void solve leaves it untouched
+        solve_flow_rates(ij, SS_l(ij) + dSS[0], SS_v(ij) + dSS[1], Wl, Wv);
+        solve_enthalpy(ij, Wl, Wv, SS_m(ij) + dSS[2], hl);
+        solve_void_fraction(ij, Wl, Wv, hl, alpha_ij);
+        solve_quality(ij, Wl, Wv, hl, X_ij);
+        solve_pressure(ij, Wl, Wv, hl, alpha_ij, X_ij, CF_SS(ij) + dSS[3], TM_SS(ij) + dSS[4], VD_SS(ij) + dSS[5], P_ij);
     }
 
+    // TH::solve_surface_mass_flux - jacobian_columns -> per-surface (ns1)
+    //
+    // Column ns1 of the Jacobian d f / d gk by finite differences. Perturbing gk(ns1) only changes the
+    // source terms of the two channels adjacent to ns1, so instead of re-accumulating every surface's
+    // sources (O(nsurf) work per column, serialized in the original implementation) the perturbed
+    // sources of those two channels are formed locally and only the residuals of the neighbor surfaces
+    // of ns1 are re-evaluated. All columns are independent, so the whole Jacobian is one parallel kernel.
     KOKKOS_INLINE_FUNCTION
-    void operator()(perturbation_team, const team_member& team) const {
+    void operator()(jacobian_columns, const size_t ns1) const {
+        const double gk0 = gk(ns1, k_node);
+        const double dG = (gk0 >= 0.0) ? -gtol : gtol;
+        const size_t i1 = surfaces(ns1).from_node;
+        const size_t j1 = surfaces(ns1).to_node;
 
-        // Loop over ns1 SEQUENTIALLY (to avoid races on gk and sources)
-        for (size_t ns1 = 0; ns1 < nsurf; ++ns1) {
-
-            double gk0 = 0.0;
-            double dG  = 0.0;
-
-            // team-wide: set perturbed gk(ns1,k_node)
-            Kokkos::single(Kokkos::PerTeam(team), [&]() {
-                current_ns1 = ns1;
-                gk0 = gk(ns1, k_node);
-                dG = (gk0 >= 0.0 ? -gtol : gtol);
-                gk(ns1, k_node) = gk0 + dG;
-                current_dG = dG;
-            });
-            team.team_barrier();
-
-            // zero source terms over channels
-            Kokkos::parallel_for(
-                Kokkos::TeamThreadRange(team, nchan),
-                [&](const int ij) {
-                    SS_l(ij)  = 0.0;
-                    SS_v(ij)  = 0.0;
-                    SS_m(ij)  = 0.0;
-                    CF_SS(ij) = 0.0;
-                    TM_SS(ij) = 0.0;
-                    VD_SS(ij) = 0.0;
-                });
-            team.team_barrier();
-
-            // accumulate_surface_sources over all surfaces
-            Kokkos::parallel_for(
-                Kokkos::TeamThreadRange(team, nsurf),
-                [&](const int ns) {
-                    this->operator()(accumulate_surf_sources{}, static_cast<size_t>(ns));
-                });
-            team.team_barrier();
-
-            // planar_perturb over channels
-            Kokkos::parallel_for(
-                Kokkos::TeamThreadRange(team, nchan),
-                [&](const int ij) {
-                    this->operator()(planar{}, static_cast<size_t>(ij));
-                });
-            team.team_barrier();
-
-            // perturbed_residual over neighbors of ns1, fill f3 and dfdg(:,ns1)
-            const size_t nneigh = num_neighbors(ns1);
-            Kokkos::parallel_for(
-                Kokkos::TeamThreadRange(team, nneigh),
-                [&](const int n) {
-                    this->operator()(perturbed_surface_residual{}, static_cast<size_t>(n));
-                });
-            team.team_barrier();
-
-            // restore gk(ns1,k_node)
-            Kokkos::single(Kokkos::PerTeam(team), [&]() {
-                gk(ns1, k_node) = gk0;
-            });
-            team.team_barrier();
+        // Change in the sources of channels i1 (+d) and j1 (-d) due to the perturbation
+        double base[6], pert[6], d[6], neg_d[6];
+        const double zero[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        surface_source_terms(ns1, gk0, base);
+        surface_source_terms(ns1, gk0 + dG, pert);
+        for (int t = 0; t < 6; ++t) {
+            d[t] = pert[t] - base[t];
+            neg_d[t] = -d[t];
         }
+
+        const size_t nneigh = num_neighbors(ns1);
+        for (size_t n = 0; n < nneigh; ++n) {
+            const size_t ns = neighbor_list(ns1, n);
+            const size_t i = surfaces(ns).from_node;
+            const size_t j = surfaces(ns).to_node;
+
+            const double* dSS_i = (i == i1) ? d : ((i == j1) ? neg_d : zero);
+            const double* dSS_j = (j == i1) ? d : ((j == j1) ? neg_d : zero);
+
+            double X_i, P_i, X_j, P_j;
+            channel_state_with_source_shift(i, dSS_i, X_i, P_i);
+            channel_state_with_source_shift(j, dSS_j, X_j, P_j);
+
+            const double G_cf = (ns == ns1) ? gk0 + dG : gk(ns, k_node);
+            const double X_donor = (G_cf >= 0.0) ? X_i : X_j;
+            const double rho_m = fluid.rho_m(X_donor);
+            const double deltaP = P_i - P_j;
+            const double Fns = 0.5 * K_ns * G_cf * Kokkos::abs(G_cf) / rho_m;
+            const double f3 = -dz(k_node) * aspect * (deltaP - Fns);
+
+            jac_values(jac_pos(ns1, n)) = (f3 - f0(ns)) / dG;
+        }
+    }
+
+    // Starting guess for this plane's crossflow: the converged values of the plane below
+    KOKKOS_INLINE_FUNCTION
+    void operator()(copy_gk_from_previous_plane, const size_t ns) const {
+        gk(ns, k_node) = gk(ns, k_node - 1);
+    }
+
+    // Newton update; f0 holds the linear-system solution at this point
+    KOKKOS_INLINE_FUNCTION
+    void operator()(apply_gk_update, const size_t ns) const {
+        gk(ns, k_node) -= f0(ns);
+    }
+
+    // TH::solve_flow_rates -> per-channel (ij), with explicit liquid/vapor source terms
+    KOKKOS_INLINE_FUNCTION
+    void solve_flow_rates(size_t ij, double SSl, double SSv, double& Wl, double& Wv) const {
+
+        // Update liquid flow rate (Eq. 61 from ANTS Theory)
+        Wl = W_l(ij, k-1) - dz(k_node) * (evap(ij, k_node) + SSl);
+        Wl = (Wl > 0.0) ? Wl : 1e-8; // prevent negative (making this 0.0 makes enthalpy nan)
+
+        // Update vapor flow rate (Eq. 62 from ANTS Theory)
+        Wv = W_v(ij, k-1) + dz(k_node) * (evap(ij, k_node) - SSv);
+        Wv = (Wv > 0.0) ? Wv : 0.0; // prevent negative
     }
 
     // TH::solve_flow_rates -> per-channel (ij)
     KOKKOS_INLINE_FUNCTION
     void solve_flow_rates(size_t ij, double& Wl, double& Wv) const {
-
-        // Update liquid flow rate (Eq. 61 from ANTS Theory)
-        Wl = W_l(ij, k-1) - dz(k_node) * (evap(ij, k_node) + SS_l(ij));
-        Wl = (Wl > 0.0) ? Wl : 1e-8; // prevent negative (making this 0.0 makes enthalpy nan)
-
-        // Update vapor flow rate (Eq. 62 from ANTS Theory)
-        Wv = W_v(ij, k-1) + dz(k_node) * (evap(ij, k_node) - SS_v(ij));
-        Wv = (Wv > 0.0) ? Wv : 0.0; // prevent negative
+        solve_flow_rates(ij, SS_l(ij), SS_v(ij), Wl, Wv);
     }
 
-    // TH::solve_enthalpy -> per-channel (ij)
+    // TH::solve_enthalpy -> per-channel (ij), with explicit energy source term
     KOKKOS_INLINE_FUNCTION
-    void solve_enthalpy(size_t ij, double Wl, double Wv, double& hl) const {
+    void solve_enthalpy(size_t ij, double Wl, double Wv, double SSm, double& hl) const {
 
         // Eq. 63 from ANTS Theory
         hl = (
             (W_v(ij, k-1) - Wv) * h_g
             + W_l(ij, k-1) * h_l(ij, k-1) + dz(k_node) * lhr(ij, k_node)
-            - dz(k_node) * SS_m(ij)
+            - dz(k_node) * SSm
         ) / Wl;
+    }
+
+    // TH::solve_enthalpy -> per-channel (ij)
+    KOKKOS_INLINE_FUNCTION
+    void solve_enthalpy(size_t ij, double Wl, double Wv, double& hl) const {
+        solve_enthalpy(ij, Wl, Wv, SS_m(ij), hl);
     }
 
     // TH::solve_void_fraction -> per-channel (ij)
@@ -718,6 +686,13 @@ struct ANTSFunctor {
     // TH::solve_pressure -> per-channel (ij)
     KOKKOS_INLINE_FUNCTION
     void solve_pressure(size_t ij, double Wl, double Wv, double hl, double alpha_ijk, double X_ijk, double& P_ijk) const {
+        solve_pressure(ij, Wl, Wv, hl, alpha_ijk, X_ijk, CF_SS(ij), TM_SS(ij), VD_SS(ij), P_ijk);
+    }
+
+    // TH::solve_pressure -> per-channel (ij), with explicit momentum source terms
+    KOKKOS_INLINE_FUNCTION
+    void solve_pressure(size_t ij, double Wl, double Wv, double hl, double alpha_ijk, double X_ijk,
+                        double CF, double TM, double VD, double& P_ijk) const {
         // coefficients for Adams correlation from ANTS Theory
         const double a_1 = 0.1892;
         const double n = -0.2;
@@ -790,9 +765,9 @@ struct ANTSFunctor {
         double dP_grav = fluid.rho(hl) * g * dz(k_node);
 
         // ----- momentum exchange -----
-        double dP_CF = dz(k_node) * CF_SS(ij);
-        double dP_TM = dz(k_node) * TM_SS(ij);
-        double dP_VD = dz(k_node) * VD_SS(ij);
+        double dP_CF = dz(k_node) * CF;
+        double dP_TM = dz(k_node) * TM;
+        double dP_VD = dz(k_node) * VD;
         double dP_momexch = dP_CF + dP_TM + dP_VD;
 
         // ----- total pressure drop -----

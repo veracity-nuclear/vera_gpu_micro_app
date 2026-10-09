@@ -1,4 +1,6 @@
 #include "geometry.hpp"
+#include <algorithm>
+#include <utility>
 
 template <typename ExecutionSpace>
 Geometry<ExecutionSpace>::Geometry(
@@ -162,7 +164,8 @@ Geometry<ExecutionSpace>::Geometry(
     std::cout << "  Total Channels: " << nchannels() << std::endl;
     std::cout << "  Total Surfaces: " << nsurfaces() << std::endl;
 
-    // Build surface connectivity
+    // Cache host copies of the lookup tables, then build surface connectivity
+    _cache_host_mirrors();
     build_surface_connectivity();
 }
 
@@ -404,6 +407,13 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
         }
     }
 
+    // Publish the host-built lookup tables to the device views and cache host copies for the accessors
+    // used below and during solver setup
+    Kokkos::deep_copy(_ij_global, _h_ij_global);
+    Kokkos::deep_copy(surfaces, h_surfaces);
+    Kokkos::deep_copy(_ns_global, _h_ns_global);
+    _cache_host_mirrors();
+
     std::cout << "Core size: (" << _full_core_map.extent(0) << ", " << _full_core_map.extent(1) << ")" << std::endl;
     std::cout << "Core symmetry: " << _core_sym << std::endl;
     std::cout << "Nsurfaces: " << nsurfaces() << std::endl;
@@ -476,45 +486,50 @@ Geometry<ExecutionSpace>::Geometry(const ArgumentParser& args) {
 }
 
 template <typename ExecutionSpace>
+void Geometry<ExecutionSpace>::_cache_host_mirrors() {
+    _h_core_map_cache = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), _core_map);
+    _h_ns_global_cache = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), _ns_global);
+    _h_ij_global_cache = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), _ij_global);
+    _h_axial_mesh_cache = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), _axial_mesh);
+    _h_channel_area_cache = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), _channel_area);
+    _h_hydraulic_diameter_cache = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), _hydraulic_diameter);
+    _nassemblies_cache = 0;
+    for (size_t i = 0; i < _h_core_map_cache.extent(0); ++i) {
+        for (size_t j = 0; j < _h_core_map_cache.extent(1); ++j) {
+            if (_h_core_map_cache(i, j) > 0) ++_nassemblies_cache;
+        }
+    }
+}
+
+template <typename ExecutionSpace>
 double Geometry<ExecutionSpace>::core_height() const {
-    auto _h_axial_mesh = Kokkos::create_mirror_view(_axial_mesh);
-    Kokkos::deep_copy(_h_axial_mesh, _axial_mesh);
-    return _h_axial_mesh(_nz - 1) - _h_axial_mesh(0);
+    return _h_axial_mesh_cache(_nz - 1) - _h_axial_mesh_cache(0);
 }
 
 template <typename ExecutionSpace>
 double Geometry<ExecutionSpace>::flow_area(size_t aij, size_t k) const {
-    auto _h_channel_area = Kokkos::create_mirror_view(_channel_area);
-    Kokkos::deep_copy(_h_channel_area, _channel_area);
-    return _h_channel_area(aij, k);
+    return _h_channel_area_cache(aij, k);
 }
 
 template <typename ExecutionSpace>
 double Geometry<ExecutionSpace>::hydraulic_diameter(size_t aij, size_t k) const {
-    auto _h_hydraulic_diameter = Kokkos::create_mirror_view(_hydraulic_diameter);
-    Kokkos::deep_copy(_h_hydraulic_diameter, _hydraulic_diameter);
-    return _h_hydraulic_diameter(aij, k);
+    return _h_hydraulic_diameter_cache(aij, k);
 }
 
 template <typename ExecutionSpace>
 double Geometry<ExecutionSpace>::dz(size_t k) const {
-    auto _h_axial_mesh = Kokkos::create_mirror_view(_axial_mesh);
-    Kokkos::deep_copy(_h_axial_mesh, _axial_mesh);
-    return _h_axial_mesh(k + 1) - _h_axial_mesh(k);
+    return _h_axial_mesh_cache(k + 1) - _h_axial_mesh_cache(k);
 }
 
 template <typename ExecutionSpace>
 size_t Geometry<ExecutionSpace>::core_map(size_t aj, size_t ai) const {
-    auto _h_core_map = Kokkos::create_mirror_view(_core_map);
-    Kokkos::deep_copy(_h_core_map, _core_map);
-    return _h_core_map(aj, ai);
+    return _h_core_map_cache(aj, ai);
 }
 
 template <typename ExecutionSpace>
 size_t Geometry<ExecutionSpace>::nsurfaces() const {
-
-    auto _h_core_map = Kokkos::create_mirror_view(_core_map);
-    Kokkos::deep_copy(_h_core_map, _core_map);
+    // The constructors call this before the caches exist, so read the core map directly here
+    auto _h_core_map = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), _core_map);
 
     // Total number of internal surfaces in the subchannel grid
     size_t nsurf = 0;
@@ -532,9 +547,12 @@ size_t Geometry<ExecutionSpace>::nsurfaces() const {
 
 template <typename ExecutionSpace>
 size_t Geometry<ExecutionSpace>::nassemblies() const {
+    if (_h_core_map_cache.extent(0) == _core_map.extent(0) && _h_core_map_cache.data() != nullptr) {
+        return _nassemblies_cache;
+    }
 
-    auto _h_core_map = Kokkos::create_mirror_view(_core_map);
-    Kokkos::deep_copy(_h_core_map, _core_map);
+    // Called from the constructors before the caches exist
+    auto _h_core_map = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), _core_map);
 
     // Total number of fuel assemblies in the core
     size_t nassy = 0;
@@ -548,24 +566,21 @@ size_t Geometry<ExecutionSpace>::nassemblies() const {
 
 template <typename ExecutionSpace>
 size_t Geometry<ExecutionSpace>::global_chan_index(size_t aj, size_t ai, size_t j, size_t i) const {
-    auto _h_ij_global = Kokkos::create_mirror_view(_ij_global);
-    Kokkos::deep_copy(_h_ij_global, _ij_global);
-    return _h_ij_global(aj, ai, j, i);
+    return _h_ij_global_cache(aj, ai, j, i);
 }
 
 template <typename ExecutionSpace>
 size_t Geometry<ExecutionSpace>::global_surf_index(size_t aij, size_t ns) const {
-    auto _h_ns_global = Kokkos::create_mirror_view(_ns_global);
-    Kokkos::deep_copy(_h_ns_global, _ns_global);
-    return _h_ns_global(aij, ns);
+    return _h_ns_global_cache(aij, ns);
 }
 
 template <typename ExecutionSpace>
 typename Geometry<ExecutionSpace>::View4D Geometry<ExecutionSpace>::_init_default_channel_area(double default_area_cm2) {
     // Initialize default channel area View with uniform values
-    View4D channel_area("channel_area", _nchan, _nchan, _nz, nassemblies());
+    const size_t nassy = nassemblies();
+    View4D channel_area("channel_area", _nchan, _nchan, _nz, nassy);
     auto _h_channel_area = Kokkos::create_mirror_view(channel_area);
-    for (size_t a = 0; a < nassemblies(); ++a) {
+    for (size_t a = 0; a < nassy; ++a) {
         for (size_t k = 0; k < _nz; ++k) {
             for (size_t j = 0; j < _nchan; ++j) {
                 for (size_t i = 0; i < _nchan; ++i) {
@@ -583,15 +598,18 @@ typename Geometry<ExecutionSpace>::View4D Geometry<ExecutionSpace>::_init_defaul
 
     auto _h_pin_volumes = Kokkos::create_mirror_view(pin_volumes);
     Kokkos::deep_copy(_h_pin_volumes, pin_volumes);
+    auto _h_axial_mesh = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), _axial_mesh);
+    const size_t nassy = nassemblies();
 
     // Initialize default channel area View with uniform values
-    View4D pin_area("pin_area", _nchan, _nchan, _nz, nassemblies());
+    View4D pin_area("pin_area", _nchan, _nchan, _nz, nassy);
     auto _h_pin_area = Kokkos::create_mirror_view(pin_area);
-    for (size_t a = 0; a < nassemblies(); ++a) {
+    for (size_t a = 0; a < nassy; ++a) {
         for (size_t k = 0; k < _nz; ++k) {
+            const double dz_k = _h_axial_mesh(k + 1) - _h_axial_mesh(k); // [m]
             for (size_t j = 0; j < _nchan; ++j) {
                 for (size_t i = 0; i < _nchan; ++i) {
-                    _h_pin_area(i, j, k, a) = _h_pin_volumes(i, j, k, a) / (dz(k) * 1e2); // cm^2 (dz returns [m], so convert to cm before dividing)
+                    _h_pin_area(i, j, k, a) = _h_pin_volumes(i, j, k, a) / (dz_k * 1e2); // cm^2 (convert dz to cm before dividing)
                 }
             }
         }
@@ -646,6 +664,42 @@ void Geometry<ExecutionSpace>::build_surface_connectivity() {
 
     Kokkos::deep_copy(_surface_neighbors, h_surface_neighbors);
     Kokkos::deep_copy(_num_neighbors, h_num_neighbors);
+
+    // CSR layout of the crossflow Jacobian. Perturbing gk on surface ns1 changes the residuals of the
+    // surfaces in its neighbor list, so column ns1 has entries in rows neighbor(ns1, n). Gather those
+    // (row, col) pairs, sort each row's columns, and record where each (ns1, n) entry landed so the
+    // Jacobian kernel can write straight into the CSR value array.
+    std::vector<std::vector<std::pair<int, int>>> row_entries(nsurf); // row -> (col, n)
+    for (size_t ns1 = 0; ns1 < nsurf; ++ns1) {
+        for (size_t n = 0; n < h_num_neighbors(ns1); ++n) {
+            row_entries[h_surface_neighbors(ns1, n)].emplace_back(static_cast<int>(ns1), static_cast<int>(n));
+        }
+    }
+    size_t nnz = 0;
+    for (auto& row : row_entries) {
+        std::sort(row.begin(), row.end());
+        nnz += row.size();
+    }
+    _jac_row_ptr = ViewInt1D("jac_row_ptr", nsurf + 1);
+    _jac_col_idx = ViewInt1D("jac_col_idx", nnz);
+    _jac_pos = ViewInt2D("jac_pos", nsurf, max_neighbors);
+    auto h_row_ptr = Kokkos::create_mirror_view(_jac_row_ptr);
+    auto h_col_idx = Kokkos::create_mirror_view(_jac_col_idx);
+    auto h_pos = Kokkos::create_mirror_view(_jac_pos);
+    Kokkos::deep_copy(h_pos, -1);
+    size_t idx = 0;
+    for (size_t ns = 0; ns < nsurf; ++ns) {
+        h_row_ptr(ns) = static_cast<int>(idx);
+        for (const auto& [col, n] : row_entries[ns]) {
+            h_col_idx(idx) = col;
+            h_pos(col, n) = static_cast<int>(idx);
+            ++idx;
+        }
+    }
+    h_row_ptr(nsurf) = static_cast<int>(idx);
+    Kokkos::deep_copy(_jac_row_ptr, h_row_ptr);
+    Kokkos::deep_copy(_jac_col_idx, h_col_idx);
+    Kokkos::deep_copy(_jac_pos, h_pos);
 }
 
 // Explicit template instantiations

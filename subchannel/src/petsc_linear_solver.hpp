@@ -56,6 +56,17 @@ public:
     PetscErrorCode solve(ViewType2D& dfdg, ViewType1D& f0);
 
     /**
+     * @brief Solve Ax = b where A is given directly in CSR form (no dense matrix is ever formed)
+     *
+     * @param row_ptr  CSR row pointer (size n+1), int-valued view
+     * @param col_idx  CSR column indices (size nnz), int-valued view
+     * @param values   CSR values (size nnz)
+     * @param f0       Right-hand side; overwritten with the solution x
+     */
+    template<typename RowView, typename ColView, typename ValView, typename ViewType1D>
+    PetscErrorCode solve_csr(const RowView& row_ptr, const ColView& col_idx, const ValView& values, ViewType1D& f0);
+
+    /**
      * @brief Convert Kokkos 2D View to PETSc Mat using Kokkos integration
      *
      * @param kokkos_mat Input Kokkos matrix view
@@ -94,6 +105,10 @@ private:
     Mat A;                   // PETSc matrix
     Vec x, b;                // PETSc solution and RHS vectors
 
+    // CSR storage handed to PETSc by solve_csr; kept alive for the lifetime of A
+    Kokkos::View<PetscInt*> csr_row_ptr, csr_col_idx;
+    Kokkos::View<PetscScalar*> csr_values;
+
     /**
      * @brief Initialize PETSc objects
      * @return PetscErrorCode
@@ -106,3 +121,59 @@ private:
      */
     PetscErrorCode cleanup();
 };
+
+// solve_csr is a member template over arbitrary (compatible) view types, so it is defined here.
+template <typename ExecutionSpace>
+template <typename RowView, typename ColView, typename ValView, typename ViewType1D>
+PetscErrorCode PetscLinearSolver<ExecutionSpace>::solve_csr(const RowView& row_ptr, const ColView& col_idx, const ValView& values, ViewType1D& f0) {
+    static_assert(sizeof(typename RowView::non_const_value_type) == sizeof(PetscInt), "CSR index views must match PetscInt");
+    PetscFunctionBeginUser;
+
+    if (!initialized) {
+        PetscCall(initialize());
+    }
+
+    const PetscInt nnz = static_cast<PetscInt>(col_idx.extent(0));
+
+    // PETSc's Kokkos matrix constructors want views in the default memory space; (re)allocate only on size change
+    if (csr_row_ptr.extent(0) != row_ptr.extent(0)) {
+        csr_row_ptr = Kokkos::View<PetscInt*>("csr_row_ptr", row_ptr.extent(0));
+        csr_col_idx = Kokkos::View<PetscInt*>("csr_col_idx", nnz);
+        csr_values = Kokkos::View<PetscScalar*>("csr_values", nnz);
+    }
+    Kokkos::deep_copy(csr_row_ptr, row_ptr);
+    Kokkos::deep_copy(csr_col_idx, col_idx);
+    Kokkos::deep_copy(csr_values, values);
+
+    if (A) {
+        PetscCall(MatDestroy(&A));
+    }
+    if constexpr (Kokkos::SpaceAccessibility<Kokkos::HostSpace, MemorySpace>::accessible) {
+        // On host execution spaces a plain SeqAIJ matrix gives PETSc's native sparse LU, which is far
+        // cheaper than the Kokkos-Kernels triangular solves for systems of this size.
+        PetscCall(MatCreateSeqAIJWithArrays(PETSC_COMM_SELF, n, n, csr_row_ptr.data(), csr_col_idx.data(), csr_values.data(), &A));
+    } else {
+        PetscCall(MatCreateSeqAIJKokkosWithKokkosViews(PETSC_COMM_SELF, n, n, csr_row_ptr, csr_col_idx, csr_values, &A));
+    }
+    PetscCall(MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY));
+    PetscCall(MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY));
+    PetscCall(KSPSetOperators(ksp, A, A));
+
+    PetscCall(kokkosVecToPetsc(f0, b));
+    PetscCall(KSPSolve(ksp, b, x));
+
+    KSPConvergedReason reason;
+    PetscCall(KSPGetConvergedReason(ksp, &reason));
+    if (reason < 0) {
+        PetscInt its;
+        PetscReal rnorm;
+        PetscCall(KSPGetIterationNumber(ksp, &its));
+        PetscCall(KSPGetResidualNorm(ksp, &rnorm));
+        PetscPrintf(PETSC_COMM_SELF, "WARNING: Linear solver diverged. Reason: %d, Iterations: %d, Residual: %e\n",
+                    reason, its, rnorm);
+    }
+
+    PetscCall(petscVecToKokkos(x, f0));
+    PetscFunctionReturn(PETSC_SUCCESS);
+}
+

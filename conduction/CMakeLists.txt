@@ -24,8 +24,10 @@ set(TEST_EXECUTABLES
     test_cylinder_node
     test_cylindrical_solver
     test_smr_serial
+    test_smr_omp
 )
 set(TEST_LABELS
+    "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"
     "BASIC\;CONTINUOUS\;HEAVY"

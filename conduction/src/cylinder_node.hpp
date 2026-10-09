@@ -150,7 +150,38 @@ public:
      */
     double cyl_shell_Tin_heat_gen(double k, double r_in, double r_out, double T_outer, double qflux, double qdot) const;
 
+    /**
+     * @brief Natural logs of the node radii, which several temperature formulas need.
+     * @note Radii are fixed during a temperature solve, so callers that evaluate the formulas
+     *  repeatedly can compute these once (log_radii()) and pass them to the overloads below.
+     *  The overloads perform exactly the same arithmetic as the ones that take no LogRadii.
+     */
+    struct LogRadii {
+        double log_r_in;   ///< log(inner radius); unused (0.0) for a solid cylinder
+        double log_r_out;  ///< log(outer radius); unused (0.0) for a solid cylinder
+        double log_r_avg;  ///< log(average radius); unused (0.0) for a solid cylinder
+    };
+
+    /**
+     * @brief Compute the logs of the current radii (skipped for a solid cylinder, which needs none).
+     */
+    LogRadii log_radii() const;
+
+    /**
+     * @brief calculate_avg_temperature with precomputed logs of the current radii.
+     */
+    double calculate_avg_temperature(double k, double T_inner, double T_outer, double qdot, const LogRadii& logs) const;
+
+    /**
+     * @brief solve_inner_temperature with precomputed logs of the current radii.
+     */
+    double solve_inner_temperature(double k, double T_outer, double qflux, double qdot, const LogRadii& logs) const;
+
 private:
+    // Shell formulas in terms of log(r_in) / log(r_out), shared by the public overloads above
+    static double shell_Tin(double k, double r_in, double log_r_in, double log_r_out, double T_outer, double qflux);
+    static double shell_Tin_heat_gen(double k, double r_in, double r_out, double log_r_in, double log_r_out, double T_outer, double qflux, double qdot);
+
     /**
      * @brief Height of the cylinder node.
      */

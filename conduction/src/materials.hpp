@@ -95,7 +95,16 @@ public:
      * @note This method currently only accounts for thermal expansion. Relocation due to cracking,
      *  fuel burnup-induced swelling, clad burnup-induced creep, and clad elastic expansion are not considered.
      */
-    virtual void update_node_radii(const std::shared_ptr<CylinderNode>& node, double T, double T_prev) const = 0;
+    virtual void update_node_radii(CylinderNode& node, double T, double T_prev) const = 0;
+
+    /**
+     * @brief Convenience overload of update_node_radii for shared_ptr-held nodes.
+     * @note The reference overload is the one derived classes override; it lets the per-pin
+     *  hot loop work on stack-allocated CylinderNode objects without any heap allocation.
+     */
+    void update_node_radii(const std::shared_ptr<CylinderNode>& node, double T, double T_prev) const {
+        update_node_radii(*node, T, T_prev);
+    }
 };
 
 
@@ -144,7 +153,8 @@ public:
      * @note This method currently only accounts for thermal expansion. Relocation due to cracking,
      *  fuel burnup-induced swelling, clad burnup-induced creep, and clad elastic expansion are not considered.
      */
-    void update_node_radii(const std::shared_ptr<CylinderNode>& node, double T, double T_prev) const override;
+    void update_node_radii(CylinderNode& node, double T, double T_prev) const override;
+    using Solid::update_node_radii; // keep the shared_ptr overload visible
 };
 
 
@@ -259,7 +269,8 @@ public:
      * @note This method currently only accounts for thermal expansion. Relocation due to cracking,
      *  fuel burnup-induced swelling, clad burnup-induced creep, and clad elastic expansion are not considered.
      */
-    void update_node_radii(const std::shared_ptr<CylinderNode>& node, double T, double T_prev) const override;
+    void update_node_radii(CylinderNode& node, double T, double T_prev) const override;
+    using Solid::update_node_radii; // keep the shared_ptr overload visible
 };
 
 

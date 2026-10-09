@@ -5,6 +5,7 @@
 #include "petscksp.h"
 #include "Kokkos_Core.hpp"
 #include "highfive/H5File.hpp"
+#include <utility>
 #include <variant>
 
 #include "CMFDData.hpp"
@@ -42,8 +43,8 @@ struct PetscMatrixAssembler : public MatrixAssemblerInterface
     FluxView flux; // Kokkos view for the flux Vec
 
     // Returned data
-    Vec fissionVec;
-    Mat MMat;
+    Vec fissionVec = nullptr;
+    Mat MMat = nullptr;
 
     PetscErrorCode initialize()
     {
@@ -77,6 +78,20 @@ struct PetscMatrixAssembler : public MatrixAssemblerInterface
         : cmfdData(std::move(data))
     {
         PetscCallCXXAbort(PETSC_COMM_SELF, initialize());
+    }
+
+    // Vec/Mat are reference-counted PETSc handles that this class destroys. A member-wise
+    // copy would destroy them twice (and leave the copy dangling), so copying is disabled
+    // and moving transfers ownership (VecDestroy/MatDestroy on a null handle are no-ops).
+    PetscMatrixAssembler(const PetscMatrixAssembler &) = delete;
+    PetscMatrixAssembler &operator=(const PetscMatrixAssembler &) = delete;
+    PetscMatrixAssembler(PetscMatrixAssembler &&other) noexcept
+        : MatrixAssemblerInterface(other),
+          cmfdData(std::move(other.cmfdData)),
+          flux(std::move(other.flux)),
+          fissionVec(std::exchange(other.fissionVec, nullptr)),
+          MMat(std::exchange(other.MMat, nullptr))
+    {
     }
 
     ~PetscMatrixAssembler()
@@ -144,14 +159,22 @@ struct COOMatrixAssembler : public PetscMatrixAssembler<Kokkos::DefaultHostExecu
     COOMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
         : PetscMatrixAssembler<AssemblySpace>(CMFDCoarseMesh) {
             PetscCallCXXAbort(PETSC_COMM_SELF, _assembleM());
+            PetscCallCXXAbort(PETSC_COMM_SELF, _preallocateFission());
         }
     COOMatrixAssembler(CMFDDataType &&data)
         : PetscMatrixAssembler<AssemblySpace>(std::move(data)) {
             PetscCallCXXAbort(PETSC_COMM_SELF, _assembleM());
+            PetscCallCXXAbort(PETSC_COMM_SELF, _preallocateFission());
         }
 
     PetscErrorCode _assembleM() override;
     PetscErrorCode _assembleFission(const FluxView& flux) override;
+
+    // The COO sparsity pattern of the fission vector does not change between power iterations,
+    // so VecSetPreallocationCOO (which builds PETSc's COO maps) is done once here and
+    // _assembleFission only calls VecSetValuesCOO with the reused _fissionValues buffer.
+    PetscErrorCode _preallocateFission();
+    Kokkos::View<PetscScalar *, AssemblyMemorySpace> _fissionValues;
 };
 
 // Uses Kokkos views to assemble a matrix in PETSc (CSR Format)
@@ -165,18 +188,21 @@ struct CSRMatrixAssembler : public PetscMatrixAssembler<>
     CSRMatrixAssembler(const HighFive::Group &CMFDCoarseMesh)
         : PetscMatrixAssembler<AssemblySpace>(CMFDCoarseMesh) {
             PetscCallCXXAbort(PETSC_COMM_SELF, _assembleM());
-
-            _fissionVectorView = Kokkos::View<PetscScalar *, AssemblyMemorySpace>("VecValuesKokkos", nRows);
+            PetscCallCXXAbort(PETSC_COMM_SELF, _createFissionVec());
         }
     CSRMatrixAssembler(CMFDDataType &&data)
         : PetscMatrixAssembler<AssemblySpace>(std::move(data)) {
             PetscCallCXXAbort(PETSC_COMM_SELF, _assembleM());
-
-            _fissionVectorView = Kokkos::View<PetscScalar *, AssemblyMemorySpace>("VecValuesKokkos", nRows);
+            PetscCallCXXAbort(PETSC_COMM_SELF, _createFissionVec());
         }
 
     PetscErrorCode _assembleM() override;
     PetscErrorCode _assembleFission(const FluxView& flux) override;
+
+    // Replaces the generic Vec from initialize() with a sequential Kokkos Vec (matching the
+    // sequential MMat) that wraps _fissionVectorView. It is created once and refilled in place
+    // by _assembleFission, so callers may cache the Vec returned by getFissionSource().
+    PetscErrorCode _createFissionVec();
 
     // The class needs to own the fission vector view because it should have
     // the same lifetime/scope as the corresponding PetscVec. The PetscVec

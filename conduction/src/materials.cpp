@@ -49,7 +49,7 @@ double Zircaloy::Cp(double T) const {
     return Cp0 + (Cp1 - Cp0) * (T - T0) / (T1 - T0);
 }
 
-void Zircaloy::update_node_radii(const std::shared_ptr<CylinderNode>& node, double T, double T_prev) const {
+void Zircaloy::update_node_radii(CylinderNode& node, double T, double T_prev) const {
     if (T < 0.0 || T_prev < 0.0) {
         throw std::out_of_range("Temperature in Kelvin cannot be less than 0.0");
     }
@@ -76,8 +76,8 @@ void Zircaloy::update_node_radii(const std::shared_ptr<CylinderNode>& node, doub
     }
 
     // Update the node radii based on the calculated strain
-    node->set_inner_radius(node->get_initial_inner_radius() * (1.0 + total_strain));
-    node->set_outer_radius(node->get_initial_outer_radius() * (1.0 + total_strain));
+    node.set_inner_radius(node.get_initial_inner_radius() * (1.0 + total_strain));
+    node.set_outer_radius(node.get_initial_outer_radius() * (1.0 + total_strain));
 }
 
 double UO2::k(double T, double Bu, double gad) const {
@@ -91,14 +91,18 @@ double UO2::k(double T, double Bu, double gad) const {
         throw std::out_of_range("Gadolinium content must be between 0.0 and 0.10 wt. percent for UO2 thermal conductivity");
     }
 
-    double h = 1 / (1.0 + 396.0 * std::exp(-6380.0 / T));
-    double k_phonon = 1 / (
+    double phonon_resistance =
         0.0452 +
         0.000246 * T +
         0.00187 * Bu +
-        1.1599 * gad +
-        (1.0 - 0.9 * std::exp(-0.04 * Bu)) * 0.038 * h * std::pow(Bu, 0.28)
-    );
+        1.1599 * gad;
+    // The burnup term is exactly +0.0 when Bu == 0 (pow(0, 0.28) == 0), and adding +0.0 to the
+    // positive sum above is exact, so skipping its exp/exp/pow evaluations leaves k bit-identical.
+    if (Bu != 0.0) {
+        double h = 1 / (1.0 + 396.0 * std::exp(-6380.0 / T));
+        phonon_resistance += (1.0 - 0.9 * std::exp(-0.04 * Bu)) * 0.038 * h * std::pow(Bu, 0.28);
+    }
+    double k_phonon = 1 / phonon_resistance;
     double k_electronic = 3.50e9 / (T * T) * std::exp(-16361.0 / T);
 
     return k_phonon + k_electronic;
@@ -118,7 +122,7 @@ double UO2::Cp(double T, double Bu, double gad) const {
     );
 }
 
-void UO2::update_node_radii(const std::shared_ptr<CylinderNode>& node, double T, double T_prev) const {
+void UO2::update_node_radii(CylinderNode& node, double T, double T_prev) const {
     if (T < 0.0 || T_prev < 0.0) {
         throw std::out_of_range("Temperature in Kelvin cannot be less than 0.0");
     }
@@ -127,11 +131,11 @@ void UO2::update_node_radii(const std::shared_ptr<CylinderNode>& node, double T,
 
     // thermal expansion
     double strain = 1e-5 * (T - T_prev);
-    delta_r_inner += node->get_inner_radius() * strain;
-    delta_r_outer += node->get_outer_radius() * strain;
+    delta_r_inner += node.get_inner_radius() * strain;
+    delta_r_outer += node.get_outer_radius() * strain;
 
-    node->set_inner_radius(node->get_inner_radius() + delta_r_inner);
-    node->set_outer_radius(node->get_outer_radius() + delta_r_outer);
+    node.set_inner_radius(node.get_inner_radius() + delta_r_inner);
+    node.set_outer_radius(node.get_outer_radius() + delta_r_outer);
 }
 
 double Argon::k(double T) const {

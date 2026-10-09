@@ -44,6 +44,8 @@ class Geometry {
     using ViewSizeT1D = Kokkos::View<size_t *, MemorySpace>;
     using ViewSizeT2D = Kokkos::View<size_t **, MemorySpace>;
     using ViewSizeT4D = Kokkos::View<size_t ****, MemorySpace>;
+    using ViewInt1D = Kokkos::View<int *, MemorySpace>;
+    using ViewInt2D = Kokkos::View<int **, MemorySpace>;
 
 public:
     // Constructor for single assembly geometry
@@ -88,6 +90,14 @@ public:
     void build_surface_connectivity();
     size_t max_surface_connectivity() const { return 7; } // max neighbors per surface
 
+    // Sparse (CSR) layout of the crossflow Jacobian d(residual_ns)/d(gk_ns1). Row ns holds one entry
+    // per surface ns1 whose perturbation changes residual ns, i.e. the neighbors of ns. The entry for
+    // column ns1 in row neighbor_list(ns1, n) sits at values(jacobian_position(ns1, n)).
+    ViewInt1D jacobian_row_ptr_view() const { return _jac_row_ptr; }
+    ViewInt1D jacobian_col_idx_view() const { return _jac_col_idx; }
+    ViewInt2D jacobian_position_view() const { return _jac_pos; }
+    size_t jacobian_nnz() const { return _jac_col_idx.extent(0); }
+
 private:
     double gap_W;                   // gap width between subchannels
     double l;                       // length of axial momentum cell
@@ -107,6 +117,20 @@ private:
     // Surface connectivity data
     ViewSizeT1D _num_neighbors; // number of neighbors per surface
     ViewSizeT2D _surface_neighbors; // neighbor surfaces for each surface (size: nsurfaces x max_neighbors)
+    ViewInt1D _jac_row_ptr;     // CSR row pointer of the crossflow Jacobian (size: nsurfaces + 1)
+    ViewInt1D _jac_col_idx;     // CSR column indices (size: nnz)
+    ViewInt2D _jac_pos;         // (ns1, n) -> CSR position of entry (row neighbor(ns1, n), col ns1)
+
+    // Host mirrors of the lookup tables used by the scalar accessors above. The accessors are called
+    // from host loops during setup, and copying a whole view per call made setup O(N^2).
+    typename ViewSizeT2D::host_mirror_type _h_core_map_cache;
+    typename ViewSizeT2D::host_mirror_type _h_ns_global_cache;
+    typename ViewSizeT4D::host_mirror_type _h_ij_global_cache;
+    typename View1D::host_mirror_type _h_axial_mesh_cache;
+    typename View2D::host_mirror_type _h_channel_area_cache;
+    typename View2D::host_mirror_type _h_hydraulic_diameter_cache;
+    size_t _nassemblies_cache = 0;
+    void _cache_host_mirrors();
 
     View4D _init_default_channel_area(double default_area_cm2);
     View4D _init_default_pin_area(const View4D& pin_volumes);

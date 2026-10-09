@@ -275,6 +275,7 @@ template PetscErrorCode PetscLinearSolver<Kokkos::Serial>::petscVecToKokkos<
     Kokkos::View<double*, Kokkos::Serial>
 >(Vec&, Kokkos::View<double*, Kokkos::Serial>&);
 
+
 #ifdef KOKKOS_ENABLE_OPENMP
 template class PetscLinearSolver<Kokkos::OpenMP>;
 
@@ -295,6 +296,7 @@ template PetscErrorCode PetscLinearSolver<Kokkos::OpenMP>::kokkosVecToPetsc<
 template PetscErrorCode PetscLinearSolver<Kokkos::OpenMP>::petscVecToKokkos<
     Kokkos::View<double*, Kokkos::OpenMP>
 >(Vec&, Kokkos::View<double*, Kokkos::OpenMP>&);
+
 #endif
 
 #ifdef KOKKOS_ENABLE_CUDA
@@ -317,4 +319,5 @@ template PetscErrorCode PetscLinearSolver<Kokkos::Cuda>::kokkosVecToPetsc<
 template PetscErrorCode PetscLinearSolver<Kokkos::Cuda>::petscVecToKokkos<
     Kokkos::View<double*, Kokkos::Cuda>
 >(Vec&, Kokkos::View<double*, Kokkos::Cuda>&);
+
 #endif

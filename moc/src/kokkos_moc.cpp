@@ -9,6 +9,9 @@
 #include <highfive/H5Easy.hpp>
 #include <highfive/highfive.hpp>
 #include "c5g7_library.hpp"
+#ifdef KOKKOS_ENABLE_OPENMP
+#include <omp.h>
+#endif
 
 template <typename ExecutionSpace, typename RealType>
 KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
@@ -301,11 +304,16 @@ KokkosMOC<ExecutionSpace, RealType>::KokkosMOC(const ArgumentParser& args) :
     _d_old_angflux = Kokkos::create_mirror(ExecutionSpace(), _h_old_angflux);
     Kokkos::deep_copy(_d_old_angflux, _h_old_angflux);
 
-#ifdef KOKKOS_ENABLE_OPENMP
-    if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
-        _d_thread_scalar_flux = DViewReal3D("thread_scalar_flux", ExecutionSpace().concurrency(), _nfsr, _ng);
+    if constexpr (host_sweep) {
+        // One private flux tally and one exp-argument workspace per thread; the per-thread tallies are
+        // reduced into _d_scalar_flux after the sweep so that no atomics are needed on the host.
+        // Tallies are kept in double regardless of RealType so that the result does not depend on how
+        // rays were distributed over threads (dynamic scheduling) beyond ~1e-13 in keff.
+        const int nthreads = ExecutionSpace().concurrency();
+        _d_thread_scalar_flux = DViewDouble3D("thread_scalar_flux", nthreads, _nfsr, _ng);
+        _d_thread_exparg = DViewReal2D("thread_exparg", nthreads, static_cast<size_t>(_max_segments + 2) * _ng);
     }
-#endif
+    _d_fissrc = DViewDouble1D("fissrc", _nfsr);
     Kokkos::Profiling::popRegion();
 }
 
@@ -330,8 +338,9 @@ KokkosMOC<ExecutionSpace, RealType>::_read_ray_infos() {
                 for (const auto& rayName : angleGroup.listObjectNames()) {
                     if (rayName.substr(0, 8) == "LongRay_") {
                         auto rayGroup = angleGroup.getGroup(rayName);
-                        int ray_nsegs = rayGroup.getDataSet("FSRs").template read<std::vector<int>>().size();
-                        ray_infos.emplace_back(objName, rayName, angleIndex, ray_nsegs, iplane, rayGroup);
+                        // Read the FSR list once here; _read_segments reuses it instead of re-reading the dataset
+                        auto fsrs = rayGroup.getDataSet("FSRs").template read<std::vector<int>>();
+                        ray_infos.emplace_back(objName, rayName, angleIndex, iplane, rayGroup, std::move(fsrs));
                         _n_rays++;
                     }
                 }
@@ -367,7 +376,7 @@ KokkosMOC<ExecutionSpace, RealType>::_read_ray_infos() {
 template <typename ExecutionSpace, typename RealType>
 typename KokkosMOC<ExecutionSpace, RealType>::HViewKokkosLongRay1D
 KokkosMOC<ExecutionSpace, RealType>::_read_rays(
-    std::vector<KokkosMOC<ExecutionSpace, RealType>::RayInfo> ray_infos
+    const std::vector<KokkosMOC<ExecutionSpace, RealType>::RayInfo>& ray_infos
 ) {
     // Reserve space for rays
     HViewKokkosLongRay1D _h_rays = HViewKokkosLongRay1D("rays", _n_rays);
@@ -386,7 +395,7 @@ KokkosMOC<ExecutionSpace, RealType>::_read_rays(
 template <typename ExecutionSpace, typename RealType>
 typename KokkosMOC<ExecutionSpace, RealType>::HViewKokkosRaySegment1D
 KokkosMOC<ExecutionSpace, RealType>::_read_segments(
-    std::vector<KokkosMOC<ExecutionSpace, RealType>::RayInfo> ray_infos
+    const std::vector<KokkosMOC<ExecutionSpace, RealType>::RayInfo>& ray_infos
 ) {
     // Reserve space for segment metadata
     int nsegs = 0;
@@ -399,7 +408,7 @@ KokkosMOC<ExecutionSpace, RealType>::_read_segments(
     // Set up segments using the sorted order
     nsegs = 0;
     for (const RayInfo& ray_info : ray_infos){
-        auto fsrs = ray_info.ray_group.getDataSet("FSRs").template read<std::vector<int>>();
+        const auto& fsrs = ray_info.fsrs;
         auto segs = ray_info.ray_group.getDataSet("Segments").template read<std::vector<double>>();
         for (size_t iseg = 0; iseg < fsrs.size(); iseg++) {
             _h_segments(nsegs + iseg) = KokkosRaySegment<RealType>(
@@ -490,36 +499,54 @@ void KokkosMOC<ExecutionSpace, RealType>::_get_xssc(
 template <typename ExecutionSpace, typename RealType>
 std::vector<double> KokkosMOC<ExecutionSpace, RealType>::fission_source(const double keff) const {
     Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC fission source " + _device);
-    std::vector<double> fissrc(_nfsr, 0.0);
-    for (size_t i = 0; i < _nfsr; i++) {
-        for (int g = 0; g < _ng; g++) {
-            fissrc[i] += _h_xsnf(i, g) * _h_scalar_flux(i, g) / keff;
+    // Computed on the device from the device-resident flux; only nfsr doubles cross back to the host.
+    auto xsnf = _d_xsnf;
+    auto scalar_flux = _d_scalar_flux;
+    auto fissrc = _d_fissrc;
+    const int ng = _ng;
+    const double rkeff = 1.0 / keff;
+    Kokkos::parallel_for("MOC fission source", Kokkos::RangePolicy<ExecutionSpace>(0, _nfsr), KOKKOS_LAMBDA(const int i) {
+        double sum = 0.0;
+        for (int g = 0; g < ng; g++) {
+            sum += xsnf(i, g) * scalar_flux(i, g) * rkeff;
         }
-    }
+        fissrc(i) = sum;
+    });
+    std::vector<double> result(_nfsr);
+    Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> h_result(result.data(), _nfsr);
+    Kokkos::deep_copy(h_result, fissrc);
     Kokkos::Profiling::popRegion();
-    return fissrc;
+    return result;
 }
 
 // Build the total source term for each FSR based on the fission source and scattering cross sections
 template <typename ExecutionSpace, typename RealType>
-void KokkosMOC<ExecutionSpace, RealType>::update_source(const std::vector<double>& fissrc) {
+void KokkosMOC<ExecutionSpace, RealType>::update_source(const std::vector<double>& fissrc_in) {
     Kokkos::Profiling::pushRegion("KokkosMOC::KokkosMOC update source " + _device);
-    int _nfsr = _h_scalar_flux.extent(0);
-    int ng = _h_scalar_flux.extent(1);
-    for (size_t i = 0; i < _nfsr; i++) {
+    // Copy the (small) fission source to the device and build the source there, so the full
+    // (nfsr x ng) source array never has to be transferred.
+    Kokkos::View<const double*, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> h_fissrc(fissrc_in.data(), fissrc_in.size());
+    auto fissrc = _d_fissrc;
+    Kokkos::deep_copy(fissrc, h_fissrc);
+    auto source = _d_source;
+    auto xsch = _d_xsch;
+    auto xssc = _d_xssc;
+    auto xstr = _d_xstr;
+    auto scalar_flux = _d_scalar_flux;
+    const int ng = _ng;
+    Kokkos::parallel_for("MOC update source", Kokkos::RangePolicy<ExecutionSpace>(0, _nfsr), KOKKOS_LAMBDA(const int i) {
+        const RealType fs = static_cast<RealType>(fissrc(i));
         for (int g = 0; g < ng; g++) {
-            _h_source(i, g) = static_cast<RealType>(fissrc[i]) * _h_xsch(i, g);
+            RealType src = fs * xsch(i, g);
             for (int g2 = 0; g2 < ng; g2++) {
                 if (g != g2) {
-                    _h_source(i, g) += _h_xssc(i, g, g2) * static_cast<RealType>(_h_scalar_flux(i, g2));
+                    src += xssc(i, g, g2) * static_cast<RealType>(scalar_flux(i, g2));
                 }
             }
-            _h_source(i, g) += _h_xssc(i, g, g) * static_cast<RealType>(_h_scalar_flux(i, g));
-            _h_source(i, g) /= (_h_xstr(i, g) * static_cast<RealType>(fourpi));
+            src += xssc(i, g, g) * static_cast<RealType>(scalar_flux(i, g));
+            source(i, g) = src / (xstr(i, g) * static_cast<RealType>(fourpi));
         }
-    }
-    // Always copy to device
-    Kokkos::deep_copy(_d_source, _h_source);
+    });
     Kokkos::Profiling::popRegion();
 }
 
@@ -541,6 +568,21 @@ struct RayIndexCalculator {
     }
 };
 
+// Table-based evaluation of 1 - exp(val) for val <= 0
+template <typename RealType, typename TableView>
+KOKKOS_INLINE_FUNCTION
+RealType exp_table_lookup(const RealType val, const TableView& exp_table, const int n_intervals, const RealType rdx)
+{
+    int i = Kokkos::floor(val * rdx) + n_intervals + 1;
+    if (i >= 0 && i < n_intervals + 1) {
+        return exp_table(i, 0) * val + exp_table(i, 1);
+    } else if (val < static_cast<RealType>(-700.0)) {
+        return static_cast<RealType>(1.0);
+    } else {
+        return static_cast<RealType>(1.0) - Kokkos::exp(val);
+    }
+}
+
 template <typename ExecutionSpace, typename RealType>
 KOKKOS_INLINE_FUNCTION
 RealType compute_exparg(const KokkosRaySegment<RealType> segment, int ig, int ipol,
@@ -550,14 +592,7 @@ RealType compute_exparg(const KokkosRaySegment<RealType> segment, int ig, int ip
                     const Kokkos::View<const RealType*, ExecutionSpace>& rsinpolang)
 {
     RealType val = -xstr(segment.fsr(), ig) * segment.length() * rsinpolang(ipol);
-    int i = Kokkos::floor(val * rdx) + n_intervals + 1;
-    if (i >= 0 && i < n_intervals + 1) {
-        return exp_table(i, 0) * val + exp_table(i, 1);
-    } else if (val < static_cast<RealType>(-700.0)) {
-        return static_cast<RealType>(1.0);
-    } else {
-        return static_cast<RealType>(1.0) - Kokkos::exp(val);
-    }
+    return exp_table_lookup(val, exp_table, n_intervals, rdx);
 }
 
 template <typename ExecutionSpace, typename RealType>
@@ -578,31 +613,128 @@ RealType eval_exp_arg(RealType exparg, const RealType xstr, const RealType ray_s
     }
 }
 
-template <typename ExecutionSpace, typename RealType>
+// Index of the calling host thread within the execution space's thread pool
+template <typename ExecutionSpace>
 KOKKOS_INLINE_FUNCTION
-void tally_scalar_flux(
-    Kokkos::View<double**, typename ExecutionSpace::array_layout, typename ExecutionSpace::memory_space> flux,
-    Kokkos::View<RealType***, typename ExecutionSpace::array_layout, typename ExecutionSpace::memory_space> threaded_flux,
-    const int ireg,
-    const int ig,
-    const RealType contribution
-) {
+int host_thread_index()
+{
 #ifdef KOKKOS_ENABLE_OPENMP
     if constexpr (std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
-        threaded_flux(omp_get_thread_num(), ireg, ig) += contribution;
-    } else
-#endif
-    {
-        Kokkos::atomic_add(&flux(ireg, ig), static_cast<double>(contribution));
+        return omp_get_thread_num();
     }
+#endif
+    return 0;
 }
 
-// Unified implementation of sweep
+// Host (Serial/OpenMP) sweep: one work item per (ray, polar angle), groups innermost.
+//
+// For a given FSR the source, cross sections and flux tallies for all groups are contiguous in memory
+// (LayoutRight), so iterating groups innermost turns the per-segment accesses into short contiguous
+// runs instead of strided gathers. Each thread tallies into a private copy of the scalar flux, so no
+// atomics are needed; the copies are reduced afterwards.
 template <typename ExecutionSpace, typename RealType>
-void KokkosMOC<ExecutionSpace, RealType>::sweep() {
-    Kokkos::Profiling::pushRegion("KokkosMOC::Sweep " + _device);
+void KokkosMOC<ExecutionSpace, RealType>::_sweep_host() {
+    auto rays = _d_rays;
+    auto segments = _d_segments;
+    auto old_angflux = _d_old_angflux;
+    auto angflux = _d_angflux;
+    auto source = _d_source;
+    auto xstr = _d_xstr;
+    auto rsinpolang = _d_rsinpolang;
+    auto angle_weights = _d_angle_weights;
+    auto exp_table = _d_exp_table;
+    auto thread_flux = _d_thread_scalar_flux;
+    auto workspace = _d_thread_exparg;
+    const int n_exp_intervals = _n_exp_intervals;
+    const RealType exp_rdx = _exp_rdx;
+    const int npol = _npol;
+    const int ng = _ng;
+    const int n_items = _n_rays * npol;
+
+    Kokkos::deep_copy(thread_flux, 0.0);
+
+    // Ray lengths vary widely, so hand out work dynamically
+    using policy_t = Kokkos::RangePolicy<ExecutionSpace, Kokkos::Schedule<Kokkos::Dynamic>>;
+    Kokkos::parallel_for("MOC Sweep Rays", policy_t(0, n_items), KOKKOS_LAMBDA(const int item) {
+        const int iray = item / npol;
+        const int ipol = item - iray * npol;
+        const KokkosLongRay& ray = rays(iray);
+        const int nsegs = ray.nsegs();
+        const int first_seg = ray.first_seg();
+        const int tid = host_thread_index<ExecutionSpace>();
+        const RealType rsin = rsinpolang(ipol);
+        const RealType weight = angle_weights(ray.angle(), ipol);
+
+        // Workspace layout: [exparg(nsegs x ng)][fseg(ng)][bseg(ng)]
+        RealType* exparg = &workspace(tid, 0);
+        RealType* fseg = exparg + static_cast<size_t>(nsegs) * ng;
+        RealType* bseg = fseg + ng;
+
+        // Exponential arguments for every segment and group (shared by the forward and backward passes)
+        for (int iseg = 0; iseg < nsegs; iseg++) {
+            const auto& segment = segments(first_seg + iseg);
+            const int ireg = segment.fsr();
+            const RealType len = segment.length() * rsin;
+            RealType* e = exparg + static_cast<size_t>(iseg) * ng;
+            for (int ig = 0; ig < ng; ig++) {
+                e[ig] = exp_table_lookup(-xstr(ireg, ig) * len, exp_table, n_exp_intervals, exp_rdx);
+            }
+        }
+
+        // Incoming angular flux for both directions
+        const int frwd_start = ray.angflux_bc_frwd_start();
+        const int bkwd_start = ray.angflux_bc_bkwd_start();
+        for (int ig = 0; ig < ng; ig++) {
+            fseg[ig] = old_angflux(frwd_start, ipol, ig);
+            bseg[ig] = old_angflux(bkwd_start, ipol, ig);
+        }
+
+        // Forward and backward passes along the ray
+        for (int iseg = 0; iseg < nsegs; iseg++) {
+            const int bseg_idx = nsegs - iseg - 1;
+            const int ireg_f = segments(first_seg + iseg).fsr();
+            const int ireg_b = segments(first_seg + bseg_idx).fsr();
+            const RealType* ef = exparg + static_cast<size_t>(iseg) * ng;
+            const RealType* eb = exparg + static_cast<size_t>(bseg_idx) * ng;
+            for (int ig = 0; ig < ng; ig++) {
+                const RealType phid = (fseg[ig] - source(ireg_f, ig)) * ef[ig];
+                fseg[ig] -= phid;
+                thread_flux(tid, ireg_f, ig) += static_cast<double>(phid * weight);
+            }
+            for (int ig = 0; ig < ng; ig++) {
+                const RealType phid = (bseg[ig] - source(ireg_b, ig)) * eb[ig];
+                bseg[ig] -= phid;
+                thread_flux(tid, ireg_b, ig) += static_cast<double>(phid * weight);
+            }
+        }
+
+        // Outgoing angular flux
+        const int frwd_end = ray.angflux_bc_frwd_end();
+        const int bkwd_end = ray.angflux_bc_bkwd_end();
+        for (int ig = 0; ig < ng; ig++) {
+            angflux(frwd_end, ipol, ig) = fseg[ig];
+            angflux(bkwd_end, ipol, ig) = bseg[ig];
+        }
+    });
+
+    // Reduce the per-thread tallies into the scalar flux
+    auto scalar_flux = _d_scalar_flux;
+    const int nthreads = thread_flux.extent(0);
+    Kokkos::parallel_for("MOC thread flux reduction", Kokkos::RangePolicy<ExecutionSpace>(0, _nfsr), KOKKOS_LAMBDA(const int i) {
+        for (int ig = 0; ig < ng; ig++) {
+            double sum = 0.0;
+            for (int t = 0; t < nthreads; t++) {
+                sum += thread_flux(t, i, ig);
+            }
+            scalar_flux(i, ig) = sum;
+        }
+    });
+}
+
+// Device sweep: one work item per (ray, polar angle, group), tallies via atomics.
+template <typename ExecutionSpace, typename RealType>
+void KokkosMOC<ExecutionSpace, RealType>::_sweep_device() {
     using ScratchViewReal1D = Kokkos::View<RealType*, typename ExecutionSpace::scratch_memory_space>;
-    Kokkos::deep_copy(_d_old_angflux, _h_old_angflux);
 
     // Avoid implicit capture
     auto& rays = _d_rays;
@@ -615,25 +747,14 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
     auto npol = _npol;
     auto ng = _ng;
     auto& xstr = _d_xstr;
-    auto& fsr_vol = _d_fsr_vol;
     auto& rsinpolang = _d_rsinpolang;
     auto& angle_weights = _d_angle_weights;
     auto& exp_table = _d_exp_table;
     auto& n_exp_intervals = _n_exp_intervals;
     auto& exp_rdx = _exp_rdx;
-    auto& thread_scalar_flux = _d_thread_scalar_flux;
-
-    // Copy old angular flux
-    Kokkos::deep_copy(old_angflux, _h_old_angflux);
 
     // Initialize the scalar flux to 0.0
     Kokkos::deep_copy(scalar_flux, 0.0);
-
-#ifdef KOKKOS_ENABLE_OPENMP
-    if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
-        Kokkos::deep_copy(thread_scalar_flux, 0.0);
-    }
-#endif
 
     // Use the specialized team policy configuration
     typedef typename Kokkos::TeamPolicy<ExecutionSpace>::member_type team_member;
@@ -676,7 +797,6 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
         for (int iseg = 0; iseg < nsegs; iseg++) {
             const auto& segment = segments(ray->first_seg() + iseg);
             exparg(iseg) = compute_exparg<ExecutionSpace, RealType>(segment, ig, ipol, exp_table, n_exp_intervals, exp_rdx, xstr, rsinpolang);
-
         }
 
         // Create temporary arrays for segment flux
@@ -691,7 +811,7 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
             RealType phid = (fsegflux - source(ireg, ig)) *
                 eval_exp_arg<ExecutionSpace, RealType>(exparg(iseg), xstr(ireg, ig), segment->length(), rsinpolang(ipol));
             fsegflux -= phid;
-            tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, phid * angle_weights(ray->angle(), ipol));
+            Kokkos::atomic_add(&scalar_flux(ireg, ig), static_cast<double>(phid * angle_weights(ray->angle(), ipol)));
 
             // Backward segment sweep
             int bseg = ray->nsegs() - iseg - 1;
@@ -700,28 +820,31 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
             phid = (bsegflux - source(ireg, ig)) *
                 eval_exp_arg<ExecutionSpace, RealType>(exparg(bseg), xstr(ireg, ig), segment->length(), rsinpolang(ipol));
             bsegflux -= phid;
-            tally_scalar_flux<ExecutionSpace, RealType>(scalar_flux, thread_scalar_flux, ireg, ig, phid * angle_weights(ray->angle(), ipol));
+            Kokkos::atomic_add(&scalar_flux(ireg, ig), static_cast<double>(phid * angle_weights(ray->angle(), ipol)));
         }
 
         // Store final segment flux back to angular flux arrays
         angflux(ray->angflux_bc_frwd_end(), ipol, ig) = fsegflux;
         angflux(ray->angflux_bc_bkwd_end(), ipol, ig) = bsegflux;
     });
+}
 
-    // Reduction for OpenMP
-#ifdef KOKKOS_ENABLE_OPENMP
-    if constexpr(std::is_same_v<ExecutionSpace, Kokkos::OpenMP>) {
-        for (int k = 0; k < ExecutionSpace().concurrency(); k++) {
-            for (int i = 0; i < _nfsr; i++) {
-                for (int g = 0; g < _ng; g++) {
-                    scalar_flux(i, g) += static_cast<double>(thread_scalar_flux(k, i, g));
-                }
-            }
-        }
+// Unified implementation of sweep
+template <typename ExecutionSpace, typename RealType>
+void KokkosMOC<ExecutionSpace, RealType>::sweep() {
+    Kokkos::Profiling::pushRegion("KokkosMOC::Sweep " + _device);
+
+    if constexpr (host_sweep) {
+        _sweep_host();
+    } else {
+        _sweep_device();
     }
-#endif
 
     // Scale the flux with source, volume, and transport XS
+    auto scalar_flux = _d_scalar_flux;
+    auto source = _d_source;
+    auto xstr = _d_xstr;
+    auto fsr_vol = _d_fsr_vol;
     auto dz = _plane_height;
     Kokkos::parallel_for("ScaleScalarFlux",
         Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<2>>({0, 0}, {_nfsr, _ng}),
@@ -730,10 +853,13 @@ void KokkosMOC<ExecutionSpace, RealType>::sweep() {
                 + static_cast<double>(source(i, g) * fourpi);
     });
 
-    // Copy results back to host
+    // The angular flux leaving this sweep is the incoming angular flux of the next one. Swapping the
+    // device buffers replaces three full copies per sweep (device->host, host->host, host->device).
+    // The vacuum "zero" slot is never written, so it stays zero in both buffers.
+    std::swap(_d_angflux, _d_old_angflux);
+
+    // Copy the scalar flux back to the host for the eigenvalue solver
     Kokkos::deep_copy(_h_scalar_flux, _d_scalar_flux);
-    Kokkos::deep_copy(_h_angflux, _d_angflux);
-    Kokkos::deep_copy(_h_old_angflux, _h_angflux);
     Kokkos::Profiling::popRegion();
 }
 
