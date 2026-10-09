@@ -9,7 +9,8 @@
   then `KOKKOS_TOOLS_LIBS=$PWD/libkptimer.so ./micro_moc ...` prints per-kernel, per-region and deep-copy
   totals at exit. Requires a Kokkos built with tools support (the default).
 - `baseline_breakdown_chart.py`, `before_after_chart.py`, `cmfd_solver_comparison_chart.py`,
-  `cmfd_solver_comparison_4way_chart.py`, `subchannel_jacobian_comparison_chart.py` – matplotlib scripts for the
+  `cmfd_solver_comparison_4way_chart.py`, `subchannel_jacobian_comparison_chart.py`,
+  `subchannel_total_runtime_chart.py` – matplotlib scripts for the
   figures in `..`. The numbers are embedded; edit them after a new benchmark run.
 
 PETSc options must be passed via `PETSC_OPTIONS="-log_view"` because the apps' argument parser rejects unknown

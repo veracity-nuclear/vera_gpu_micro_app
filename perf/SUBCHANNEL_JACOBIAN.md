@@ -49,7 +49,8 @@ subchannel tests pass.
 
 Sum of the per-plane crossflow Newton solve times over the 10 axial planes (MPI/PETSc startup excluded),
 best of 3 runs, Release build, 8 OpenMP threads (3x3: serial). "its" = total crossflow Newton iterations.
-Chart: `subchannel_jacobian_comparison.png` (script: `tools/subchannel_jacobian_comparison_chart.py`).
+Charts: `subchannel_jacobian_comparison.png` (solve time and iterations) and `subchannel_total_runtime.png`
+(total wall clock of the test executable, incl. ~1.5 s MPI startup); scripts in `tools/`.
 
 | variant                                   | 3x3 (12 surf.)  | mini-core (1,540 surf.) | Watts Bar (32,096 surf.) |
 |-------------------------------------------|-----------------|-------------------------|--------------------------|
