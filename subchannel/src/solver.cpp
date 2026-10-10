@@ -20,6 +20,7 @@ Solver<ExecutionSpace>::Solver(const ArgumentParser& args) {
         const std::string jac = args.get_option("jacobian");
         state.jacobian_mode = (jac == "fd") ? 1 : (jac == "check") ? 2 : 0;
         state.void_bisection = (args.get_option("void_solver") == "bisection");
+        state.crossflow_solver = (args.get_option("crossflow_solver") == "schur") ? 1 : 0;
     }
 
     // Extract parameters from ArgumentParser and initialize Solver
@@ -272,6 +273,9 @@ Solver<ExecutionSpace>::Solver(
     }
     if (const char* env = std::getenv("SUBCHANNEL_VOID_SOLVER")) {
         state.void_bisection = (std::string(env) == "bisection");
+    }
+    if (const char* env = std::getenv("SUBCHANNEL_CROSSFLOW_SOLVER")) {
+        state.crossflow_solver = (std::string(env) == "schur") ? 1 : 0;
     }
 
     size_t nz = state.geom->naxial() + 1;

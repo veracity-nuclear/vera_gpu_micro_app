@@ -88,6 +88,7 @@ struct ANTSFunctor {
     struct jacobian_columns             {};
     struct jacobian_columns_analytic    {};
     struct channel_partials             {};
+    struct schur_terms                  {};
     struct copy_gk_from_previous_plane  {};
     struct apply_gk_update              {};
 
@@ -139,6 +140,13 @@ struct ANTSFunctor {
     //   dchan(ij, 3) = dX/dSS_l, dchan(ij, 4) = dX/dSS_v
     // (dP/dSS_m and dX/dSS_m vanish because the fluid properties here do not depend on enthalpy.)
     View2D dchan;
+    // Factored form of the analytic Jacobian used by the channel-space (Schur complement) crossflow solver:
+    // J = F + B C (+ a small two-phase donor-quality term that the preconditioner neglects), with
+    //   schur_F(ns)    = F(ns)       : the (secant-regularized) friction slope, > 0
+    //   schur_C(ns, 0) = C(from, ns) : -dz aspect (dP_from/dsources . dsources/dgk)
+    //   schur_C(ns, 1) = C(to, ns)   : +dz aspect (dP_to/dsources . dsources/dgk)
+    View1D schur_F;
+    View2D schur_C;
     int debug_channel = -1;      // if >= 0, channel_partials prints an FD check of dP/dWl, dP/dWv for this channel
     int jacobian_mode = 0;       // 0 analytic, 1 finite difference, 2 both
     bool void_bisection = false; // original bisection instead of safeguarded Newton for the void fraction
@@ -205,6 +213,8 @@ struct ANTSFunctor {
         void_bisection = state.void_bisection;
         if (jacobian_mode == 2) jac_values_fd = View1D("jac_values_fd", state.geom->jacobian_nnz());
         dchan = View2D("dchan", nchan, 5);
+        schur_F = View1D("schur_F", nsurf);
+        schur_C = View2D("schur_C", nsurf, 2);
     }
 
     // helper functions to execute operator kernels
@@ -935,6 +945,23 @@ struct ANTSFunctor {
         }
         const double V_m_donor = v_m_donor * (W_l(i_donor, k-1) + W_v(i_donor, k-1)) / A_f(i_donor, k-1);
         dcf = gap_width * V_m_donor;
+    }
+
+    // TH::schur_terms -> per surface (ns): the pieces of J = F + B C that the channel-space solver needs.
+    // Same expressions as jacobian_columns_analytic, split by channel instead of summed into a column.
+    KOKKOS_INLINE_FUNCTION
+    void operator()(schur_terms, const size_t ns) const {
+        const double gk0 = gk(ns, k_node);
+        const size_t i = surfaces(ns).from_node;
+        const size_t j = surfaces(ns).to_node;
+        double dsl, dsv, dcf;
+        surface_source_derivatives(ns, gk0, dsl, dsv, dcf);
+        const size_t i_donor = (gk0 >= 0.0) ? i : j;
+        const double rho_m = fluid.rho_m(X(i_donor, k));
+        const double scale = dz(k_node) * aspect;
+        schur_F(ns) = scale * K_ns * (Kokkos::abs(gk0) + 0.5 * gtol) / rho_m;
+        schur_C(ns, 0) = -scale * (dchan(i, 0) * dsl + dchan(i, 1) * dsv + dchan(i, 2) * dcf);
+        schur_C(ns, 1) =  scale * (dchan(j, 0) * dsl + dchan(j, 1) * dsv + dchan(j, 2) * dcf);
     }
 
     // TH::solve_surface_mass_flux - jacobian_columns_analytic -> per-surface (ns1)

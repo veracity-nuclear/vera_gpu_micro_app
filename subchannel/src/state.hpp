@@ -13,6 +13,7 @@ struct State {
     size_t max_inner_iter;          // maximum inner iterations
     int jacobian_mode = 0;          // crossflow Jacobian: 0 analytic, 1 finite difference, 2 both (check)
     bool void_bisection = false;    // drift-flux root: false Newton (safeguarded), true original bisection
+    int crossflow_solver = 1;       // crossflow linear solver: 0 PETSc sparse LU on the surface system, 1 channel-space Schur complement (default)
 
     Water fluid;
     std::shared_ptr<Geometry<ExecutionSpace>> geom; // reference to geometry
@@ -58,6 +59,7 @@ struct State {
           max_inner_iter(other.max_inner_iter),
           jacobian_mode(other.jacobian_mode),
           void_bisection(other.void_bisection),
+          crossflow_solver(other.crossflow_solver),
           fluid(other.fluid),
           geom(other.geom),   // shared_ptr copy — shares ownership
           h_l("h_l", other.h_l.extent(0), other.h_l.extent(1)),
@@ -117,6 +119,7 @@ struct State {
             max_inner_iter = other.max_inner_iter;
             jacobian_mode = other.jacobian_mode;
             void_bisection = other.void_bisection;
+            crossflow_solver = other.crossflow_solver;
             fluid = other.fluid;
             geom = other.geom;
 

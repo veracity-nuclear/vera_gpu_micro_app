@@ -700,6 +700,58 @@ void Geometry<ExecutionSpace>::build_surface_connectivity() {
     Kokkos::deep_copy(_jac_row_ptr, h_row_ptr);
     Kokkos::deep_copy(_jac_col_idx, h_col_idx);
     Kokkos::deep_copy(_jac_pos, h_pos);
+
+    // CSR layout of the channel-space Schur system N = I + C F^-1 B (see SchurCrossflowSolver). Row ch has
+    // the diagonal and one entry per channel sharing a surface with ch; each surface contributes to the
+    // four entries (from,from), (from,to), (to,from), (to,to).
+    const size_t nch = nchannels();
+    std::vector<std::vector<int>> chan_adj(nch);
+    for (size_t ch = 0; ch < nch; ++ch) chan_adj[ch].push_back(static_cast<int>(ch));
+    for (size_t ns = 0; ns < nsurf; ++ns) {
+        const int a = static_cast<int>(h_surfaces(ns).from_node), b = static_cast<int>(h_surfaces(ns).to_node);
+        chan_adj[a].push_back(b);
+        chan_adj[b].push_back(a);
+    }
+    size_t snnz = 0;
+    for (auto& row : chan_adj) {
+        std::sort(row.begin(), row.end());
+        row.erase(std::unique(row.begin(), row.end()), row.end());
+        snnz += row.size();
+    }
+    _schur_row_ptr = ViewInt1D("schur_row_ptr", nch + 1);
+    _schur_col_idx = ViewInt1D("schur_col_idx", snnz);
+    _schur_pos = ViewInt2D("schur_pos", nsurf, 4);
+    _schur_diag = ViewInt1D("schur_diag", nch);
+    auto h_srp = Kokkos::create_mirror_view(_schur_row_ptr);
+    auto h_sci = Kokkos::create_mirror_view(_schur_col_idx);
+    auto h_spos = Kokkos::create_mirror_view(_schur_pos);
+    auto h_sdiag = Kokkos::create_mirror_view(_schur_diag);
+    idx = 0;
+    for (size_t ch = 0; ch < nch; ++ch) {
+        h_srp(ch) = static_cast<int>(idx);
+        for (int col : chan_adj[ch]) {
+            if (col == static_cast<int>(ch)) h_sdiag(ch) = static_cast<int>(idx);
+            h_sci(idx++) = col;
+        }
+    }
+    h_srp(nch) = static_cast<int>(idx);
+    auto position = [&](int row, int col) {
+        const int lo = h_srp(row), hi = h_srp(row + 1);
+        const int* first = &h_sci(lo);
+        const int* it = std::lower_bound(first, first + (hi - lo), col);
+        return static_cast<int>(lo + (it - first));
+    };
+    for (size_t ns = 0; ns < nsurf; ++ns) {
+        const int a = static_cast<int>(h_surfaces(ns).from_node), b = static_cast<int>(h_surfaces(ns).to_node);
+        h_spos(ns, 0) = position(a, a);
+        h_spos(ns, 1) = position(a, b);
+        h_spos(ns, 2) = position(b, a);
+        h_spos(ns, 3) = position(b, b);
+    }
+    Kokkos::deep_copy(_schur_row_ptr, h_srp);
+    Kokkos::deep_copy(_schur_col_idx, h_sci);
+    Kokkos::deep_copy(_schur_pos, h_spos);
+    Kokkos::deep_copy(_schur_diag, h_sdiag);
 }
 
 // Explicit template instantiations

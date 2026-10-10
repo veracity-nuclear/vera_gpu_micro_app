@@ -1,4 +1,5 @@
 #include "th.hpp"
+#include "schur_crossflow_solver.hpp"
 #include <cstdlib>
 #include <string>
 
@@ -44,6 +45,9 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
     auto jac_row_ptr = state.geom->jacobian_row_ptr_view();
     auto jac_col_idx = state.geom->jacobian_col_idx_view();
     PetscLinearSolver<ExecutionSpace> linear_solver(nsurf, 1.0e-8);
+    const bool use_schur = (state.crossflow_solver == 1);
+    SchurCrossflowSolver<ExecutionSpace> schur_solver(nsurf, nchan);
+    using schur_policy = Kokkos::RangePolicy<ExecutionSpace, typename Functor::schur_terms>;
     auto f0 = functor.f0;
 
     // outer loop for newton iteration convergence
@@ -128,7 +132,18 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
 
         // solve the system of equations (overwrites f0 with the solution vector)
         Kokkos::Profiling::pushRegion("TH::solve_surface_mass_flux - solve_linear_system_petsc");
-        PetscErrorCode ierr = linear_solver.solve_csr(jac_row_ptr, jac_col_idx, functor.jac_values, functor.f0);
+        PetscErrorCode ierr;
+        if (use_schur) {
+            // the channel-space preconditioner needs the per-channel partials even when the Jacobian itself is FD
+            if (functor.jacobian_mode == 1) Kokkos::parallel_for("TH::channel_partials", partials_policy(0, nchan), functor);
+            Kokkos::parallel_for("TH::schur_terms", schur_policy(0, nsurf), functor);
+            ierr = schur_solver.solve(jac_row_ptr, jac_col_idx, functor.jac_values,
+                                      state.geom->schur_row_ptr_view(), state.geom->schur_col_idx_view(),
+                                      state.geom->schur_position_view(), state.geom->schur_diag_view(),
+                                      state.geom->surface_view(), functor.schur_F, functor.schur_C, functor.f0);
+        } else {
+            ierr = linear_solver.solve_csr(jac_row_ptr, jac_col_idx, functor.jac_values, functor.f0);
+        }
         if (ierr != 0) {
             std::cerr << "PETSc linear solver failed with error code: " << ierr << std::endl;
         }
@@ -138,6 +153,12 @@ void TH::solve_surface_mass_flux(State<ExecutionSpace>& state) {
         Kokkos::parallel_for("TH::gk update", update_gk_policy(0, nsurf), functor);
 
     } // end outer iteration loop
+
+    if (use_schur && schur_solver.stats().solves > 0) {
+        const auto& st = schur_solver.stats();
+        std::cout << "Crossflow Schur solver: " << st.solves << " solves, " << st.outer_its << " outer (FGMRES) its, "
+                  << st.inner_its << " inner (channel-space) its over " << st.pc_applies << " applies" << std::endl;
+    }
 
     Kokkos::Profiling::popRegion();
 }

@@ -98,6 +98,14 @@ public:
     ViewInt2D jacobian_position_view() const { return _jac_pos; }
     size_t jacobian_nnz() const { return _jac_col_idx.extent(0); }
 
+    // Channel-space (Schur complement) system of the crossflow solver, N = I + C F^-1 B: CSR over channels
+    // with a nonzero for the diagonal and for every pair of channels that share a surface.
+    ViewInt1D schur_row_ptr_view() const { return _schur_row_ptr; }
+    ViewInt1D schur_col_idx_view() const { return _schur_col_idx; }
+    ViewInt2D schur_position_view() const { return _schur_pos; } // (ns, 0..3) -> positions of (from,from), (from,to), (to,from), (to,to)
+    ViewInt1D schur_diag_view() const { return _schur_diag; }    // (ch) -> position of (ch, ch)
+    size_t schur_nnz() const { return _schur_col_idx.extent(0); }
+
 private:
     double gap_W;                   // gap width between subchannels
     double l;                       // length of axial momentum cell
@@ -120,6 +128,10 @@ private:
     ViewInt1D _jac_row_ptr;     // CSR row pointer of the crossflow Jacobian (size: nsurfaces + 1)
     ViewInt1D _jac_col_idx;     // CSR column indices (size: nnz)
     ViewInt2D _jac_pos;         // (ns1, n) -> CSR position of entry (row neighbor(ns1, n), col ns1)
+    ViewInt1D _schur_row_ptr;   // CSR row pointer of the channel-space Schur system (size: nchannels + 1)
+    ViewInt1D _schur_col_idx;   // CSR column indices (size: nnz)
+    ViewInt2D _schur_pos;       // (ns, 0..3) -> CSR positions of (from,from), (from,to), (to,from), (to,to)
+    ViewInt1D _schur_diag;      // (ch) -> CSR position of the diagonal
 
     // Host mirrors of the lookup tables used by the scalar accessors above. The accessors are called
     // from host loops during setup, and copying a whole view per call made setup O(N^2).
