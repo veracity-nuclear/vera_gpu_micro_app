@@ -60,7 +60,9 @@ Two inner modes:
 
 Crossflow solve summed over the 10 planes (MPI/PETSc startup excluded), best of 3, Release, 4 OpenMP threads
 (3x3: serial). "outer" = FGMRES iterations, "inner" = channel-space iterations, both summed over all solves.
-Chart: `subchannel_schur_comparison.png`.
+Charts: `subchannel_schur_comparison.png` (solve time and iterations) and `subchannel_schur_total_runtime.png`
+(total wall clock of the test executable; same session, 4 threads: branch 1 29.4 s / branch 4 9.4 s / direct 3.8 s /
+BCGS+GAMG 10.6 s on Watts Bar, mini-core 2.48 / 1.72 / 1.62 / 2.26 s).
 
 | case | branch 4: LU(J) | channel-space, direct LU(N) | channel-space, BCGS + GAMG |
 |---|---|---|---|
