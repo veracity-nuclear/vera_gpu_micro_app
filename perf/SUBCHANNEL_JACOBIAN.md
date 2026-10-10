@@ -87,3 +87,50 @@ Where the gains come from:
 Not pursued: the semi-analytic table-lookup variant (tabulated derivatives of the closures with
 interpolation). With the closed-form chain rule in place the per-channel derivative costs about the
 same as one channel evaluation, so a table would save little and add interpolation error.
+
+## Linear solver study (Watts Bar, analytic Jacobian + Newton root)
+
+Where the time goes (Kokkos profiler regions, all planes): PETSc LU solve 8.10 s, Jacobian 0.12 s, all other
+kernels ~0.25 s. PETSc's native SeqAIJ LU is single-threaded, so ~96% of the Watts Bar solve is serial, and
+spinning OpenMP threads slow it down on an oversubscribed laptop:
+
+| Kokkos threads | wall (s) | user CPU (s) | plane sum (s) |
+|---|---|---|---|
+| 1 | 11.0 | 10.5 | 9.0 |
+| 2 | 11.9 | 19.6 | 9.9 |
+| 4 | 10.3 | 34.8 | 8.3 |
+| 8 | 18.7 | 113.3 | 16.7 |
+
+Why nothing cheaper works on the system as formulated: the Jacobian is an edge Laplacian B^T D B (B = gap-to-
+channel incidence, D = channel pressure response to its sources) plus a small friction diagonal. Its near-null
+space is the cycle space of the gap graph, dimension nsurf - nchan + 1 (741 of 1,540 on mini-core, ~15.9k of
+32k on Watts Bar): a circulation around a loop of gaps changes no channel's net source and is resisted only by
+friction, whose slope K|gk|/rho is small (zero at zero crossflow). Measured on mini-core: condition number
+1.6e8 at the first Newton step and 7e6 at convergence, |diag|/sum|offdiag| = 1/3 in every row, relative
+asymmetry <= 4e-3 (from donor-cell source derivatives; the formulation, not the indexing). Watts Bar LU fill is
+17.8x nnz (4.0M), ~0.15-0.3 s per factorization.
+
+PETSc options tried on Watts Bar (crossflow solve, all planes; "fail" = linear solves diverge and planes hit
+the Newton iteration cap):
+
+| solver | time (s) | result |
+|---|---|---|
+| BiCGStab + LU, refactored each Newton step (current) | 8-16 | 53 solves, 53 Krylov its |
+| BiCGStab/GMRES + ILU(0), ILU(1) | 10-25 | fail (150-174 diverged solves) |
+| BiCGStab + Jacobi / SOR | 12 / 296 | fail |
+| GMRES + GAMG | >850 (killed) | fail |
+| CG + ICC | >360 (killed) | fail |
+| BiCGStab/GMRES + LU factored once and reused as PC | 145-148 | converges, 180-230 Krylov its per solve |
+
+Even a lagged exact factorization is a poor preconditioner: on the cycle space the preconditioned operator is
+the ratio of new to old friction slopes, which changes by O(1) between Newton steps.
+
+Threaded direct solvers (MKL Pardiso, MUMPS) would need a PETSc rebuild and realistically buy 2-4x on this
+size; none of this carries to a GPU.
+
+Recommended next step: solve in channel space. The Jacobian has the form F + B C with F diagonal over surfaces;
+by the Woodbury identity each solve reduces to a channel-space system N y = rhs with N = I + C F^-1 B (nchan
+unknowns, 5-point stencil, M-matrix, no structural null space, 0.4% asymmetric) plus two surface-local
+kernels. Used as the preconditioner for BiCGStab on the exact Jacobian it keeps the donor-cell quality term
+exact. N is what Jacobi/colored-GS-preconditioned Krylov or AMG handle in tens of iterations, every piece
+is a Kokkos kernel, and the host-only SeqAIJ special case goes away, so Serial/OpenMP/CUDA share one path.
